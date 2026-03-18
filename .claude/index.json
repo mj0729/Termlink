@@ -1,0 +1,137 @@
+{
+  "timestamp": "2026-03-18T08:46:36+08:00",
+  "project": "Termlink",
+  "version": "0.1.0",
+  "description": "MobaXterm-style terminal tool built with Tauri 2.x + Vue 3 + Rust",
+  "identifier": "com.rabb1tq.termlink",
+  "rootClaude": "CLAUDE.md",
+  "modules": [
+    {
+      "name": "Frontend (Vue 3)",
+      "path": "src/",
+      "claudeMd": "src/CLAUDE.md",
+      "language": "JavaScript (Vue 3 SFC)",
+      "entry": "src/main.js",
+      "interfaces": [
+        "Tauri IPC invoke calls",
+        "Tauri event listeners"
+      ],
+      "testDir": null,
+      "configFiles": [
+        "vite.config.js",
+        "package.json"
+      ],
+      "keyPaths": [
+        "src/App.vue",
+        "src/main.js",
+        "src/style.css",
+        "src/components/Terminal.vue",
+        "src/components/Sidebar.vue",
+        "src/components/RightPanel.vue",
+        "src/components/FileEditor.vue",
+        "src/services/SshService.js",
+        "src/services/SftpService.js",
+        "src/services/ThemeService.js"
+      ],
+      "coverage": {
+        "totalFiles": 18,
+        "scannedFiles": 18,
+        "percentage": 100,
+        "gaps": []
+      }
+    },
+    {
+      "name": "Backend (Rust)",
+      "path": "src-tauri/",
+      "claudeMd": "src-tauri/CLAUDE.md",
+      "language": "Rust",
+      "entry": "src-tauri/src/lib.rs",
+      "interfaces": [
+        "Tauri commands (invoke_handler)",
+        "Tauri events (window.emit)"
+      ],
+      "testDir": null,
+      "configFiles": [
+        "src-tauri/Cargo.toml",
+        "src-tauri/tauri.conf.json",
+        "src-tauri/capabilities/default.json"
+      ],
+      "keyPaths": [
+        "src-tauri/src/lib.rs",
+        "src-tauri/src/main.rs",
+        "src-tauri/src/terminal.rs",
+        "src-tauri/src/ssh_terminal_russh.rs",
+        "src-tauri/src/ssh.rs",
+        "src-tauri/src/sftp_russh.rs",
+        "src-tauri/src/ssh_command.rs",
+        "src-tauri/src/system_monitor.rs",
+        "src-tauri/src/download_manager.rs",
+        "src-tauri/src/fs.rs"
+      ],
+      "coverage": {
+        "totalFiles": 11,
+        "scannedFiles": 11,
+        "percentage": 100,
+        "gaps": []
+      }
+    }
+  ],
+  "scan": {
+    "totalFiles": 37,
+    "scannedFiles": 37,
+    "coveragePercentage": 100,
+    "truncated": false,
+    "ignoredPatterns": [
+      "node_modules/**",
+      ".git/**",
+      "dist/**",
+      "*.lock",
+      "*.log",
+      "*.png",
+      "*.jpg",
+      "*.ico",
+      "*.icns",
+      "*.svg",
+      ".idea/**",
+      ".spec-workflow/**"
+    ],
+    "ignoredStats": {
+      "nodeModules": "excluded by .gitignore",
+      "dist": "excluded by .gitignore",
+      "icons": "14 image files skipped (binary)",
+      "lockFiles": "2 lock files skipped (package-lock.json, Cargo.lock)",
+      "ideConfig": ".idea/ excluded",
+      "specWorkflow": ".spec-workflow/ templates excluded (not source code)"
+    },
+    "fileBreakdown": {
+      "vue": 14,
+      "js": 5,
+      "rs": 11,
+      "css": 1,
+      "html": 1,
+      "json": 4,
+      "yml": 1,
+      "toml": 1,
+      "md": 1
+    },
+    "languageDistribution": {
+      "Vue (SFC)": "37.8% (14 files)",
+      "Rust": "29.7% (11 files)",
+      "JavaScript": "13.5% (5 files)",
+      "Config/Meta": "16.2% (6 files: json, yml, toml)",
+      "CSS": "2.7% (1 file)"
+    }
+  },
+  "gaps": {
+    "noTests": true,
+    "noTypeScript": true,
+    "noLinter": true,
+    "incompleteFeatures": [
+      "create_sftp_from_ssh (unimplemented)",
+      "download_sftp_file_with_progress (placeholder)",
+      "Private key authentication (returns error)",
+      "SSH host key verification (accepts all)"
+    ]
+  },
+  "nextSteps": []
+}

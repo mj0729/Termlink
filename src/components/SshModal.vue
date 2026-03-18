@@ -72,14 +72,13 @@
       </a-form-item>
       
       <a-form-item v-if="form.usePrivateKey" label="私钥文件" name="privateKey">
-        <a-input-group compact>
+        <a-space-compact block>
           <a-input 
             v-model:value="form.privateKey" 
             placeholder="私钥文件路径" 
-            style="width: calc(100% - 80px)"
           />
           <a-button @click="selectPrivateKey" style="width: 80px">浏览</a-button>
-        </a-input-group>
+        </a-space-compact>
       </a-form-item>
       
       <a-form-item>
@@ -94,23 +93,19 @@
   </a-modal>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import type { SelectOption, SshModalForm, SshProfile } from '../types/app'
 
-const props = defineProps({
-  visible: {
-    type: Boolean,
-    default: false
-  },
-  editMode: {
-    type: Boolean,
-    default: false
-  },
-  editProfile: {
-    type: Object,
-    default: null
-  }
+const props = withDefaults(defineProps<{
+  visible?: boolean
+  editMode?: boolean
+  editProfile?: SshProfile | null
+}>(), {
+  visible: false,
+  editMode: false,
+  editProfile: null
 })
 
 const emit = defineEmits(['update:visible', 'submit'])
@@ -118,7 +113,7 @@ const emit = defineEmits(['update:visible', 'submit'])
 const formRef = ref()
 const loading = ref(false)
 
-const form = ref({
+const createInitialForm = (): SshModalForm => ({
   name: '',
   host: '',
   port: 22,
@@ -131,11 +126,13 @@ const form = ref({
   tags: []
 })
 
-const groupOptions = ref([])
+const form = ref<SshModalForm>(createInitialForm())
+
+const groupOptions = ref<SelectOption[]>([])
 
 // 过滤分组选项
-function filterOption(inputValue, option) {
-  return option.value.toLowerCase().includes(inputValue.toLowerCase())
+function filterOption(inputValue: string, option?: SelectOption) {
+  return option?.value.toLowerCase().includes(inputValue.toLowerCase()) ?? false
 }
 
 // 重置表单
@@ -149,26 +146,15 @@ function resetForm() {
       port: props.editProfile.port || 22,
       username: props.editProfile.username || '',
       password: '', // 不显示密码
-      privateKey: props.editProfile.privateKey || '',
-      usePrivateKey: props.editProfile.usePrivateKey || false,
+      privateKey: props.editProfile.private_key || '',
+      usePrivateKey: Boolean(props.editProfile.private_key),
       savePassword: true,
       group: props.editProfile.group || '',
       tags: props.editProfile.tags || []
     }
   } else {
     // 新建模式
-    form.value = {
-      name: '',
-      host: '',
-      port: 22,
-      username: '',
-      password: '',
-      privateKey: '',
-      usePrivateKey: false,
-      savePassword: true,
-      group: '',
-      tags: []
-    }
+    form.value = createInitialForm()
   }
   formRef.value?.resetFields()
 }
@@ -179,7 +165,7 @@ async function handleSubmit() {
     await formRef.value.validate()
     loading.value = true
     
-    const submitData = { ...form.value }
+    const submitData: SshModalForm = { ...form.value }
     if (props.editMode) {
       submitData.isEdit = true
     }
@@ -211,7 +197,8 @@ async function selectPrivateKey() {
     input.type = 'file'
     input.accept = '.pem,.key,.ppk,*'
     input.onchange = (e) => {
-      const file = e.target.files[0]
+      const target = e.target as HTMLInputElement | null
+      const file = target?.files?.[0]
       if (file) {
         // 获取文件路径（在桌面应用中这会是完整路径）
         form.value.privateKey = file.name
@@ -226,7 +213,7 @@ async function selectPrivateKey() {
 // 获取已有分组
 async function loadGroups() {
   try {
-    const profiles = await invoke('list_ssh_profiles')
+    const profiles = await invoke<SshProfile[]>('list_ssh_profiles')
     const groups = [...new Set(profiles
       .map(p => p.group)
       .filter(g => g && g.trim() !== '')

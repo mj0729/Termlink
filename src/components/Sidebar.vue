@@ -1,7 +1,10 @@
 <template>
   <div class="left-panel" :class="{ collapsed: collapsed }">
     <div class="panel-header">
-      <span>连接管理</span>
+      <div class="panel-header__content">
+        <span class="panel-header__eyebrow">Resources</span>
+        <span class="panel-header__title">连接管理</span>
+      </div>
       <a-button 
         type="text" 
         size="small" 
@@ -13,7 +16,10 @@
     </div>
     
     <div class="panel-content" v-if="!collapsed">
-      <div class="section-title">已保存的连接</div>
+      <div class="section-title">
+        <span>已保存的连接</span>
+        <span class="section-pill">{{ filteredProfiles.length }}</span>
+      </div>
       
       <!-- 搜索框 -->
       <div class="search-section">
@@ -41,49 +47,38 @@
       
       <!-- 列表视图 -->
       <div v-if="viewMode === 'list'" class="list-view">
-      <a-list 
-          :data-source="filteredProfiles" 
-        :split="false"
-        size="small"
-        class="profile-list"
-      >
-        <template #renderItem="{ item }">
-          <a-list-item 
+        <div class="profile-list">
+          <div
+            v-for="item in filteredProfiles"
+            :key="item.id"
             @click="$emit('launchProfile', item)" 
-              @contextmenu.prevent="handleContextMenu($event, item)"
+            @contextmenu.prevent="handleContextMenu($event, item)"
             class="profile-item"
           >
-              <a-list-item-meta>
-                <template #title>
-                  <div class="profile-title">
-                    <span>{{ item.name || (item.username ? `${item.username}@${item.host}` : item.host) }}</span>
-                    <div class="profile-tags" v-if="item.tags && item.tags.length">
-                      <a-tag v-for="tag in item.tags" :key="tag" size="small">{{ tag }}</a-tag>
-                    </div>
-                  </div>
-                </template>
-                <template #description>
-                  <div class="profile-desc">
-                    <span>{{ item.host }}:{{ item.port }}</span>
-                    <a-tag v-if="item.group" size="small" color="blue">{{ item.group }}</a-tag>
-                  </div>
-                </template>
-              </a-list-item-meta>
-              <template #actions>
-                <a-button 
-                  type="text" 
-                  size="small" 
-                  danger
-                  @click.stop="deleteProfile(item)"
-                  class="delete-btn"
-                  title="删除连接"
-                >
-                  <DeleteOutlined />
-                </a-button>
-              </template>
-          </a-list-item>
-        </template>
-      </a-list>
+            <div class="profile-main">
+              <div class="profile-title">
+                <span>{{ item.name || (item.username ? `${item.username}@${item.host}` : item.host) }}</span>
+                <div class="profile-tags" v-if="item.tags && item.tags.length">
+                  <a-tag v-for="tag in item.tags" :key="tag" size="small">{{ tag }}</a-tag>
+                </div>
+              </div>
+              <div class="profile-desc">
+                <span>{{ item.host }}:{{ item.port }}</span>
+                <a-tag v-if="item.group" size="small" color="blue">{{ item.group }}</a-tag>
+              </div>
+            </div>
+            <a-button 
+              type="text" 
+              size="small" 
+              danger
+              @click.stop="deleteProfile(item)"
+              class="delete-btn"
+              title="删除连接"
+            >
+              <DeleteOutlined />
+            </a-button>
+          </div>
+        </div>
       </div>
       
       <!-- 分组视图 -->
@@ -126,7 +121,10 @@
         </div>
       </div>
       
-      <div class="section-title">文件管理器</div>
+      <div class="section-title">
+        <span>文件管理器</span>
+        <span v-if="currentSftpConnection" class="section-pill section-pill--live">已连接</span>
+      </div>
       <div class="file-manager-section">
         <!-- SFTP连接状态显示 -->
         <div v-if="currentSftpConnection" class="current-connection">
@@ -139,7 +137,7 @@
         <!-- SFTP文件浏览器 -->
         <div v-if="currentSftpConnection" class="sftp-browser">
           <div class="browser-toolbar">
-            <a-button-group size="small">
+            <a-space-compact size="small">
               <a-button @click="sftpGoBack" :disabled="!canSftpGoBack" title="返回">
                 <ArrowLeftOutlined />
               </a-button>
@@ -152,7 +150,7 @@
               <a-button @click="createNewFolder" title="新建文件夹">
                 <FolderAddOutlined />
               </a-button>
-            </a-button-group>
+            </a-space-compact>
             
             <div class="toolbar-right">
               <a-tooltip title="显示隐藏文件">
@@ -226,8 +224,8 @@
   </div>
 </template>
 
-<script setup>
-import { ref, computed, watch } from 'vue'
+<script setup lang="ts">
+import { ref, computed, watch, h } from 'vue'
 import { 
   FolderOutlined, 
   DeleteOutlined,
@@ -245,31 +243,34 @@ import {
   EyeInvisibleOutlined,
   CloudUploadOutlined,
   FolderAddOutlined
-} from '@ant-design/icons-vue'
-import { Modal, message, Dropdown, Menu } from 'ant-design-vue'
+} from '@antdv-next/icons'
+import { Modal, message } from 'antdv-next'
 import { invoke } from '@tauri-apps/api/core'
+import type {
+  ConnectionTab,
+  DownloadRequest,
+  SelectOption,
+  SftpFileEntry,
+  SftpState,
+  SshProfile,
+} from '../types/app'
 
-const props = defineProps({
-  collapsed: {
-    type: Boolean,
-    default: false
-  },
-  profiles: {
-    type: Array,
-    default: () => []
-  },
-  activeTab: {
-    type: Object,
-    default: null
-  }
+const props = withDefaults(defineProps<{
+  collapsed?: boolean
+  profiles?: SshProfile[]
+  activeTab?: ConnectionTab | null
+}>(), {
+  collapsed: false,
+  profiles: () => [],
+  activeTab: null
 })
 
 const emit = defineEmits(['toggle', 'launchProfile', 'showFileManager', 'refreshProfiles', 'openFilePreview', 'startDownload', 'editProfile'])
 
 // 搜索和视图状态
 const searchText = ref('')
-const viewMode = ref('list')
-const expandedGroups = ref(new Set(['未分组'])) // 默认展开未分组
+const viewMode = ref<'list' | 'group'>('list')
+const expandedGroups = ref<Set<string>>(new Set(['未分组']))
 
 // 搜索功能
 function onSearch() {
@@ -277,13 +278,13 @@ function onSearch() {
 }
 
 // 过滤后的配置文件
-const filteredProfiles = computed(() => {
+const filteredProfiles = computed<SshProfile[]>(() => {
   if (!searchText.value.trim()) {
     return props.profiles
   }
   
   const search = searchText.value.toLowerCase()
-  return props.profiles.filter(profile => {
+  return props.profiles.filter((profile) => {
     const name = profile.name?.toLowerCase() || ''
     const host = profile.host?.toLowerCase() || ''
     const username = profile.username?.toLowerCase() || ''
@@ -299,9 +300,9 @@ const filteredProfiles = computed(() => {
 })
 
 // 分组后的配置文件
-const groupedProfiles = computed(() => {
+const groupedProfiles = computed<Record<string, SshProfile[]>>(() => {
   const filtered = filteredProfiles.value
-  const groups = {}
+  const groups: Record<string, SshProfile[]> = {}
   
   filtered.forEach(profile => {
     const groupName = profile.group || '未分组'
@@ -312,7 +313,7 @@ const groupedProfiles = computed(() => {
   })
   
   // 按分组名排序，未分组放在最前面
-  const sortedGroups = {}
+  const sortedGroups: Record<string, SshProfile[]> = {}
   if (groups['未分组']) {
     sortedGroups['未分组'] = groups['未分组']
   }
@@ -328,7 +329,7 @@ const groupedProfiles = computed(() => {
 })
 
 // 切换分组展开状态
-function toggleGroup(groupName) {
+function toggleGroup(groupName: string) {
   if (expandedGroups.value.has(groupName)) {
     expandedGroups.value.delete(groupName)
   } else {
@@ -337,13 +338,13 @@ function toggleGroup(groupName) {
 }
 
 // SFTP相关状态 - 为每个连接保存独立状态
-const sftpStatesByConnection = ref(new Map())
-const fileListRef = ref(null)
+const sftpStatesByConnection = ref<Map<string, SftpState>>(new Map())
+const fileListRef = ref<HTMLElement | null>(null)
 const showHiddenFiles = ref(false)
 const isDraggingOver = ref(false)
 
 // 创建初始SFTP状态
-function createInitialSftpState() {
+function createInitialSftpState(): SftpState {
   return {
     currentPath: '/',
     pathInput: '/',
@@ -355,7 +356,7 @@ function createInitialSftpState() {
 }
 
 // 获取当前连接ID
-const currentConnectionId = computed(() => {
+const currentConnectionId = computed<string | null>(() => {
   if (!props.activeTab) return null
   
   // SSH标签页：使用 sftpConnectionId
@@ -373,7 +374,7 @@ const currentConnectionId = computed(() => {
 })
 
 // 获取或创建当前连接的状态
-const currentSftpState = computed(() => {
+const currentSftpState = computed<SftpState | null>(() => {
   const connId = currentConnectionId.value
   if (!connId) return null
   
@@ -386,7 +387,7 @@ const currentSftpState = computed(() => {
 })
 
 // 当前SFTP连接信息（用于显示）
-const currentSftpConnection = computed(() => {
+const currentSftpConnection = computed<{ id: string; title: string } | null>(() => {
   if (!currentConnectionId.value) return null
   
   return {
@@ -424,14 +425,14 @@ watch(() => currentConnectionId.value, async (newConnId, oldConnId) => {
 }, { immediate: false })
 
 // 加载SFTP文件列表
-async function loadSftpFiles(path) {
+async function loadSftpFiles(path: string) {
   const state = currentSftpState.value
   if (!state || !currentSftpConnection.value) return
   
   state.loading = true
   try {
     // 使用后端API加载文件
-    const files = await invoke('list_sftp_files', { 
+    const files = await invoke<SftpFileEntry[]>('list_sftp_files', { 
       connectionId: currentSftpConnection.value.id,
       path 
     })
@@ -439,7 +440,7 @@ async function loadSftpFiles(path) {
     // 根据设置过滤隐藏文件
     state.files = showHiddenFiles.value 
       ? files 
-      : files.filter(file => !file.name.startsWith('.'))
+      : files.filter((file) => !file.name.startsWith('.'))
     
     // 更新历史记录
     if (state.historyIndex === -1 || state.history[state.historyIndex] !== path) {
@@ -473,13 +474,13 @@ function navigateToPath() {
 }
 
 // SFTP文件点击处理（单击选中）
-function handleSftpFileClick(file) {
+function handleSftpFileClick(file: SftpFileEntry) {
   // 单击仅用于选中，不执行操作
   console.log('选中文件:', file.name)
 }
 
 // SFTP文件双击处理
-function handleSftpFileDoubleClick(file) {
+function handleSftpFileDoubleClick(file: SftpFileEntry) {
   const state = currentSftpState.value
   if (!state) return
   
@@ -499,7 +500,7 @@ function handleSftpFileDoubleClick(file) {
 }
 
 // 判断是否为文本文件
-function isTextFile(filename) {
+function isTextFile(filename: string) {
   const textExts = [
     'txt', 'md', 'json', 'xml', 'html', 'css', 'js', 'ts', 'vue', 
     'py', 'java', 'cpp', 'c', 'h', 'rs', 'go', 'php', 'rb', 'sh',
@@ -510,7 +511,7 @@ function isTextFile(filename) {
 }
 
 // 打开文件预览
-async function openFilePreview(file) {
+async function openFilePreview(file: SftpFileEntry) {
   const state = currentSftpState.value
   if (!state) return
   
@@ -526,7 +527,7 @@ async function openFilePreview(file) {
 }
 
 // 显示文件操作选项
-function showFileActions(file) {
+function showFileActions(file: SftpFileEntry) {
   Modal.confirm({
     title: `文件操作: ${file.name}`,
     content: '选择要执行的操作',
@@ -537,7 +538,7 @@ function showFileActions(file) {
 }
 
 // 下载文件
-async function downloadFile(file) {
+async function downloadFile(file: SftpFileEntry) {
   const state = currentSftpState.value
   if (!state || !currentSftpConnection.value) return
   
@@ -547,7 +548,7 @@ async function downloadFile(file) {
       : `${state.currentPath}/${file.name}`
     
     // 选择下载位置
-    const savePath = await invoke('select_download_location', {
+    const savePath = await invoke<string | null>('select_download_location', {
       fileName: file.name
     })
     
@@ -561,7 +562,7 @@ async function downloadFile(file) {
       remotePath: remotePath,
       savePath: savePath,
       connectionId: currentSftpConnection.value.id
-    })
+    } satisfies DownloadRequest)
     
   } catch (error) {
     console.error('下载文件失败:', error)
@@ -606,7 +607,7 @@ function toggleShowHidden() {
 }
 
 // 显示SFTP右键菜单
-function showSftpContextMenu(event, file) {
+function showSftpContextMenu(event: MouseEvent, file: SftpFileEntry) {
   event.preventDefault()
   
   // 移除已存在的菜单
@@ -632,7 +633,7 @@ function showSftpContextMenu(event, file) {
   `
   
   // 菜单项
-  const menuItems = []
+  const menuItems: Array<{ label?: string; action?: () => void; danger?: boolean; divider?: boolean }> = []
   
   // 下载
   menuItems.push({
@@ -723,8 +724,9 @@ function showSftpContextMenu(event, file) {
   document.body.appendChild(menu)
   
   // 点击其他地方关闭菜单
-  const closeMenu = (e) => {
-    if (!menu.contains(e.target)) {
+  const closeMenu = (e: MouseEvent) => {
+    const target = e.target
+    if (!(target instanceof Node) || !menu.contains(target)) {
       menu.remove()
       document.removeEventListener('click', closeMenu)
     }
@@ -736,7 +738,7 @@ function showSftpContextMenu(event, file) {
 }
 
 // 获取文件图标
-function getSftpFileIcon(file) {
+function getSftpFileIcon(file: SftpFileEntry) {
   if (file.is_dir) return FolderOutlined
   
   const ext = file.name.split('.').pop()?.toLowerCase()
@@ -758,7 +760,7 @@ function getSftpFileIcon(file) {
 }
 
 // 格式化文件大小
-function formatFileSize(bytes) {
+function formatFileSize(bytes?: number) {
   if (!bytes || bytes === 0) return '-'
   const sizes = ['B', 'KB', 'MB', 'GB']
   const i = Math.floor(Math.log(bytes) / Math.log(1024))
@@ -766,57 +768,45 @@ function formatFileSize(bytes) {
 }
 
 // 重命名文件/文件夹
-async function renameFile(file) {
+async function renameFile(file: SftpFileEntry) {
+  const nextName = ref(file.name)
+
   Modal.confirm({
     title: '重命名',
-    content: () => {
-      const input = document.createElement('input')
-      input.value = file.name
-      input.style.cssText = 'width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--panel-bg); color: var(--text-color);'
-      setTimeout(() => {
-        input.focus()
-        // 选中文件名（不包含扩展名）
-        if (!file.is_dir) {
-          const lastDotIndex = file.name.lastIndexOf('.')
-          if (lastDotIndex > 0) {
-            input.setSelectionRange(0, lastDotIndex)
-          } else {
-            input.select()
-          }
-        } else {
-          input.select()
-        }
-      }, 100)
-      
-      return input
-    },
+    content: () => h('input', {
+      value: nextName.value,
+      autofocus: true,
+      style: 'width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--panel-bg); color: var(--text-color);',
+      onInput: (event: Event) => {
+        nextName.value = (event.target as HTMLInputElement).value
+      }
+    }),
     okText: '重命名',
     cancelText: '取消',
     onOk: async () => {
-      const input = document.querySelector('.ant-modal-body input')
-      const newName = input?.value?.trim()
-      
-      if (!newName || newName === file.name) {
+      const targetName = nextName.value.trim()
+
+      if (!targetName || targetName === file.name) {
         return
       }
-      
+
       const state = currentSftpState.value
       if (!state || !currentSftpConnection.value) return
-      
+
       try {
-        const oldPath = state.currentPath === '/' 
-          ? `/${file.name}` 
+        const oldPath = state.currentPath === '/'
+          ? `/${file.name}`
           : `${state.currentPath}/${file.name}`
-        const newPath = state.currentPath === '/' 
-          ? `/${newName}` 
-          : `${state.currentPath}/${newName}`
-        
+        const newPath = state.currentPath === '/'
+          ? `/${targetName}`
+          : `${state.currentPath}/${targetName}`
+
         await invoke('rename_sftp_file', {
           connectionId: currentSftpConnection.value.id,
           oldPath,
           newPath
         })
-        
+
         message.success('重命名成功')
         refreshSftpFiles()
       } catch (error) {
@@ -828,7 +818,7 @@ async function renameFile(file) {
 }
 
 // 删除文件/文件夹
-async function deleteFile(file) {
+async function deleteFile(file: SftpFileEntry) {
   Modal.confirm({
     title: '确认删除',
     content: `确定要删除 "${file.name}" 吗？此操作无法撤销。`,
@@ -838,12 +828,12 @@ async function deleteFile(file) {
     onOk: async () => {
       const state = currentSftpState.value
       if (!state || !currentSftpConnection.value) return
-      
+
       try {
-        const filePath = state.currentPath === '/' 
-          ? `/${file.name}` 
+        const filePath = state.currentPath === '/'
+          ? `/${file.name}`
           : `${state.currentPath}/${file.name}`
-        
+
         if (file.is_dir) {
           await invoke('delete_sftp_directory', {
             connectionId: currentSftpConnection.value.id,
@@ -855,7 +845,7 @@ async function deleteFile(file) {
             path: filePath
           })
         }
-        
+
         message.success('删除成功')
         refreshSftpFiles()
       } catch (error) {
@@ -867,14 +857,14 @@ async function deleteFile(file) {
 }
 
 // 复制文件路径
-function copyFilePath(file) {
+function copyFilePath(file: SftpFileEntry) {
   const state = currentSftpState.value
   if (!state) return
-  
-  const filePath = state.currentPath === '/' 
-    ? `/${file.name}` 
+
+  const filePath = state.currentPath === '/'
+    ? `/${file.name}`
     : `${state.currentPath}/${file.name}`
-  
+
   navigator.clipboard.writeText(filePath).then(() => {
     message.success('路径已复制到剪贴板')
   }).catch(err => {
@@ -884,72 +874,68 @@ function copyFilePath(file) {
 }
 
 // 拖拽事件处理
-function handleDragEnter(event) {
+function handleDragEnter(event: DragEvent) {
   if (!currentSftpConnection.value) return
   isDraggingOver.value = true
 }
 
-function handleDragOver(event) {
+function handleDragOver(event: DragEvent) {
   if (!currentSftpConnection.value) return
-  event.dataTransfer.dropEffect = 'copy'
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'copy'
+  }
 }
 
-function handleDragLeave(event) {
-  // 只在离开整个区域时设置为false
+function handleDragLeave(event: DragEvent) {
   if (event.target === fileListRef.value) {
     isDraggingOver.value = false
   }
 }
 
-async function handleDrop(event) {
+async function handleDrop(event: DragEvent) {
   isDraggingOver.value = false
-  
+
   if (!currentSftpConnection.value) {
     message.warning('没有活动的SFTP连接')
     return
   }
-  
+
   const files = event.dataTransfer?.files
   if (!files || files.length === 0) return
-  
-  // 上传所有文件
-  for (const file of files) {
+
+  for (const file of Array.from(files)) {
     await uploadFileToServer(file)
   }
 }
 
 // 上传文件到服务器
-async function uploadFileToServer(file) {
+async function uploadFileToServer(file: File) {
   const state = currentSftpState.value
   if (!state || !currentSftpConnection.value) return
-  
+
   try {
-    // 获取文件路径（Tauri会处理这个）
-    const localPath = file.path
-    
+    const localPath = 'path' in file ? String((file as File & { path?: string }).path || '') : ''
+
     if (!localPath) {
       message.error(`无法获取文件路径: ${file.name}`)
       return
     }
-    
-    const remotePath = state.currentPath === '/' 
-      ? `/${file.name}` 
+
+    const remotePath = state.currentPath === '/'
+      ? `/${file.name}`
       : `${state.currentPath}/${file.name}`
-    
+
     message.loading(`正在上传 ${file.name}...`, 0)
-    
+
     await invoke('upload_sftp_file', {
       connectionId: currentSftpConnection.value.id,
       localPath,
       remotePath
     })
-    
+
     message.destroy()
     message.success(`上传成功: ${file.name}`)
-    
-    // 刷新文件列表
     refreshSftpFiles()
-    
   } catch (error) {
     message.destroy()
     console.error('上传文件失败:', error)
@@ -961,37 +947,39 @@ async function uploadFileToServer(file) {
 async function createNewFolder() {
   const state = currentSftpState.value
   if (!state || !currentSftpConnection.value) return
-  
+  const folderName = ref('')
+
   Modal.confirm({
     title: '新建文件夹',
-    content: () => {
-      const input = document.createElement('input')
-      input.placeholder = '请输入文件夹名称'
-      input.style.cssText = 'width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--panel-bg); color: var(--text-color);'
-      setTimeout(() => input.focus(), 100)
-      return input
-    },
+    content: () => h('input', {
+      value: folderName.value,
+      placeholder: '请输入文件夹名称',
+      autofocus: true,
+      style: 'width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--panel-bg); color: var(--text-color);',
+      onInput: (event: Event) => {
+        folderName.value = (event.target as HTMLInputElement).value
+      }
+    }),
     okText: '创建',
     cancelText: '取消',
     onOk: async () => {
-      const input = document.querySelector('.ant-modal-body input')
-      const folderName = input?.value?.trim()
-      
-      if (!folderName) {
+      const nextFolderName = folderName.value.trim()
+
+      if (!nextFolderName) {
         message.warning('请输入文件夹名称')
         return Promise.reject()
       }
-      
+
       try {
-        const folderPath = state.currentPath === '/' 
-          ? `/${folderName}` 
-          : `${state.currentPath}/${folderName}`
-        
+        const folderPath = state.currentPath === '/'
+          ? `/${nextFolderName}`
+          : `${state.currentPath}/${nextFolderName}`
+
         await invoke('create_sftp_directory', {
           connectionId: currentSftpConnection.value.id,
           path: folderPath
         })
-        
+
         message.success('文件夹创建成功')
         refreshSftpFiles()
       } catch (error) {
@@ -1004,7 +992,7 @@ async function createNewFolder() {
 }
 
 // 删除配置文件
-async function deleteProfile(profile) {
+async function deleteProfile(profile: SshProfile) {
   Modal.confirm({
     title: '确认删除',
     content: `确定要删除连接 "${profile.username ? `${profile.username}@${profile.host}` : profile.host}" 吗？此操作无法撤销。`,
@@ -1025,13 +1013,13 @@ async function deleteProfile(profile) {
 }
 
 // 右键菜单
-function handleContextMenu(event, profile) {
+function handleContextMenu(event: MouseEvent, profile: SshProfile) {
   event.preventDefault()
   showProfileContextMenu(event, profile)
 }
 
 // 显示SSH配置文件的右键菜单
-function showProfileContextMenu(event, profile) {
+function showProfileContextMenu(event: MouseEvent, profile: SshProfile) {
   // 移除已存在的菜单
   const existingMenu = document.querySelector('.profile-context-menu')
   if (existingMenu) {
@@ -1055,7 +1043,7 @@ function showProfileContextMenu(event, profile) {
   `
   
   // 菜单项
-  const menuItems = [
+  const menuItems: Array<{ label: string; action: () => void }> = [
     {
       label: '编辑',
       action: () => {
@@ -1104,8 +1092,9 @@ function showProfileContextMenu(event, profile) {
   document.body.appendChild(menu)
   
   // 点击其他地方关闭菜单
-  const closeMenu = (e) => {
-    if (!menu.contains(e.target)) {
+  const closeMenu = (e: MouseEvent) => {
+    const target = e.target
+    if (!(target instanceof Node) || !menu.contains(target)) {
       menu.remove()
       document.removeEventListener('click', closeMenu)
     }
@@ -1117,20 +1106,20 @@ function showProfileContextMenu(event, profile) {
 }
 
 // 编辑配置文件
-function editProfile(profile) {
+function editProfile(profile: SshProfile) {
   // 触发编辑事件，让父组件处理
   emit('editProfile', profile)
 }
 
 // 复制配置信息
-function copyProfileConfig(profile) {
+function copyProfileConfig(profile: SshProfile) {
   const configText = `名称: ${profile.name || '未命名'}
 主机: ${profile.host}
 端口: ${profile.port}
 用户名: ${profile.username}
 分组: ${profile.group || '未分组'}
 标签: ${profile.tags ? profile.tags.join(', ') : '无'}
-认证方式: ${profile.usePrivateKey ? '私钥' : '密码'}`
+认证方式: ${profile.private_key ? '私钥' : '密码'}`
   
   navigator.clipboard.writeText(configText).then(() => {
     message.success('配置信息已复制到剪贴板')
@@ -1143,201 +1132,250 @@ function copyProfileConfig(profile) {
 
 <style scoped>
 .left-panel {
-  width: 250px;
-  background: var(--panel-bg);
-  border-right: 1px solid var(--border-color);
+  width: 292px;
   display: flex;
   flex-direction: column;
-  transition: width 0.3s ease;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0)),
+    var(--panel-bg);
+  border-right: 1px solid var(--border-subtle);
+  transition: width 0.28s ease;
 }
 
 .left-panel.collapsed {
-  width: 50px;
+  width: 64px;
+}
+
+.left-panel.collapsed .panel-header__content {
+  display: none;
 }
 
 .panel-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 18px 16px;
   background: var(--panel-header-bg);
-  border-bottom: 1px solid var(--border-color);
-  font-weight: 500;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.panel-header__content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.panel-header__eyebrow {
+  color: var(--muted-color);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.panel-header__title {
+  color: var(--text-color);
+  font-size: 17px;
+  font-weight: 700;
+  margin-top: 3px;
 }
 
 .collapse-btn {
-  color: var(--text-color);
-  padding: 0;
-  width: 20px;
-  height: 20px;
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 12px;
+  color: var(--muted-color);
 }
 
 .panel-content {
   flex: 1;
-  padding: 16px;
+  padding: 16px 16px 18px;
   overflow-y: auto;
 }
 
 .section-title {
-  font-size: 12px;
-  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
   color: var(--muted-color);
-  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
 }
 
-.profile-list {
-  margin-bottom: 24px;
+.section-pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-color);
+  color: var(--muted-color);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
 }
 
-.profile-item {
-  padding: 8px 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background-color 0.2s;
+.section-pill--live {
+  background: rgba(74, 169, 107, 0.12);
+  border-color: rgba(74, 169, 107, 0.2);
+  color: var(--success-color);
 }
 
-.profile-item:hover {
-  background: var(--hover-bg);
-}
-
-.profile-item .delete-btn {
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.profile-item:hover .delete-btn {
-  opacity: 1;
-}
-
-.delete-btn {
-  color: var(--error-color) !important;
-}
-
-/* 搜索和控制区域 */
 .search-section {
   margin-bottom: 12px;
 }
 
 .view-controls {
-  margin-bottom: 16px;
   display: flex;
   justify-content: center;
+  margin-bottom: 16px;
 }
 
-/* 列表视图样式 */
-.list-view {
-  max-height: 300px;
+.list-view,
+.group-view {
+  max-height: 316px;
   overflow-y: auto;
+  margin-bottom: 22px;
+}
+
+.profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.profile-item,
+.group-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 14px 12px;
+  border-radius: 18px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-1);
+  box-shadow: 0 10px 24px rgba(32, 55, 96, 0.06);
+  cursor: pointer;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    background-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.profile-item:hover,
+.group-item:hover {
+  transform: translateY(-1px);
+  border-color: var(--strong-border);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-card);
+}
+
+.profile-main,
+.item-content {
+  flex: 1;
+  min-width: 0;
 }
 
 .profile-title {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
-.profile-tags {
+.profile-title > span,
+.item-title {
+  color: var(--text-color);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+  word-break: break-all;
+}
+
+.profile-tags,
+.item-tags {
   display: flex;
-  gap: 4px;
   flex-wrap: wrap;
+  gap: 6px;
 }
 
-.profile-desc {
+.profile-desc,
+.item-desc {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  margin-top: 8px;
+  color: var(--muted-color);
+  font-size: 12px;
 }
 
-/* 分组视图样式 */
-.group-view {
-  max-height: 300px;
-  overflow-y: auto;
+.delete-btn {
+  opacity: 0;
+  color: var(--error-color) !important;
+  transition: opacity 0.2s ease;
+}
+
+.profile-item:hover .delete-btn,
+.group-item:hover .delete-btn {
+  opacity: 1;
 }
 
 .group-section {
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .group-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: var(--panel-header-bg);
-  border-radius: 4px;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-color);
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease;
   user-select: none;
 }
 
 .group-header:hover {
   background: var(--hover-bg);
+  border-color: var(--strong-border);
 }
 
 .group-icon {
-  font-size: 12px;
+  min-width: 14px;
   color: var(--muted-color);
-  min-width: 12px;
+  font-size: 12px;
 }
 
 .group-name {
   flex: 1;
-  font-weight: 500;
+  color: var(--text-color);
   font-size: 13px;
+  font-weight: 700;
 }
 
 .group-content {
-  margin-left: 12px;
-  border-left: 2px solid var(--border-color);
-  padding-left: 8px;
-}
-
-.group-item {
+  margin: 10px 0 0 14px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border-subtle);
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  margin: 4px 0;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background-color 0.2s;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.group-item:hover {
-  background: var(--hover-bg);
-}
-
-.group-item:hover .delete-btn {
-  opacity: 1;
-}
-
-.item-content {
-  flex: 1;
-}
-
-.item-title {
-  font-weight: 500;
-  font-size: 13px;
-  margin-bottom: 2px;
-}
-
-.item-desc {
-  font-size: 12px;
-  color: var(--muted-color);
-  margin-bottom: 4px;
-}
-
-.item-tags {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
-/* SFTP文件管理样式 */
 .file-manager-section {
-  margin-bottom: 24px;
+  border-radius: 22px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-1);
+  box-shadow: 0 16px 32px rgba(41, 71, 116, 0.08);
+  padding: 14px;
 }
 
 .current-connection {
@@ -1347,90 +1385,92 @@ function copyProfileConfig(profile) {
 .connection-info {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: var(--panel-header-bg);
-  border-radius: 4px;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--surface-2);
+  color: var(--text-color);
   font-size: 12px;
+  font-weight: 600;
 }
 
 .status-indicator {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: var(--success-color);
 }
 
 .status-indicator.connected {
-  background: #52c41a;
-  box-shadow: 0 0 4px rgba(82, 196, 26, 0.5);
+  box-shadow: 0 0 0 7px rgba(74, 169, 107, 0.14);
 }
 
 .sftp-browser {
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: 18px;
   overflow: hidden;
+  border: 1px solid var(--border-color);
+  background: var(--panel-bg);
 }
 
 .browser-toolbar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 8px;
-  background: var(--panel-header-bg);
-  border-bottom: 1px solid var(--border-color);
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px;
+  background: var(--toolbar-bg);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .toolbar-right {
   display: flex;
-  gap: 4px;
+  gap: 6px;
 }
 
 .toolbar-right .ant-btn.active {
-  background: var(--primary-color);
-  color: white;
+  background: var(--primary-soft) !important;
+  color: var(--primary-color) !important;
 }
 
 .current-path {
-  padding: 4px 8px;
+  padding: 10px 12px;
   background: var(--panel-bg);
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .path-input {
-  font-family: monospace;
+  font-family: "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
   font-size: 12px;
 }
 
 .file-list {
-  min-height: 300px;
-  max-height: 500px;
+  position: relative;
+  min-height: 280px;
+  max-height: 420px;
   overflow-y: auto;
   resize: vertical;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  position: relative;
-  transition: border-color 0.3s, background-color 0.3s;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0)),
+    var(--panel-bg);
+  transition:
+    border-color 0.24s ease,
+    background-color 0.24s ease;
 }
 
 .file-list.drag-over {
-  border-color: var(--primary-color);
-  border-width: 2px;
-  background-color: rgba(24, 144, 255, 0.05);
+  background: var(--hover-bg);
+  box-shadow: inset 0 0 0 2px var(--primary-color);
 }
 
 .drag-overlay {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(24, 144, 255, 0.1);
-  backdrop-filter: blur(2px);
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  background: rgba(45, 125, 255, 0.08);
+  backdrop-filter: blur(6px);
+  z-index: 10;
   pointer-events: none;
 }
 
@@ -1438,10 +1478,10 @@ function copyProfileConfig(profile) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
   color: var(--primary-color);
-  font-size: 16px;
-  font-weight: 500;
+  font-size: 15px;
+  font-weight: 700;
   text-align: center;
   padding: 20px;
 }
@@ -1449,12 +1489,14 @@ function copyProfileConfig(profile) {
 .file-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
+  gap: 10px;
+  padding: 11px 12px;
+  margin: 4px;
+  border-radius: 14px;
   cursor: pointer;
-  transition: background-color 0.2s;
+  color: var(--text-color);
   font-size: 12px;
-  border-bottom: 1px solid transparent;
+  transition: background-color 0.2s ease;
 }
 
 .file-item:hover {
@@ -1462,74 +1504,51 @@ function copyProfileConfig(profile) {
 }
 
 .file-item.directory {
-  font-weight: 500;
+  font-weight: 700;
 }
 
 .file-icon {
   flex-shrink: 0;
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .file-item.directory .file-icon {
-  color: #1890ff;
+  color: var(--primary-color);
 }
 
 .file-name {
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .file-size {
-  font-size: 10px;
-  color: var(--muted-color);
   flex-shrink: 0;
+  color: var(--muted-color);
+  font-size: 10px;
 }
 
 .no-connection {
-  padding: 20px 10px;
-  text-align: center;
+  padding: 24px 8px 10px;
 }
 
-/* 响应式调整 */
-@media (max-width: 768px) {
-  .file-manager-section {
-    margin-bottom: 16px;
-  }
-  
-  .file-list {
-    max-height: 150px;
-  }
-  
-  .file-item {
-    padding: 4px 6px;
-    font-size: 11px;
-  }
+:deep(.ant-empty) {
+  margin-block: 8px 0;
 }
 
-.file-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  cursor: pointer;
-  border-radius: 6px;
-  transition: background-color 0.2s;
-}
-
-.file-item:hover {
-  background: var(--hover-bg);
-}
-
-/* 响应式设计 */
 @media (max-width: 768px) {
   .left-panel {
-    width: 200px !important;
+    width: 230px !important;
   }
-  
+
   .left-panel.collapsed {
-    width: 50px !important;
+    width: 58px !important;
+  }
+
+  .file-list {
+    max-height: 240px;
   }
 }
 </style>

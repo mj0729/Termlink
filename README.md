@@ -50,16 +50,16 @@
 ### 开发模式
 ```bash
 # 安装依赖
-npm install
+pnpm install
 
 # 启动开发服务器
-cargo tauri dev
+pnpm run tauri:dev
 ```
 
 ### 构建发布版本
 ```bash
 # 构建应用
-cargo tauri build
+pnpm run tauri:build
 
 # 生成的文件在 src-tauri/target/release/bundle/
 ```

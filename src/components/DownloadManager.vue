@@ -91,7 +91,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { 
   ClearOutlined, 
@@ -99,19 +99,20 @@ import {
   FolderOpenOutlined, 
   ReloadOutlined,
   DeleteOutlined 
-} from '@ant-design/icons-vue'
-import { message } from 'ant-design-vue'
+} from '@antdv-next/icons'
+import { message } from 'antdv-next'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import type { DownloadItem, DownloadProgressPayload } from '../types/app'
 
-const downloads = ref([])
+const downloads = ref<DownloadItem[]>([])
 let downloadIdCounter = 0
-let progressUnlisten = null
+let progressUnlisten: (() => void) | null = null
 
 // 添加下载任务
-function addDownload(fileName, remotePath, savePath, connectionId) {
+function addDownload(fileName: string, remotePath: string, savePath: string, connectionId: string) {
   const downloadId = ++downloadIdCounter
-  const download = {
+  const download: DownloadItem = {
     id: downloadId,
     fileName,
     remotePath,
@@ -133,7 +134,7 @@ function addDownload(fileName, remotePath, savePath, connectionId) {
 }
 
 // 开始下载
-async function startDownload(download) {
+async function startDownload(download: DownloadItem) {
   try {
     console.log('=== DownloadManager 开始下载 ===', download)
     
@@ -157,20 +158,20 @@ async function startDownload(download) {
     console.error('✗ DownloadManager 下载失败:', error)
     if (download.status !== 'cancelled') {
       download.status = 'error'
-      download.error = error.toString()
+      download.error = String(error)
       message.error(`下载失败: ${download.fileName}`)
     }
   }
 }
 
 // 计算下载速度
-function calculateSpeed(download) {
+function calculateSpeed(download: DownloadItem) {
   const elapsed = (Date.now() - download.startTime) / 1000
   return elapsed > 0 ? download.downloaded / elapsed : 0
 }
 
 // 取消下载
-async function cancelDownload(downloadId) {
+async function cancelDownload(downloadId: number) {
   const download = downloads.value.find(d => d.id === downloadId)
   if (download && download.status === 'downloading') {
     download.status = 'cancelled'
@@ -185,7 +186,7 @@ async function cancelDownload(downloadId) {
 }
 
 // 重试下载
-function retryDownload(downloadId) {
+function retryDownload(downloadId: number) {
   const download = downloads.value.find(d => d.id === downloadId)
   if (download) {
     download.status = 'downloading'
@@ -198,7 +199,7 @@ function retryDownload(downloadId) {
 }
 
 // 打开文件位置
-async function openFileLocation(filePath) {
+async function openFileLocation(filePath: string) {
   try {
     await invoke('open_file_location', { path: filePath })
   } catch (error) {
@@ -207,7 +208,7 @@ async function openFileLocation(filePath) {
 }
 
 // 移除下载记录
-function removeDownload(downloadId) {
+function removeDownload(downloadId: number) {
   const index = downloads.value.findIndex(d => d.id === downloadId)
   if (index !== -1) {
     downloads.value.splice(index, 1)
@@ -222,7 +223,7 @@ function clearCompleted() {
 }
 
 // 格式化文件大小
-function formatSize(bytes) {
+function formatSize(bytes: number) {
   if (!bytes || bytes === 0) return '0 B'
   const sizes = ['B', 'KB', 'MB', 'GB']
   const i = Math.floor(Math.log(bytes) / Math.log(1024))
@@ -230,7 +231,7 @@ function formatSize(bytes) {
 }
 
 // 格式化速度
-function formatSpeed(bytesPerSecond) {
+function formatSpeed(bytesPerSecond: number) {
   return formatSize(bytesPerSecond) + '/s'
 }
 
@@ -243,7 +244,7 @@ defineExpose({
 // 生命周期钩子
 onMounted(async () => {
   // 监听下载进度事件
-  progressUnlisten = await listen('download-progress', (event) => {
+  progressUnlisten = await listen<DownloadProgressPayload>('download-progress', (event) => {
     const { downloadId, downloaded, total, progress } = event.payload
     const download = downloads.value.find(d => d.id === downloadId)
     if (download && download.status === 'downloading') {

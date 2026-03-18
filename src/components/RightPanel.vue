@@ -5,7 +5,13 @@
     
       <!-- 标题栏 -->
       <div class="panel-header">
-        <span>{{ activeTab === 'monitor' ? '系统监控' : '下载管理' }}</span>
+        <div class="panel-header__copy">
+          <span class="panel-header__eyebrow">Insights</span>
+          <span class="panel-header__title">{{ activeTab === 'monitor' ? '系统监控' : '下载管理' }}</span>
+        </div>
+        <span class="panel-header__meta">
+          {{ activeTab === 'monitor' ? '实时遥测' : `${downloads.length} 个任务` }}
+        </span>
         <a-button 
           type="text" 
           size="small" 
@@ -313,8 +319,8 @@
   </div>
 </template>
 
-<script setup>
-import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
+<script setup lang="ts">
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { 
   DesktopOutlined,
   LaptopOutlined,
@@ -331,40 +337,47 @@ import {
   FolderOpenOutlined,
   DeleteOutlined,
   RightOutlined
-} from '@ant-design/icons-vue'
-import { message } from 'ant-design-vue'
+} from '@antdv-next/icons'
+import { message } from 'antdv-next'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import type {
+  DownloadItem,
+  DownloadProgressPayload,
+  MonitorTab,
+  SshProfile,
+  SystemInfoBatch,
+  SystemStaticInfo,
+  CpuInfo,
+  MemoryInfo,
+  DiskInfo,
+  NetworkInfo,
+} from '../types/app'
 
-const props = defineProps({
-  collapsed: {
-    type: Boolean,
-    default: false
-  },
-  connectionId: {
-    type: String,
-    default: ''
-  },
-  sshProfile: {
-    type: Object,
-    default: null
-  }
+const props = withDefaults(defineProps<{
+  collapsed?: boolean
+  connectionId?: string
+  sshProfile?: SshProfile | null
+}>(), {
+  collapsed: false,
+  connectionId: '',
+  sshProfile: null
 })
 
 const emit = defineEmits(['toggle'])
 
 // 状态数据
-const systemInfo = ref({})
-const cpuInfo = ref({})
-const memoryInfo = ref({})
-const diskInfo = ref([])
-const networkInfo = ref([])
+const systemInfo = ref<SystemStaticInfo>({})
+const cpuInfo = ref<CpuInfo>({})
+const memoryInfo = ref<MemoryInfo>({})
+const diskInfo = ref<DiskInfo[]>([])
+const networkInfo = ref<NetworkInfo[]>([])
 
 // 下载管理状态
-const activeTab = ref('monitor') // 'monitor' or 'download'
-const downloads = ref([])
+const activeTab = ref<MonitorTab>('monitor')
+const downloads = ref<DownloadItem[]>([])
 let downloadIdCounter = 0
-let progressUnlisten = null
+let progressUnlisten: (() => void) | null = null
 
 // 活跃下载数量
 const activeDownloads = computed(() => {
@@ -372,7 +385,7 @@ const activeDownloads = computed(() => {
 })
 
 // 处理标签点击
-function handleTabClick(tab) {
+function handleTabClick(tab: MonitorTab) {
   // 如果点击的是当前激活的标签，切换折叠状态
   if (activeTab.value === tab) {
     emit('toggle')
@@ -386,14 +399,14 @@ function handleTabClick(tab) {
   }
 }
 
-let refreshTimer = null
+let refreshTimer: ReturnType<typeof setTimeout> | null = null
 let refreshInterval = 3000 // 初始刷新间隔3秒
 const minInterval = 3000 // 最小间隔3秒
 const maxInterval = 30000 // 最大间隔30秒
 let errorCount = 0
 
 // 存储监控连接的配置信息
-let monitoringProfile = null
+let monitoringProfile: SshProfile | null = null
 let monitoringConnectionEstablished = false
 
 // 确保监控SSH连接已建立
@@ -416,10 +429,10 @@ async function ensureMonitoringConnection() {
     }
     
     // 获取密码
-    let password = null
+    let password: string | null = null
     if (props.sshProfile.save_password) {
       try {
-        password = await invoke('get_ssh_password', { id: props.sshProfile.id })
+        password = await invoke<string>('get_ssh_password', { id: props.sshProfile.id })
       } catch (pwdError) {
         console.error('获取SSH密码失败:', pwdError)
         return false
@@ -462,7 +475,7 @@ async function refreshData() {
     }
     
     // 使用批量命令一次性获取所有系统信息，大幅减少SSH请求次数
-    const batchInfo = await invoke('get_all_system_info_batch', { connectionId: props.connectionId })
+    const batchInfo = await invoke<SystemInfoBatch>('get_all_system_info_batch', { connectionId: props.connectionId })
     
     // 更新所有数据
     if (batchInfo.system.hostname) systemInfo.value = batchInfo.system
@@ -526,7 +539,7 @@ function stopAutoRefresh() {
 }
 
 // 格式化文件大小
-function formatSize(bytes) {
+function formatSize(bytes?: number) {
   if (!bytes || bytes === 0) return '0 B'
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
   const i = Math.floor(Math.log(bytes) / Math.log(1024))
@@ -534,7 +547,7 @@ function formatSize(bytes) {
 }
 
 // 格式化运行时间
-function formatUptime(seconds) {
+function formatUptime(seconds?: number) {
   if (!seconds) return '-'
   
   const days = Math.floor(seconds / 86400)
@@ -551,7 +564,7 @@ function formatUptime(seconds) {
 }
 
 // 获取进度条颜色
-function getProgressColor(percentage) {
+function getProgressColor(percentage: number) {
   if (percentage < 50) return '#52c41a'
   if (percentage < 80) return '#faad14'
   return '#ff4d4f'
@@ -562,7 +575,7 @@ onMounted(async () => {
   // 不自动刷新，等待用户手动展开
   
   // 监听下载进度事件
-  progressUnlisten = await listen('download-progress', (event) => {
+  progressUnlisten = await listen<DownloadProgressPayload>('download-progress', (event) => {
     const { downloadId, downloaded, total, progress } = event.payload
     const download = downloads.value.find(d => d.id === downloadId)
     if (download && download.status === 'downloading') {
@@ -606,7 +619,7 @@ watch(() => props.connectionId, (newConnectionId) => {
 // ============ 下载管理函数 ============
 
 // 添加下载任务
-function addDownload(fileName, remotePath, savePath, connectionId) {
+function addDownload(fileName: string, remotePath: string, savePath: string, connectionId: string) {
   console.log('=== addDownload 被调用 ===', {
     fileName,
     remotePath,
@@ -615,7 +628,7 @@ function addDownload(fileName, remotePath, savePath, connectionId) {
   })
   
   const downloadId = ++downloadIdCounter
-  const download = {
+  const download: DownloadItem = {
     id: downloadId,
     fileName,
     remotePath,
@@ -625,6 +638,7 @@ function addDownload(fileName, remotePath, savePath, connectionId) {
     progress: 0,
     downloaded: 0,
     total: 0,
+    speed: 0,
     startTime: Date.now(),
     error: null
   }
@@ -640,7 +654,7 @@ function addDownload(fileName, remotePath, savePath, connectionId) {
 }
 
 // 开始下载
-async function startDownload(download) {
+async function startDownload(download: DownloadItem) {
   console.log('=== startDownload 开始（真实进度）===', download)
   
   try {
@@ -673,7 +687,7 @@ async function startDownload(download) {
 }
 
 // 取消下载
-function cancelDownload(downloadId) {
+function cancelDownload(downloadId: number) {
   const download = downloads.value.find(d => d.id === downloadId)
   if (download) {
     download.status = 'cancelled'
@@ -682,7 +696,7 @@ function cancelDownload(downloadId) {
 }
 
 // 打开文件位置
-async function openFileLocation(filePath) {
+async function openFileLocation(filePath: string) {
   console.log('打开文件位置:', filePath)
   try {
     await invoke('open_file_location', { path: filePath })
@@ -694,7 +708,7 @@ async function openFileLocation(filePath) {
 }
 
 // 移除下载记录
-function removeDownload(downloadId) {
+function removeDownload(downloadId: number) {
   const index = downloads.value.findIndex(d => d.id === downloadId)
   if (index !== -1) {
     downloads.value.splice(index, 1)
@@ -717,18 +731,22 @@ defineExpose({
 <style scoped>
 .right-panel {
   display: flex;
-  background: var(--panel-bg);
   height: 100%;
+  background: var(--panel-bg);
   position: relative;
 }
 
-/* 内容区 - 在左侧，可折叠 */
 .panel-content-wrapper {
   display: flex;
   flex-direction: column;
-  width: 280px;
-  border-left: 1px solid var(--border-color);
-  transition: width 0.3s ease, opacity 0.3s ease;
+  width: 328px;
+  border-left: 1px solid var(--border-subtle);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.38), rgba(255, 255, 255, 0)),
+    var(--panel-bg);
+  transition:
+    width 0.28s ease,
+    opacity 0.28s ease;
   overflow: hidden;
   flex-shrink: 0;
 }
@@ -740,27 +758,27 @@ defineExpose({
   border-left: none;
 }
 
-/* 按钮栏 - 在最右侧，始终可见 */
 .sidebar-buttons {
-  width: 60px;
+  width: 72px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 12px 8px;
-  background: var(--panel-header-bg);
-  border-left: 1px solid var(--border-color);
+  gap: 14px;
+  padding: 18px 12px;
+  background: var(--monitor-rail-bg);
+  border-left: 1px solid var(--border-subtle);
   margin-left: auto;
 }
 
 .sidebar-btn {
-  width: 44px !important;
-  height: 44px !important;
+  width: 48px !important;
+  height: 48px !important;
   padding: 0 !important;
   display: flex !important;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: 16px;
+  background: var(--surface-1) !important;
 }
 
 .sidebar-btn :deep(.anticon) {
@@ -768,26 +786,51 @@ defineExpose({
 }
 
 .panel-header {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
   align-items: center;
-  padding: 12px 16px;
+  gap: 10px;
+  padding: 18px 18px 16px;
   background: var(--panel-header-bg);
-  border-bottom: 1px solid var(--border-color);
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s ease;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
-.panel-header:hover {
-  background: var(--hover-bg);
+.panel-header__copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.panel-header__eyebrow {
+  color: var(--muted-color);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.panel-header__title {
+  margin-top: 4px;
+  color: var(--text-color);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.panel-header__meta {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-color);
+  color: var(--muted-color);
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .collapse-btn {
-  color: var(--text-color);
-  padding: 0;
-  width: 20px;
-  height: 20px;
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 12px;
+  color: var(--muted-color);
 }
 
 .panel-content {
@@ -801,16 +844,15 @@ defineExpose({
 }
 
 .info-section {
-  margin-bottom: 24px;
+  margin-bottom: 18px;
 }
 
 .section-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--border-color);
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 0 4px;
 }
 
 .section-icon {
@@ -821,23 +863,26 @@ defineExpose({
 .section-header h4 {
   margin: 0;
   color: var(--text-color);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .info-card {
-  background: var(--hover-bg);
-  border-radius: 8px;
-  padding: 16px;
+  padding: 14px;
+  border-radius: 20px;
+  background: var(--monitor-card-bg);
   border: 1px solid var(--border-color);
+  box-shadow: 0 14px 28px rgba(41, 71, 116, 0.08);
 }
 
 .info-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border-color);
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .info-item:last-child {
@@ -845,12 +890,12 @@ defineExpose({
 }
 
 .info-label {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
   color: var(--muted-color);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .item-icon {
@@ -858,351 +903,180 @@ defineExpose({
   font-size: 14px;
 }
 
-.info-value {
-  color: var(--text-color);
-  font-family: 'Courier New', monospace;
-  font-size: 12px;
-  font-weight: 500;
+.info-value,
+.cpu-usage,
+.usage-percent,
+.disk-usage,
+.disk-device,
+.interface-name,
+.stat-value,
+.disk-stat,
+.detail-value {
+  font-family: "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
 }
 
-/* CPU 样式 */
-.cpu-info {
+.info-value {
+  color: var(--text-color);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cpu-info,
+.memory-info,
+.disk-header,
+.network-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 10px;
+}
+
+.cpu-info,
+.memory-info {
   margin-bottom: 12px;
 }
 
-.cpu-model {
+.cpu-model,
+.memory-label {
   color: var(--text-color);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 700;
   flex: 1;
+  min-width: 0;
+}
+
+.cpu-model {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.cpu-usage {
+.cpu-usage,
+.usage-percent,
+.disk-usage {
   color: var(--primary-color);
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 700;
-  font-family: 'Courier New', monospace;
 }
 
-/* 内存样式 */
-.memory-info {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.memory-stats {
+.memory-stats,
+.disk-info,
+.interface-info {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.memory-label {
-  color: var(--text-color);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.memory-usage {
+.memory-usage,
+.disk-mount,
+.interface-ip,
+.detail-label,
+.stat-label,
+.disk-type {
   color: var(--muted-color);
   font-size: 11px;
-  font-family: 'Courier New', monospace;
 }
 
-.usage-percent {
-  color: var(--primary-color);
-  font-size: 16px;
-  font-weight: 700;
-  font-family: 'Courier New', monospace;
+.progress-container {
+  margin: 8px 0 0;
+}
+
+.memory-details,
+.disk-stats,
+.network-stats {
+  margin-top: 12px;
 }
 
 .memory-details {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border-color);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.detail-item,
+.disk-item,
+.network-item,
+.stat-item {
+  border-radius: 16px;
+  border: 1px solid var(--border-color);
 }
 
 .detail-item {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 2px;
+  gap: 4px;
+  padding: 10px;
+  background: var(--surface-1);
+  align-items: flex-start;
 }
 
-.detail-label {
-  color: var(--muted-color);
-  font-size: 10px;
-}
-
-.detail-value {
-  color: var(--text-color);
-  font-size: 11px;
-  font-weight: 500;
-  font-family: 'Courier New', monospace;
-}
-
-/* 进度条容器 */
-.progress-container {
-  margin: 8px 0;
-}
-
-/* 磁盘样式 */
-.disk-item {
-  margin-bottom: 16px;
+.disk-item,
+.network-item {
   padding: 12px;
-  background: var(--panel-bg);
-  border-radius: 6px;
-  border: 1px solid var(--border-color);
+  background: var(--monitor-card-strong);
 }
 
-.disk-item:last-child {
-  margin-bottom: 0;
+.disk-item + .disk-item,
+.network-item + .network-item {
+  margin-top: 10px;
 }
 
-.disk-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.disk-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.disk-device {
+.disk-device,
+.interface-name {
   color: var(--text-color);
   font-size: 12px;
-  font-weight: 600;
-  font-family: 'Courier New', monospace;
-}
-
-.disk-mount {
-  color: var(--muted-color);
-  font-size: 10px;
-}
-
-.disk-usage {
-  color: var(--primary-color);
-  font-size: 14px;
   font-weight: 700;
-  font-family: 'Courier New', monospace;
 }
 
 .disk-stats {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 6px;
-  font-size: 10px;
-}
-
-.disk-stat {
-  color: var(--text-color);
-  font-family: 'Courier New', monospace;
+  gap: 10px;
 }
 
 .disk-type {
-  color: var(--muted-color);
-  background: var(--hover-bg);
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-size: 9px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--surface-1);
   text-transform: uppercase;
-}
-
-/* 网络样式 */
-.network-item {
-  margin-bottom: 16px;
-  padding: 12px;
-  background: var(--panel-bg);
-  border-radius: 6px;
-  border: 1px solid var(--border-color);
-}
-
-.network-item:last-child {
-  margin-bottom: 0;
-}
-
-.network-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.interface-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.interface-name {
-  color: var(--text-color);
-  font-size: 12px;
-  font-weight: 600;
-  font-family: 'Courier New', monospace;
-}
-
-.interface-ip {
-  color: var(--muted-color);
-  font-size: 10px;
-  font-family: 'Courier New', monospace;
 }
 
 .interface-status {
-  padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 10px;
-  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
   text-transform: uppercase;
-  background: var(--error-color);
-  color: white;
+  background: rgba(234, 95, 97, 0.14);
+  color: var(--error-color);
 }
 
 .interface-status.active {
-  background: var(--success-color);
-}
-
-.network-stats {
-  margin-top: 8px;
+  background: rgba(74, 169, 107, 0.14);
+  color: var(--success-color);
 }
 
 .network-stat {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
 .stat-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex: 1;
-  padding: 6px 8px;
-  background: var(--hover-bg);
-  border-radius: 4px;
+  gap: 8px;
+  padding: 10px;
+  background: var(--surface-1);
 }
 
 .stat-icon {
   color: var(--primary-color);
   font-size: 14px;
-  font-weight: bold;
+  font-weight: 700;
 }
 
-.stat-label {
-  color: var(--muted-color);
-  font-size: 10px;
-  flex: 1;
-}
-
-.stat-value {
-  color: var(--text-color);
-  font-size: 10px;
-  font-weight: 500;
-  font-family: 'Courier New', monospace;
-}
-
-.progress-header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 4px;
-  font-size: 11px;
-  color: var(--text-color);
-}
-
-.memory-details, .disk-details {
-  margin-top: 4px;
-  font-size: 10px;
-  color: var(--muted-color);
-  display: flex;
-  justify-content: space-between;
-}
-
-.network-item {
-  margin-bottom: 12px;
-  padding: 8px;
-  background: var(--hover-bg);
-  border-radius: 4px;
-}
-
-.network-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 6px;
-}
-
-.interface-name {
-  font-weight: 500;
-  color: var(--text-color);
-  font-size: 12px;
-}
-
-.interface-status {
-  padding: 1px 4px;
-  border-radius: 2px;
-  font-size: 10px;
-  background: var(--error-color);
-  color: white;
-}
-
-.interface-status.active {
-  background: var(--success-color);
-}
-
-.network-details {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.network-stat {
-  display: flex;
-  justify-content: space-between;
-  font-size: 10px;
-}
-
-.stat-label {
-  color: var(--muted-color);
-}
-
-.stat-value {
-  color: var(--text-color);
-  font-family: monospace;
-}
-
-/* 滚动条样式 */
-.panel-content::-webkit-scrollbar {
-  width: 4px;
-}
-
-.panel-content::-webkit-scrollbar-track {
-  background: var(--panel-bg);
-}
-
-.panel-content::-webkit-scrollbar-thumb {
-  background: var(--border-color);
-  border-radius: 2px;
-}
-
-.panel-content::-webkit-scrollbar-thumb:hover {
-  background: var(--muted-color);
-}
-
-
-/* 下载管理内容 */
 .download-content {
   flex: 1;
   display: flex;
@@ -1220,26 +1094,37 @@ defineExpose({
 .download-list {
   flex: 1;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .download-item {
   display: flex;
-  align-items: center;
-  padding: 12px;
-  border-bottom: 1px solid var(--border-color);
-  transition: background-color 0.2s;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid var(--border-color);
+  background: var(--monitor-card-bg);
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    background-color 0.2s ease;
 }
 
 .download-item:hover {
-  background: var(--hover-bg);
+  transform: translateY(-1px);
+  border-color: var(--strong-border);
+  background: var(--monitor-card-strong);
 }
 
 .download-item.completed {
-  background: rgba(82, 196, 26, 0.05);
+  background: linear-gradient(180deg, rgba(74, 169, 107, 0.12), rgba(74, 169, 107, 0.05));
 }
 
 .download-item.error {
-  background: rgba(255, 77, 79, 0.05);
+  background: linear-gradient(180deg, rgba(234, 95, 97, 0.12), rgba(234, 95, 97, 0.05));
 }
 
 .download-info {
@@ -1249,9 +1134,9 @@ defineExpose({
 }
 
 .download-info .file-name {
-  font-weight: 500;
-  font-size: 13px;
   color: var(--text-color);
+  font-size: 13px;
+  font-weight: 700;
   margin-bottom: 4px;
   white-space: nowrap;
   overflow: hidden;
@@ -1259,18 +1144,19 @@ defineExpose({
 }
 
 .download-info .file-path {
-  font-size: 11px;
+  margin-bottom: 8px;
   color: var(--muted-color);
-  font-family: monospace;
-  margin-bottom: 6px;
+  font-size: 11px;
+  font-family: "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .download-status {
+  margin-top: 6px;
   font-size: 11px;
-  margin-top: 4px;
+  color: var(--muted-color);
 }
 
 .download-status .success {
@@ -1283,24 +1169,24 @@ defineExpose({
 
 .download-actions {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
 .download-footer {
-  padding: 8px 16px;
-  border-top: 1px solid var(--border-color);
+  padding: 12px 16px 16px;
+  border-top: 1px solid var(--border-subtle);
   background: var(--panel-header-bg);
 }
 
-/* 响应式设计 */
 @media (max-width: 768px) {
-  .right-panel {
-    width: 220px !important;
+  .panel-content-wrapper {
+    width: 250px;
   }
-  
-  .right-panel.collapsed {
-    width: 50px !important;
+
+  .sidebar-buttons {
+    width: 60px;
+    padding-inline: 8px;
   }
 }
 </style>

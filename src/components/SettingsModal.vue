@@ -21,12 +21,11 @@
         </a-col>
         <a-col :span="12">
           <a-form-item label="字体族">
-            <a-select v-model:value="config.fontFamily" style="width: 100%">
-              <a-select-option value="Consolas">Consolas</a-select-option>
-              <a-select-option value="Monaco">Monaco</a-select-option>
-              <a-select-option value="Menlo">Menlo</a-select-option>
-              <a-select-option value="Courier New">Courier New</a-select-option>
-            </a-select>
+            <a-select
+              v-model:value="config.fontFamily"
+              :options="fontFamilyOptions"
+              style="width: 100%"
+            />
           </a-form-item>
         </a-col>
       </a-row>
@@ -38,11 +37,11 @@
         </a-col>
         <a-col :span="12">
           <a-form-item label="光标样式">
-            <a-select v-model:value="config.cursorStyle" style="width: 100%">
-              <a-select-option value="block">块状</a-select-option>
-              <a-select-option value="underline">下划线</a-select-option>
-              <a-select-option value="bar">竖线</a-select-option>
-            </a-select>
+            <a-select
+              v-model:value="config.cursorStyle"
+              :options="cursorStyleOptions"
+              style="width: 100%"
+            />
           </a-form-item>
         </a-col>
       </a-row>
@@ -58,18 +57,17 @@
       
       <a-divider>存储设置</a-divider>
       <a-form-item label="配置文件位置">
-        <a-input-group compact>
+        <a-space-compact block>
           <a-input 
             :value="profilesDir" 
             readonly 
-            style="width: calc(100% - 100px)" 
             placeholder="获取中..."
           />
           <a-button @click="openProfilesDir" style="width: 60px">打开</a-button>
           <a-button @click="getProfilesDirectory" style="width: 40px" title="刷新">
             <ReloadOutlined />
           </a-button>
-        </a-input-group>
+        </a-space-compact>
         <div style="margin-top: 4px; color: var(--muted-color); font-size: 12px;">
           SSH连接配置和密码存储在此目录中
         </div>
@@ -78,37 +76,44 @@
   </a-modal>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
-import { ReloadOutlined } from '@ant-design/icons-vue'
+import { ReloadOutlined } from '@antdv-next/icons'
 import { invoke } from '@tauri-apps/api/core'
-import { message } from 'ant-design-vue'
+import { message } from 'antdv-next'
+import type { SelectOption, TerminalConfig, ThemeName } from '../types/app'
 
-const props = defineProps({
-  visible: {
-    type: Boolean,
-    default: false
-  },
-  terminalConfig: {
-    type: Object,
-    default: () => ({
-      fontSize: 14,
-      fontFamily: 'Consolas, monospace',
-      cursorBlink: true,
-      cursorStyle: 'block'
-    })
-  },
-  theme: {
-    type: String,
-    default: 'dark'
-  }
+const props = withDefaults(defineProps<{
+  visible?: boolean
+  terminalConfig?: TerminalConfig
+  theme?: ThemeName
+}>(), {
+  visible: false,
+  terminalConfig: () => ({
+    fontSize: 14,
+    fontFamily: 'Consolas, monospace',
+    cursorBlink: true,
+    cursorStyle: 'block'
+  }),
+  theme: 'dark'
 })
 
 const emit = defineEmits(['update:visible', 'saveConfig', 'changeTheme'])
 
-const config = ref({ ...props.terminalConfig })
-const currentTheme = ref(props.theme)
+const config = ref<TerminalConfig>({ ...props.terminalConfig })
+const currentTheme = ref<ThemeName>(props.theme)
 const profilesDir = ref('')
+const fontFamilyOptions: SelectOption[] = [
+  { label: 'Consolas', value: 'Consolas' },
+  { label: 'Monaco', value: 'Monaco' },
+  { label: 'Menlo', value: 'Menlo' },
+  { label: 'Courier New', value: 'Courier New' },
+]
+const cursorStyleOptions: SelectOption[] = [
+  { label: '块状', value: 'block' },
+  { label: '下划线', value: 'underline' },
+  { label: '竖线', value: 'bar' },
+]
 
 // 监听 props 变化，创建本地副本
 watch(() => props.terminalConfig, (newConfig) => {
@@ -134,7 +139,7 @@ function handleCancel() {
 }
 
 // 主题变化
-function handleThemeChange(value) {
+function handleThemeChange(value: ThemeName) {
   currentTheme.value = value
   emit('changeTheme', value)
 }
@@ -142,7 +147,7 @@ function handleThemeChange(value) {
 // 获取配置文件目录
 async function getProfilesDirectory() {
   try {
-    const dir = await invoke('get_profiles_dir')
+    const dir = await invoke<string>('get_profiles_dir')
     profilesDir.value = dir
   } catch (error) {
     console.error('获取配置目录失败:', error)

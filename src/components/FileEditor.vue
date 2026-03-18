@@ -48,15 +48,29 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
-import { message } from 'ant-design-vue'
+import { message } from 'antdv-next'
 import { invoke } from '@tauri-apps/api/core'
-import * as monaco from 'monaco-editor'
+import type { PropType } from 'vue'
+import type * as Monaco from 'monaco-editor'
+import type { DownloadRequest, SftpFileEntry, ThemeName } from '../types/app'
+
+type MonacoModule = typeof import('monaco-editor')
+
+let monacoModulePromise: Promise<MonacoModule> | null = null
+
+async function getMonaco(): Promise<MonacoModule> {
+  if (!monacoModulePromise) {
+    monacoModulePromise = import('monaco-editor')
+  }
+
+  return monacoModulePromise
+}
 
 const props = defineProps({
   fileInfo: {
-    type: Object,
+    type: Object as PropType<SftpFileEntry>,
     required: true
   },
   active: {
@@ -68,7 +82,7 @@ const props = defineProps({
     default: null
   },
   theme: {
-    type: String,
+    type: String as PropType<ThemeName>,
     default: 'light'
   }
 })
@@ -76,9 +90,9 @@ const props = defineProps({
 const emit = defineEmits(['startDownload'])
 
 // 状态管理
-const monacoEditor = ref(null)
-const editorContainer = ref(null)
-let editor = null
+const monacoEditor = ref<HTMLDivElement | null>(null)
+const editorContainer = ref<HTMLDivElement | null>(null)
+let editor: Monaco.editor.IStandaloneCodeEditor | null = null
 const fileContent = ref('')
 const originalContent = ref('')
 const readOnly = ref(false)
@@ -88,7 +102,7 @@ const saving = ref(false)
 const downloading = ref(false)
 
 // 根据文件扩展名获取语言
-function getLanguageFromFilename(filename) {
+function getLanguageFromFilename(filename: string) {
   const ext = filename.split('.').pop()?.toLowerCase()
   const languageMap = {
     'js': 'javascript',
@@ -132,9 +146,10 @@ function getLanguageFromFilename(filename) {
 }
 
 // 初始化编辑器
-function initMonacoEditor() {
+async function initMonacoEditor() {
   if (!monacoEditor.value || editor) return
   
+  const monaco = await getMonaco()
   const language = getLanguageFromFilename(props.fileInfo.name)
   
   editor = monaco.editor.create(monacoEditor.value, {
@@ -174,7 +189,7 @@ async function loadFileContent() {
   
   loading.value = true
   try {
-    const content = await invoke('read_sftp_file', { 
+    const content = await invoke<string>('read_sftp_file', { 
       connectionId: props.connectionId,
       path: props.fileInfo.path 
     })
@@ -187,7 +202,7 @@ async function loadFileContent() {
       editor.setValue(content)
       hasUnsavedChanges.value = false
     } else {
-      initMonacoEditor()
+      await initMonacoEditor()
     }
   } catch (error) {
     console.error('加载文件失败:', error)
@@ -252,7 +267,7 @@ async function downloadFile() {
   downloading.value = true
   try {
     // 选择下载位置
-    const savePath = await invoke('select_download_location', {
+    const savePath = await invoke<string | null>('select_download_location', {
       fileName: props.fileInfo.name
     })
     
@@ -267,7 +282,7 @@ async function downloadFile() {
       remotePath: props.fileInfo.path,
       savePath: savePath,
       connectionId: props.connectionId
-    })
+    } satisfies DownloadRequest)
     
     message.info(`正在下载到: ${savePath}`)
   } catch (error) {
@@ -279,7 +294,7 @@ async function downloadFile() {
 }
 
 // 格式化文件大小
-function formatFileSize(bytes) {
+function formatFileSize(bytes?: number) {
   if (!bytes || bytes === 0) return '-'
   const sizes = ['B', 'KB', 'MB', 'GB']
   const i = Math.floor(Math.log(bytes) / Math.log(1024))
@@ -295,9 +310,11 @@ watch(() => readOnly.value, (newValue) => {
 
 // 监听主题变化
 watch(() => props.theme, (newTheme) => {
-  if (editor) {
+  if (!editor) return
+
+  void getMonaco().then((monaco) => {
     monaco.editor.setTheme(newTheme === 'dark' ? 'vs-dark' : 'vs')
-  }
+  })
 })
 
 // 监听active状态变化

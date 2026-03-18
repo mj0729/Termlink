@@ -1,16 +1,22 @@
+import type { TerminalConfig, TerminalCursorStyle, ThemeConfig, ThemeName } from '../types/app'
+
 /**
  * 主题服务 - 处理主题相关功能
  */
 class ThemeService {
+  private theme: ThemeName
+  private terminalConfig: TerminalConfig
+  private themes: Record<ThemeName, ThemeConfig>
+
   constructor() {
     // 初始化主题
-    this.theme = localStorage.getItem('termlink_theme') || 'dark';
+    this.theme = (localStorage.getItem('termlink_theme') as ThemeName) || 'light'
     this.terminalConfig = {
       fontSize: parseInt(localStorage.getItem('termlink_fontSize') || '14'),
-      fontFamily: localStorage.getItem('termlink_fontFamily') || 'Consolas, monospace',
+      fontFamily: localStorage.getItem('termlink_fontFamily') || 'SFMono-Regular, Menlo, Monaco, Consolas, monospace',
       cursorBlink: localStorage.getItem('termlink_cursorBlink') !== 'false',
-      cursorStyle: localStorage.getItem('termlink_cursorStyle') || 'block'
-    };
+      cursorStyle: (localStorage.getItem('termlink_cursorStyle') as TerminalCursorStyle | null) || 'block'
+    }
     
     // 主题配置
     this.themes = {
@@ -57,27 +63,27 @@ class ThemeService {
         brightMagenta: '#bc05bc',
         brightCyan: '#0598bc',
         brightWhite: '#000000'
-      }
-    };
+      },
+    }
     
     // 应用初始主题
-    this.applyTheme(this.theme);
+    this.applyTheme(this.theme)
   }
   
   /**
    * 获取当前主题
    * @returns {string} 主题名称
    */
-  getTheme() {
-    return this.theme;
+  getTheme(): ThemeName {
+    return this.theme
   }
   
   /**
    * 获取终端配置
    * @returns {Object} 终端配置
    */
-  getTerminalConfig() {
-    return { ...this.terminalConfig };
+  getTerminalConfig(): TerminalConfig {
+    return { ...this.terminalConfig }
   }
   
   /**
@@ -85,51 +91,51 @@ class ThemeService {
    * @param {string} themeName 主题名称
    * @returns {Object} 主题配置
    */
-  getThemeConfig(themeName) {
-    return this.themes[themeName || this.theme];
+  getThemeConfig(themeName?: ThemeName): ThemeConfig {
+    return this.themes[themeName || this.theme]
   }
   
   /**
    * 切换主题
    * @param {string} themeName 主题名称
    */
-  toggleTheme(themeName) {
-    this.theme = themeName;
-    this.applyTheme(themeName);
-    return themeName;
+  toggleTheme(themeName: ThemeName): ThemeName {
+    this.theme = themeName
+    this.applyTheme(themeName)
+    return themeName
   }
   
   /**
    * 应用主题
    * @param {string} themeName 主题名称
    */
-  applyTheme(themeName) {
+  applyTheme(themeName: ThemeName): void {
     // 设置 body 主题属性
-    document.body.setAttribute('data-theme', themeName);
-    localStorage.setItem('termlink_theme', themeName);
+    document.body.setAttribute('data-theme', themeName)
+    localStorage.setItem('termlink_theme', themeName)
     
     // 强制更新 Ant Design 主题
-    const isDark = themeName === 'dark';
-    document.body.classList.toggle('ant-dark', isDark);
-    document.body.classList.toggle('ant-light', !isDark);
+    const isDark = themeName === 'dark'
+    document.body.classList.toggle('ant-dark', isDark)
+    document.body.classList.toggle('ant-light', !isDark)
   }
   
   /**
    * 更新终端配置
    * @param {Object} config 终端配置
    */
-  updateTerminalConfig(config) {
-    this.terminalConfig = { ...this.terminalConfig, ...config };
+  updateTerminalConfig(config: Partial<TerminalConfig>): TerminalConfig {
+    this.terminalConfig = { ...this.terminalConfig, ...config }
     
     // 保存到本地存储
-    localStorage.setItem('termlink_fontSize', this.terminalConfig.fontSize);
-    localStorage.setItem('termlink_fontFamily', this.terminalConfig.fontFamily);
-    localStorage.setItem('termlink_cursorBlink', this.terminalConfig.cursorBlink);
-    localStorage.setItem('termlink_cursorStyle', this.terminalConfig.cursorStyle);
+    localStorage.setItem('termlink_fontSize', String(this.terminalConfig.fontSize))
+    localStorage.setItem('termlink_fontFamily', this.terminalConfig.fontFamily)
+    localStorage.setItem('termlink_cursorBlink', String(this.terminalConfig.cursorBlink))
+    localStorage.setItem('termlink_cursorStyle', this.terminalConfig.cursorStyle)
     
-    return { ...this.terminalConfig };
+    return { ...this.terminalConfig }
   }
 }
 
 // 导出单例
-export default new ThemeService();
+export default new ThemeService()

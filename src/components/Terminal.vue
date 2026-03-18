@@ -1,6 +1,8 @@
 <template>
-  <div class="terminal-area">
-    <div ref="container" class="terminal-container" />
+  <div class="terminal-area" :class="[`terminal-area--${theme}`, { 'is-active': active }]">
+    <div class="terminal-frame">
+      <div ref="container" class="terminal-container" />
+    </div>
     <!-- 滚动指示器 -->
     <div v-if="hasScrollContent" class="scroll-indicator">
       <span>↑ 向上滚动查看更多内容</span>
@@ -8,63 +10,54 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { message } from 'ant-design-vue'
+import { message } from 'antdv-next'
 import '@xterm/xterm/css/xterm.css'
 import SshService from '../services/SshService'
+import type { ITheme, Terminal as XTermTerminal } from '@xterm/xterm'
+import type { FitAddon as XTermFitAddon } from '@xterm/addon-fit'
+import type { TerminalConfig, ThemeName } from '../types/app'
 
-const props = defineProps({
-  id: {
-    type: String,
-    required: true
-  },
-  active: {
-    type: Boolean,
-    default: false
-  },
-  theme: {
-    type: String,
-    default: 'dark'
-  },
-  config: {
-    type: Object,
-    default: () => ({
-      fontSize: 14,
-      fontFamily: 'Consolas, monospace',
-      cursorBlink: true,
-      cursorStyle: 'block'
-    })
-  },
-  autoPassword: {
-    type: String,
-    default: ''
-  },
-  type: {
-    type: String,
-    default: 'local' // 'local' or 'ssh'
-  }
+const props = withDefaults(defineProps<{
+  id: string
+  active?: boolean
+  theme?: ThemeName
+  config?: TerminalConfig
+  autoPassword?: string
+  type?: string
+}>(), {
+  active: false,
+  theme: 'dark',
+  config: () => ({
+    fontSize: 14,
+    fontFamily: 'Consolas, monospace',
+    cursorBlink: true,
+    cursorStyle: 'block'
+  }),
+  autoPassword: '',
+  type: 'local'
 })
 
 const emit = defineEmits(['close', 'reconnect'])
 
-const container = ref(null)
-const terminal = ref(null)
-const fitAddon = ref(null)
+const container = ref<HTMLElement | null>(null)
+const terminal = ref<XTermTerminal | null>(null)
+const fitAddon = ref<XTermFitAddon | null>(null)
 const hasScrollContent = computed(() => {
   if (!terminal.value) return false
   return terminal.value.buffer.active.viewportY > 0
 })
 
 // 主题配置
-const themes = {
+const themes: Record<ThemeName, ITheme> = {
   dark: {
     background: '#0b0e14',
     foreground: '#ffffff',
     cursor: '#ffffff',
-    selection: '#264f78',
+    selectionBackground: '#264f78',
     selectionForeground: '#ffffff',
     black: '#000000',
     red: '#e06c75',
@@ -87,7 +80,7 @@ const themes = {
     background: '#ffffff',
     foreground: '#000000',
     cursor: '#000000',
-    selection: '#0078d4',
+    selectionBackground: '#0078d4',
     selectionForeground: '#ffffff',
     black: '#000000',
     red: '#cd3131',
@@ -112,6 +105,14 @@ const themes = {
 async function createTerminal() {
   const { Terminal } = await import('@xterm/xterm')
   const { FitAddon } = await import('@xterm/addon-fit')
+
+  // 强制清空挂载点，避免热更新或重建时残留旧的 DOM 节点
+  if (container.value) {
+    container.value.innerHTML = ''
+  }
+  if (!container.value) {
+    return
+  }
   
   const term = new Terminal({
     convertEol: true,
@@ -129,7 +130,6 @@ async function createTerminal() {
     fastScrollModifier: 'alt',
     fastScrollSensitivity: 5,
     scrollOnUserInput: false,
-    scrollOnOutput: false,
     rightClickSelectsWord: false, // 禁用右键选择单词，允许右键菜单
     wordSeparator: ' ()[]{}\',"`',
     disableStdin: false,  // 允许用户输入
@@ -166,7 +166,7 @@ async function createTerminal() {
                       content.includes('No route to host') ||
                       content.includes('Connection closed'))) {
         // 触发重连事件
-        terminal.value.writeln('\r\n正在尝试重连...')
+        terminal.value?.writeln('\r\n正在尝试重连...')
         emit('reconnect')
       }
     }
@@ -221,8 +221,9 @@ async function bindSession() {
     })
     
     const offErrorP = listen(`ssh_error`, e => {
-      if (e.payload.startsWith(`${props.id}: `)) {
-        const errorMsg = e.payload.substring(props.id.length + 2)
+      const payload = String(e.payload || '')
+      if (payload.startsWith(`${props.id}: `)) {
+        const errorMsg = payload.substring(props.id.length + 2)
         if (terminal.value) {
           terminal.value.writeln(`\r\n\x1b[31m${errorMsg}\x1b[0m`)
         }
@@ -275,10 +276,10 @@ async function bindSession() {
 
 // 应用主题
 function applyTheme() {
-  if (terminal.value && typeof terminal.value.setOption === 'function') {
+  if (terminal.value) {
     const theme = themes[props.theme]
     console.log('Applying theme:', props.theme, theme)
-    terminal.value.setOption('theme', theme)
+    terminal.value.options.theme = theme
     
     // 强制刷新终端显示
     setTimeout(() => {
@@ -291,11 +292,11 @@ function applyTheme() {
 
 // 应用配置
 function applyConfig() {
-  if (terminal.value && typeof terminal.value.setOption === 'function') {
-    terminal.value.setOption('fontSize', props.config.fontSize)
-    terminal.value.setOption('fontFamily', props.config.fontFamily)
-    terminal.value.setOption('cursorBlink', props.config.cursorBlink)
-    terminal.value.setOption('cursorStyle', props.config.cursorStyle)
+  if (terminal.value) {
+    terminal.value.options.fontSize = props.config.fontSize
+    terminal.value.options.fontFamily = props.config.fontFamily
+    terminal.value.options.cursorBlink = props.config.cursorBlink
+    terminal.value.options.cursorStyle = props.config.cursorStyle
   }
 }
 
@@ -307,7 +308,7 @@ function applySize() {
 }
 
 // 显示右键菜单
-function showContextMenu(event, term) {
+function showContextMenu(event: MouseEvent, term: XTermTerminal) {
   const selection = term.getSelection()
   const hasSelection = selection && selection.length > 0
   
@@ -493,6 +494,10 @@ onBeforeUnmount(async () => {
   if (terminal.value) {
     terminal.value.dispose()
   }
+
+  if (container.value) {
+    container.value.innerHTML = ''
+  }
   
   // 移除事件监听
   window.removeEventListener('resize', applySize)
@@ -505,28 +510,42 @@ onBeforeUnmount(async () => {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background-color: var(--terminal-bg);
+  padding: 22px 24px 24px;
+  background:
+    radial-gradient(circle at top left, rgba(45, 125, 255, 0.08), transparent 22%),
+    linear-gradient(180deg, transparent, rgba(45, 125, 255, 0.02)),
+    var(--workspace-terminal-bg);
+}
+
+.terminal-frame {
+  height: 100%;
+  border-radius: 24px;
+  overflow: hidden;
+  background: var(--terminal-shell-bg);
+  border: 1px solid var(--terminal-shell-border);
+  box-shadow: 0 20px 44px rgba(31, 53, 92, 0.1);
 }
 
 .terminal-container {
   width: 100%;
   height: 100%;
-  padding: 2px;
+  padding: 18px 20px 20px;
 }
 
 .scroll-indicator {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  background-color: rgba(0, 0, 0, 0.7);
-  color: white;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(20, 32, 52, 0.78);
+  color: #fff;
   text-align: center;
-  padding: 4px;
+  padding: 8px 14px;
+  border-radius: 999px;
   font-size: 12px;
   z-index: 10;
-  opacity: 0.7;
-  transition: opacity 0.3s;
+  opacity: 0.85;
+  transition: opacity 0.3s ease;
 }
 
 .scroll-indicator:hover {

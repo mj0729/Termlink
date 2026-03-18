@@ -1,700 +1,361 @@
-/* 全局样式 */
+@import "tailwindcss";
+
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  overflow: hidden;
-}
-
-/* 基础主题变量 */
 :root {
-  --bg-color: #1a1a1a;
-  --text-color: #ffffff;
-  --border-color: #333333;
-  --menu-bg: #2d2d2d;
-  --tabs-bg: #2d2d2d;
-  --panel-bg: #2d2d2d;
-  --panel-header-bg: #3a3a3a;
-  --terminal-bg: #0b0e14;
-  --status-bg: #2d2d2d;
-  --muted-color: #888888;
-  --hover-bg: #404040;
-  --toolbar-bg: #3a3a3a;
-  --primary-color: #1890ff;
-  --success-color: #52c41a;
-  --warning-color: #faad14;
-  --error-color: #ff4d4f;
+  --bg-color: #eaf1fb;
+  --surface-0: #eef4fc;
+  --surface-1: rgba(255, 255, 255, 0.92);
+  --surface-2: #f3f7fd;
+  --surface-3: #e7eef8;
+  --chrome-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(245, 249, 255, 0.72));
+  --panel-bg: #f7faff;
+  --panel-header-bg: #eef4fb;
+  --menu-bg: #f7faff;
+  --tabs-bg: #f4f8fd;
+  --toolbar-bg: #edf3fb;
+  --status-bg: #f4f8fd;
+  --terminal-bg: #f8fbff;
+  --text-color: #192435;
+  --muted-color: #6f7f95;
+  --border-color: #d5e0ef;
+  --border-subtle: #e5ecf6;
+  --strong-border: #bfd0e7;
+  --hover-bg: #eaf2fd;
+  --primary-color: #2d7dff;
+  --primary-soft: rgba(45, 125, 255, 0.12);
+  --primary-ring: rgba(45, 125, 255, 0.22);
+  --success-color: #4aa96b;
+  --warning-color: #efad3d;
+  --error-color: #ea5f61;
+  --shadow-soft: 0 28px 70px rgba(53, 84, 132, 0.16);
+  --shadow-card: 0 12px 30px rgba(41, 71, 116, 0.12);
+  --workspace-frame-bg: rgba(255, 255, 255, 0.76);
+  --workspace-frame-border: rgba(214, 225, 239, 0.95);
+  --workspace-center-bg: linear-gradient(180deg, rgba(250, 252, 255, 0.96), rgba(243, 247, 252, 0.92));
+  --workspace-terminal-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(247, 250, 255, 0.98));
+  --workspace-empty-bg: linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(241, 246, 255, 0.9));
+  --workspace-empty-border: #cfe0f3;
+  --topbar-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 254, 0.88));
+  --tabs-strip-bg: linear-gradient(180deg, rgba(251, 252, 255, 0.96), rgba(244, 247, 252, 0.92));
+  --status-strip-bg: linear-gradient(180deg, rgba(250, 252, 255, 0.94), rgba(246, 249, 255, 0.9));
+  --monitor-card-bg: linear-gradient(180deg, rgba(246, 250, 255, 0.95), rgba(238, 245, 255, 0.94));
+  --monitor-card-strong: linear-gradient(180deg, rgba(236, 244, 255, 0.98), rgba(227, 238, 255, 0.92));
+  --monitor-rail-bg: linear-gradient(180deg, rgba(244, 248, 255, 0.96), rgba(234, 241, 252, 0.94));
+  --terminal-shell-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 255, 0.98));
+  --terminal-shell-border: rgba(214, 225, 239, 0.95);
+  --terminal-toolbar-bg: rgba(241, 246, 253, 0.96);
 }
 
-/* 深色主题 */
-body[data-theme="dark"] {
-  --bg-color: #1a1a1a;
-  --text-color: #ffffff;
-  --border-color: #333333;
-  --menu-bg: #2d2d2d;
-  --tabs-bg: #2d2d2d;
-  --panel-bg: #2d2d2d;
-  --panel-header-bg: #3a3a3a;
-  --terminal-bg: #0b0e14;
-  --status-bg: #2d2d2d;
-  --muted-color: #888888;
-  --hover-bg: #404040;
-  --toolbar-bg: #3a3a3a;
-  --primary-color: #1890ff;
-  --success-color: #52c41a;
-  --warning-color: #faad14;
-  --error-color: #ff4d4f;
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
 }
 
-/* 浅色主题 */
-body[data-theme="light"] {
-  --bg-color: #ffffff;
-  --text-color: #000000;
-  --border-color: #d9d9d9;
-  --menu-bg: #f5f5f5;
-  --tabs-bg: #f5f5f5;
-  --panel-bg: #fafafa;
-  --panel-header-bg: #f0f0f0;
-  --terminal-bg: #ffffff;
-  --status-bg: #f5f5f5;
-  --muted-color: #666666;
-  --hover-bg: #e6f7ff;
-  --toolbar-bg: #f0f0f0;
-  --primary-color: #1890ff;
-  --success-color: #52c41a;
-  --warning-color: #faad14;
-  --error-color: #ff4d4f;
-}
-
-/* 应用主题到 body */
 body {
   background: var(--bg-color);
   color: var(--text-color);
-  transition: all 0.3s ease;
+  font-family: "SF Pro Display", "PingFang SC", "Segoe UI Variable", "Microsoft YaHei", sans-serif;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition:
+    background-color 0.25s ease,
+    color 0.25s ease;
+}
+
+body[data-theme="light"] {
+  color-scheme: light;
+}
+
+body[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-color: #0b1220;
+  --surface-0: #101a2b;
+  --surface-1: rgba(18, 27, 41, 0.92);
+  --surface-2: #151f31;
+  --surface-3: #1b2840;
+  --chrome-bg: linear-gradient(180deg, rgba(13, 20, 34, 0.9), rgba(16, 25, 42, 0.84));
+  --panel-bg: #0f1828;
+  --panel-header-bg: #131e31;
+  --menu-bg: #101b2c;
+  --tabs-bg: #101a2a;
+  --toolbar-bg: #142133;
+  --status-bg: #101b2c;
+  --terminal-bg: #08101c;
+  --text-color: #e7eefb;
+  --muted-color: #94a4bb;
+  --border-color: #24344d;
+  --border-subtle: #1c2739;
+  --strong-border: #355178;
+  --hover-bg: #1b2940;
+  --primary-color: #71a7ff;
+  --primary-soft: rgba(113, 167, 255, 0.16);
+  --primary-ring: rgba(113, 167, 255, 0.24);
+  --success-color: #55c27a;
+  --warning-color: #f0b14f;
+  --error-color: #ff7b7d;
+  --shadow-soft: 0 28px 80px rgba(0, 0, 0, 0.4);
+  --shadow-card: 0 14px 34px rgba(0, 0, 0, 0.28);
+  --workspace-frame-bg: rgba(12, 19, 31, 0.84);
+  --workspace-frame-border: rgba(38, 55, 80, 0.95);
+  --workspace-center-bg: linear-gradient(180deg, rgba(14, 22, 35, 0.96), rgba(11, 18, 29, 0.94));
+  --workspace-terminal-bg: linear-gradient(180deg, rgba(10, 18, 30, 0.97), rgba(8, 14, 24, 0.98));
+  --workspace-empty-bg: linear-gradient(145deg, rgba(14, 23, 37, 0.94), rgba(12, 19, 31, 0.92));
+  --workspace-empty-border: #2a3d5c;
+  --topbar-bg: linear-gradient(180deg, rgba(14, 22, 35, 0.92), rgba(16, 24, 38, 0.88));
+  --tabs-strip-bg: linear-gradient(180deg, rgba(15, 24, 39, 0.96), rgba(14, 22, 35, 0.94));
+  --status-strip-bg: linear-gradient(180deg, rgba(13, 20, 32, 0.92), rgba(12, 19, 30, 0.9));
+  --monitor-card-bg: linear-gradient(180deg, rgba(17, 28, 44, 0.96), rgba(14, 23, 36, 0.94));
+  --monitor-card-strong: linear-gradient(180deg, rgba(20, 33, 51, 0.98), rgba(16, 27, 42, 0.94));
+  --monitor-rail-bg: linear-gradient(180deg, rgba(15, 24, 39, 0.96), rgba(12, 20, 33, 0.94));
+  --terminal-shell-bg: linear-gradient(180deg, rgba(12, 20, 33, 0.97), rgba(8, 14, 24, 0.98));
+  --terminal-shell-border: rgba(37, 53, 77, 0.96);
+  --terminal-toolbar-bg: rgba(19, 30, 47, 0.96);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+::selection {
+  background: var(--primary-ring);
+  color: var(--text-color);
 }
 
-/* Ant Design 主题覆盖 */
-.ant-menu {
-  background: var(--menu-bg) !important;
-  border-bottom-color: var(--border-color) !important;
-}
-
-.ant-menu-dark {
-  background: var(--menu-bg) !important;
-}
-
-.ant-menu-dark .ant-menu-submenu-title {
-  color: var(--text-color) !important;
-}
-
-.ant-menu-dark .ant-menu-item {
-  color: var(--text-color) !important;
-}
-
-.ant-menu-dark .ant-menu-item:hover {
-  background: var(--hover-bg) !important;
-}
-
-.ant-menu-dark .ant-menu-submenu-popup {
-  background: var(--menu-bg) !important;
-}
-
-.ant-tabs {
-  background: var(--tabs-bg) !important;
-  color: var(--text-color) !important;
-}
-
-.ant-tabs-nav {
-  margin: 0 !important;
-  background: var(--tabs-bg) !important;
-}
-
-.ant-tabs-tab {
-  background: var(--tabs-bg) !important;
-  border-color: var(--border-color) !important;
-  color: var(--text-color) !important;
-}
-
-.ant-tabs-tab-active {
-  background: var(--bg-color) !important;
-  border-color: var(--primary-color) !important;
-}
-
-.ant-tabs-tab-active .ant-tabs-tab-btn {
-  color: var(--primary-color) !important;
-}
-
-.ant-tabs-tab:hover {
-  background: var(--hover-bg) !important;
-}
-
-.ant-tabs-content-holder {
-  background: var(--bg-color) !important;
-}
-
-.ant-modal-content {
-  background: var(--bg-color) !important;
-  color: var(--text-color) !important;
-}
-
-.ant-modal-header {
-  background: var(--bg-color) !important;
-  border-bottom-color: var(--border-color) !important;
-}
-
-.ant-modal-title {
-  color: var(--text-color) !important;
-}
-
-.ant-input {
-  background: var(--bg-color) !important;
-  border-color: var(--border-color) !important;
-  color: var(--text-color) !important;
-}
-
-.ant-input:focus {
-  border-color: var(--primary-color) !important;
-}
-
-.ant-select-selector {
-  background: var(--bg-color) !important;
-  border-color: var(--border-color) !important;
-}
-
-.ant-select-selection-item {
-  color: var(--text-color) !important;
-}
-
-.ant-list-item {
-  border-color: var(--border-color) !important;
-}
-
-.ant-list-item-meta-title {
-  color: var(--text-color) !important;
-}
-
-.ant-list-item-meta-description {
-  color: var(--muted-color) !important;
-}
-
-.ant-button {
-  border-color: var(--border-color) !important;
-}
-
-.ant-button-primary {
-  background: var(--primary-color) !important;
-  border-color: var(--primary-color) !important;
-}
-
-.ant-button-primary:hover {
-  background: var(--primary-color) !important;
-  opacity: 0.8;
-}
-
-.ant-button-primary.ant-btn-ghost {
-  color: var(--primary-color) !important;
-  border-color: var(--primary-color) !important;
-}
-
-/* 深色模式下的额外样式覆盖 */
-body[data-theme="dark"] .ant-select-dropdown {
-  background: var(--panel-bg) !important;
-  border-color: var(--border-color) !important;
-}
-
-body[data-theme="dark"] .ant-select-item {
-  color: var(--text-color) !important;
-}
-
-body[data-theme="dark"] .ant-select-item:hover {
-  background: var(--hover-bg) !important;
-}
-
-body[data-theme="dark"] .ant-select-item-option-selected {
-  background: var(--primary-color) !important;
-  color: white !important;
-}
-
-body[data-theme="dark"] .ant-dropdown {
-  background: var(--panel-bg) !important;
-  border-color: var(--border-color) !important;
-}
-
-body[data-theme="dark"] .ant-dropdown-menu {
-  background: var(--panel-bg) !important;
-  border-color: var(--border-color) !important;
-}
-
-body[data-theme="dark"] .ant-dropdown-menu-item {
-  color: var(--text-color) !important;
-}
-
-body[data-theme="dark"] .ant-dropdown-menu-item:hover {
-  background: var(--hover-bg) !important;
-}
-
-body[data-theme="dark"] .ant-tooltip-inner {
-  background: var(--panel-bg) !important;
-  color: var(--text-color) !important;
-}
-
-body[data-theme="dark"] .ant-tooltip-arrow::before {
-  background: var(--panel-bg) !important;
-}
-
-body[data-theme="dark"] .ant-popover-inner {
-  background: var(--panel-bg) !important;
-  border-color: var(--border-color) !important;
-}
-
-body[data-theme="dark"] .ant-popover-inner-content {
-  color: var(--text-color) !important;
-}
-
-body[data-theme="dark"] .ant-popover-arrow::before {
-  background: var(--panel-bg) !important;
-}
-
-body[data-theme="dark"] .ant-message-notice-content {
-  background: var(--panel-bg) !important;
-  color: var(--text-color) !important;
-  border-color: var(--border-color) !important;
-}
-
-body[data-theme="dark"] .ant-notification-notice {
-  background: var(--panel-bg) !important;
-  color: var(--text-color) !important;
-  border-color: var(--border-color) !important;
-}
-
-body[data-theme="dark"] .ant-spin-dot-item {
-  background-color: var(--primary-color) !important;
-}
-
-body[data-theme="dark"] .ant-progress-text {
-  color: var(--text-color) !important;
-}
-
-body[data-theme="dark"] .ant-tag {
-  background: var(--hover-bg) !important;
-  color: var(--text-color) !important;
-  border-color: var(--border-color) !important;
-}
-
-body[data-theme="dark"] .ant-tag-blue {
-  background: var(--primary-color) !important;
-  color: white !important;
-}
-
-body[data-theme="dark"] .ant-empty-description {
-  color: var(--muted-color) !important;
-}
-
-body[data-theme="dark"] .ant-breadcrumb {
-  color: var(--text-color) !important;
-}
-
-body[data-theme="dark"] .ant-breadcrumb-link {
-  color: var(--primary-color) !important;
-}
-
-body[data-theme="dark"] .ant-breadcrumb-separator {
-  color: var(--muted-color) !important;
-}
-
-/* 搜索框样式 */
-body[data-theme="dark"] .ant-input-search {
-  background: var(--panel-bg) !important;
-  border-color: var(--border-color) !important;
-}
-
-body[data-theme="dark"] .ant-input-search .ant-input {
-  background: var(--panel-bg) !important;
-  border-color: var(--border-color) !important;
-  color: var(--text-color) !important;
-}
-
-body[data-theme="dark"] .ant-input-search .ant-input::placeholder {
-  color: var(--muted-color) !important;
-}
-
-body[data-theme="dark"] .ant-input-search .ant-input-search-button {
-  background: var(--panel-bg) !important;
-  border-color: var(--border-color) !important;
-  color: var(--text-color) !important;
-}
-
-body[data-theme="dark"] .ant-input-search .ant-input-search-button:hover {
-  background: var(--hover-bg) !important;
-  border-color: var(--primary-color) !important;
-}
-
-/* 修复搜索框组合器的白色背景 */
-body[data-theme="dark"] .ant-input-group {
-  background: transparent !important;
-}
-
-body[data-theme="dark"] .ant-input-group .ant-input {
-  background: var(--panel-bg) !important;
-  border-color: var(--border-color) !important;
-  color: var(--text-color) !important;
-}
-
-body[data-theme="dark"] .ant-input-group .ant-input:focus {
-  border-color: var(--primary-color) !important;
-  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2) !important;
-}
-
-/* 修复搜索框附近的span和文本颜色 */
-body[data-theme="dark"] .ant-input-search .ant-input-search-button .anticon {
-  color: var(--text-color) !important;
-}
-
-body[data-theme="dark"] .ant-input-search .ant-input-search-button span {
-  color: var(--text-color) !important;
-}
-
-body[data-theme="dark"] .ant-input-group-addon {
-  background: var(--panel-bg) !important;
-  border-color: var(--border-color) !important;
-  color: var(--text-color) !important;
-}
-
-/* 修复搜索框清除图标颜色 */
-body[data-theme="dark"] .ant-input-affix-wrapper {
-  background: var(--panel-bg) !important;
-  border-color: var(--border-color) !important;
-}
-
-body[data-theme="dark"] .ant-input-affix-wrapper .ant-input {
-  background: var(--panel-bg) !important;
-  border-color: var(--border-color) !important;
-  color: var(--text-color) !important;
-}
-
-body[data-theme="dark"] .ant-input-affix-wrapper .ant-input::placeholder {
-  color: var(--muted-color) !important;
-}
-
-body[data-theme="dark"] .ant-input-suffix .anticon {
-  color: var(--muted-color) !important;
-}
-
-body[data-theme="dark"] .ant-input-clear-icon .anticon {
-  color: var(--muted-color) !important;
-}
-
-body[data-theme="dark"] .ant-input-clear-icon:hover .anticon {
-  color: var(--text-color) !important;
-}
-
-/* 修复文件管理器按钮图标颜色 */
-body[data-theme="dark"] .ant-btn .anticon {
-  color: var(--text-color) !important;
-}
-
-body[data-theme="dark"] .ant-btn:hover .anticon {
-  color: var(--primary-color) !important;
-}
-
-body[data-theme="dark"] .ant-btn:disabled .anticon {
-  color: var(--muted-color) !important;
-}
-
-body[data-theme="dark"] .ant-btn-group .ant-btn .anticon {
-  color: var(--text-color) !important;
-}
-
-body[data-theme="dark"] .ant-btn-group .ant-btn:hover .anticon {
-  color: var(--primary-color) !important;
-}
-
-body[data-theme="dark"] .ant-btn-group .ant-btn:disabled .anticon {
-  color: var(--muted-color) !important;
-}
-
-/* 确保按钮背景和边框正确 */
-body[data-theme="dark"] .ant-btn {
-  background: var(--panel-bg) !important;
-  border-color: var(--border-color) !important;
-  color: var(--text-color) !important;
-}
-
-body[data-theme="dark"] .ant-btn:hover {
-  background: var(--hover-bg) !important;
-  border-color: var(--primary-color) !important;
-  color: var(--text-color) !important;
-}
-
-body[data-theme="dark"] .ant-btn:disabled {
-  background: var(--panel-bg) !important;
-  border-color: var(--border-color) !important;
-  color: var(--muted-color) !important;
-}
-
-/* 滚动条样式 */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--panel-bg);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border-color);
-  border-radius: 4px;
+  background: rgba(129, 147, 176, 0.36);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--muted-color);
+  background: rgba(109, 130, 162, 0.58);
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
-/* 终端容器样式 */
-.terminal-container {
-  background: var(--terminal-bg);
-  min-height: 200px;
+.ant-btn,
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-input-search,
+.ant-select-selector,
+.ant-modal-content,
+.ant-dropdown-menu,
+.ant-popover-inner,
+.ant-message-notice-content,
+.ant-notification-notice {
+  border-radius: 14px !important;
 }
 
-/* 确保 xterm 可见 */
-.xterm {
-  background: var(--terminal-bg) !important;
+.ant-btn {
+  height: 38px;
+  border-color: var(--border-color) !important;
+  background: var(--surface-1) !important;
+  color: var(--text-color) !important;
+  box-shadow: none !important;
+}
+
+.ant-btn:hover {
+  border-color: var(--strong-border) !important;
+  background: var(--hover-bg) !important;
   color: var(--text-color) !important;
 }
 
-.xterm-viewport {
+.ant-btn-primary {
+  background: linear-gradient(135deg, var(--primary-color), #7db7ff) !important;
+  border-color: transparent !important;
+  color: #fff !important;
+}
+
+body[data-theme="dark"] .ant-btn-primary {
+  background: linear-gradient(135deg, #4d8dff, #7eb1ff) !important;
+}
+
+.ant-btn-primary:hover {
+  opacity: 0.94;
+}
+
+.ant-btn-text,
+.ant-btn-link {
   background: transparent !important;
 }
 
-/* 深色模式下的xterm样式 */
-body[data-theme="dark"] .xterm {
-  background: var(--terminal-bg) !important;
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-input-search,
+.ant-select-selector,
+.ant-input-group-addon {
+  background: var(--surface-1) !important;
+  border-color: var(--border-color) !important;
   color: var(--text-color) !important;
 }
 
-body[data-theme="dark"] .xterm .xterm-screen {
-  background: var(--terminal-bg) !important;
+.ant-input::placeholder,
+.ant-input-affix-wrapper input::placeholder {
+  color: var(--muted-color) !important;
+}
+
+.ant-input-affix-wrapper .ant-input {
+  background: transparent !important;
+}
+
+.ant-input-search-button,
+.ant-input-group-addon .ant-btn {
+  background: var(--surface-2) !important;
+  border-color: var(--border-color) !important;
+}
+
+.ant-input-affix-wrapper:focus,
+.ant-input-affix-wrapper-focused,
+.ant-input:focus,
+.ant-input-focused,
+.ant-select-focused .ant-select-selector {
+  border-color: var(--primary-color) !important;
+  box-shadow: 0 0 0 4px var(--primary-soft) !important;
+}
+
+.ant-select-dropdown,
+.ant-dropdown,
+.ant-dropdown-menu,
+.ant-popover-inner,
+.ant-tooltip-inner,
+.ant-picker-dropdown {
+  background: var(--panel-bg) !important;
+  border: 1px solid var(--border-color) !important;
+  color: var(--text-color) !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+.ant-dropdown-menu-item,
+.ant-select-item,
+.ant-dropdown-menu-submenu-title {
+  color: var(--text-color) !important;
+  border-radius: 10px !important;
+}
+
+.ant-dropdown-menu-item:hover,
+.ant-select-item:hover,
+.ant-select-item-option-active,
+.ant-dropdown-menu-submenu-title:hover {
+  background: var(--hover-bg) !important;
+}
+
+.ant-select-item-option-selected {
+  background: var(--primary-soft) !important;
+  color: var(--primary-color) !important;
+}
+
+.ant-modal-content,
+.ant-modal-header,
+.ant-modal-footer,
+.ant-drawer-content,
+.ant-drawer-header,
+.ant-drawer-footer {
+  background: var(--panel-bg) !important;
+  border-color: var(--border-color) !important;
+}
+
+.ant-modal-title,
+.ant-drawer-title,
+.ant-form-item-label > label,
+.ant-empty-description,
+.ant-select-selection-item,
+.ant-radio-wrapper,
+.ant-checkbox-wrapper,
+.ant-tabs-tab-btn {
   color: var(--text-color) !important;
 }
 
-body[data-theme="dark"] .xterm .xterm-rows {
-  background: var(--terminal-bg) !important;
-  color: var(--text-color) !important;
+.ant-form-item-explain,
+.ant-typography-secondary,
+.ant-select-arrow,
+.ant-input-clear-icon,
+.ant-radio-wrapper span:last-child,
+.ant-checkbox-wrapper span:last-child {
+  color: var(--muted-color) !important;
 }
 
-body[data-theme="dark"] .xterm .xterm-cursor-layer {
-  background: var(--terminal-bg) !important;
+.ant-segmented {
+  background: var(--surface-2) !important;
+  border: 1px solid var(--border-color);
+  padding: 4px !important;
 }
 
-body[data-theme="dark"] .xterm .xterm-selection-layer {
-  background: var(--terminal-bg) !important;
+.ant-segmented-item {
+  color: var(--muted-color) !important;
+  border-radius: 12px !important;
 }
 
-body[data-theme="light"] .xterm .xterm-selection-layer {
-  background: var(--terminal-bg) !important;
+.ant-segmented-item-selected {
+  background: var(--surface-1) !important;
+  box-shadow: var(--shadow-card) !important;
 }
 
-/* 修复Terminal文本选择样式 */
-/* 深色模式：深蓝色背景 + 白色文字 */
-body[data-theme="dark"] .xterm .xterm-selection {
-  background: #264f78 !important;
-  color: #ffffff !important;
+.ant-tag {
+  border-radius: 999px;
+  border-color: transparent !important;
+  background: var(--primary-soft) !important;
+  color: var(--primary-color) !important;
 }
 
-body[data-theme="dark"] .xterm .xterm-selection-layer {
-  background: #264f78 !important;
-  color: #ffffff !important;
+.ant-progress-inner {
+  background: rgba(120, 142, 171, 0.12) !important;
 }
 
-/* 浅色模式：深蓝色背景 + 白色文字 */
+.ant-progress-bg {
+  box-shadow: 0 0 18px rgba(45, 125, 255, 0.18);
+}
+
+.ant-empty-image svg {
+  opacity: 0.8;
+}
+
+.ant-spin-dot-item {
+  background-color: var(--primary-color) !important;
+}
+
+.xterm,
+.xterm-viewport,
+.xterm-screen,
+.xterm .xterm-rows {
+  background: transparent !important;
+}
+
+.xterm {
+  color: var(--text-color);
+}
+
+body[data-theme="light"] .xterm .xterm-selection-layer,
 body[data-theme="light"] .xterm .xterm-selection {
-  background: #0078d4 !important;
-  color: #ffffff !important;
+  background: rgba(45, 125, 255, 0.18) !important;
 }
 
-body[data-theme="light"] .xterm .xterm-selection-layer {
-  background: #0078d4 !important;
-  color: #ffffff !important;
-}
-
-/* 全局文本选择样式 - 默认样式（无data-theme时） */
-::selection {
-  background: #0078d4 !important;
-  color: #ffffff !important;
-}
-
-::-moz-selection {
-  background: #0078d4 !important;
-  color: #ffffff !important;
-}
-
-body[data-theme="dark"] ::selection {
-  background: #264f78 !important;
-  color: #ffffff !important;
-}
-
-body[data-theme="dark"] ::-moz-selection {
-  background: #264f78 !important;
-  color: #ffffff !important;
-}
-
-body[data-theme="light"] ::selection {
-  background: #0078d4 !important;
-  color: #ffffff !important;
-}
-
-body[data-theme="light"] ::-moz-selection {
-  background: #0078d4 !important;
-  color: #ffffff !important;
-}
-
-/* xterm特定的选择样式 */
-body[data-theme="dark"] .xterm ::selection {
-  background: #264f78 !important;
-  color: #ffffff !important;
-}
-
-body[data-theme="light"] .xterm ::selection {
-  background: #0078d4 !important;
-  color: #ffffff !important;
-}
-
-/* 强制覆盖xterm的选择样式 */
-body[data-theme="dark"] .xterm .xterm-rows .xterm-row .xterm-selection {
-  background: #264f78 !important;
-  color: #ffffff !important;
-}
-
-body[data-theme="light"] .xterm .xterm-rows .xterm-row .xterm-selection {
-  background: #0078d4 !important;
-  color: #ffffff !important;
-}
-
-/* 额外的选择样式覆盖 */
-body[data-theme="dark"] .xterm .xterm-selection-layer .xterm-selection {
-  background: #264f78 !important;
-  color: #ffffff !important;
-}
-
-body[data-theme="light"] .xterm .xterm-selection-layer .xterm-selection {
-  background: #0078d4 !important;
-  color: #ffffff !important;
-}
-
-/* 覆盖所有可能的选择元素 */
-body[data-theme="dark"] .xterm *[class*="selection"] {
-  background: #264f78 !important;
-  color: #ffffff !important;
-}
-
-body[data-theme="light"] .xterm *[class*="selection"] {
-  background: #0078d4 !important;
-  color: #ffffff !important;
-}
-
-/* 强制设置Terminal文字颜色 - 排除选择状态 */
-body[data-theme="light"] .xterm .xterm-screen {
-  color: #000000 !important;
-}
-
-body[data-theme="light"] .xterm .xterm-rows {
-  color: #000000 !important;
-}
-
-body[data-theme="light"] .xterm .xterm-rows .xterm-row {
-  color: #000000 !important;
-}
-
-body[data-theme="light"] .xterm .xterm-rows .xterm-row span:not(.xterm-selection) {
-  color: #000000 !important;
-}
-
-body[data-theme="dark"] .xterm .xterm-screen {
-  color: #ffffff !important;
-}
-
-body[data-theme="dark"] .xterm .xterm-rows {
-  color: #ffffff !important;
-}
-
-body[data-theme="dark"] .xterm .xterm-rows .xterm-row {
-  color: #ffffff !important;
-}
-
-body[data-theme="dark"] .xterm .xterm-rows .xterm-row span:not(.xterm-selection) {
-  color: #ffffff !important;
-}
-
-/* 强制覆盖xterm的选中文字样式 - 解决白色文字+白色背景问题 */
-body[data-theme="light"] .xterm .xterm-decoration-top,
-body[data-theme="light"] .xterm .xterm-decoration-bottom {
-  color: #ffffff !important;
-  background-color: #0078d4 !important;
-}
-
-body[data-theme="dark"] .xterm .xterm-decoration-top,
-body[data-theme="dark"] .xterm .xterm-decoration-bottom {
-  color: #ffffff !important;
-  background-color: #264f78 !important;
-}
-
-/* 强制覆盖所有xterm选择相关元素的样式 */
-body[data-theme="light"] .xterm .xterm-selection {
-  background-color: #0078d4 !important;
-  color: #ffffff !important;
-}
-
+body[data-theme="dark"] .xterm .xterm-selection-layer,
 body[data-theme="dark"] .xterm .xterm-selection {
-  background-color: #264f78 !important;
-  color: #ffffff !important;
-}
-
-body[data-theme="light"] .xterm .xterm-selection-layer {
-  background-color: #0078d4 !important;
-}
-
-body[data-theme="dark"] .xterm .xterm-selection-layer {
-  background-color: #264f78 !important;
-}
-
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .left-panel {
-    width: 200px !important;
-  }
-
-  .toolbar {
-    display: none !important;
-  }
-
-  .status-bar {
-    font-size: 10px !important;
-    padding: 2px 8px !important;
-  }
-}
-
-/* 动画效果 */
-.fade-enter-active, .fade-leave-active {
-  transition: opacity 0.3s ease;
-}
-
-.fade-enter-from, .fade-leave-to {
-  opacity: 0;
-}
-
-.slide-enter-active, .slide-leave-active {
-  transition: transform 0.3s ease;
-}
-
-.slide-enter-from {
-  transform: translateX(-100%);
-}
-
-.slide-leave-to {
-  transform: translateX(100%);
+  background: rgba(113, 167, 255, 0.22) !important;
 }

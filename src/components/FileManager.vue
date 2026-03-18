@@ -79,7 +79,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { 
   HomeOutlined, 
@@ -95,18 +95,19 @@ import {
   FileZipOutlined,
   VideoCameraOutlined,
   SoundOutlined
-} from '@ant-design/icons-vue'
-import { message } from 'ant-design-vue'
+} from '@antdv-next/icons'
+import { message } from 'antdv-next'
 import { invoke } from '@tauri-apps/api/core'
+import type { FileManagerEntry, LocalFileListEntry } from '../types/app'
 
 const currentPath = ref('')
-const files = ref([])
+const files = ref<FileManagerEntry[]>([])
 const loading = ref(false)
-const selectedFiles = ref([])
-const history = ref([])
+const selectedFiles = ref<number[]>([])
+const history = ref<string[]>([])
 const historyIndex = ref(-1)
 const showHidden = ref(false)
-const keepAliveTimer = ref(null)
+const keepAliveTimer = ref<ReturnType<typeof setInterval> | null>(null)
 const lastActivity = ref(Date.now())
 
 // 表格列定义
@@ -115,21 +116,21 @@ const columns = [
     title: '名称',
     dataIndex: 'name',
     key: 'name',
-    sorter: (a, b) => a.name.localeCompare(b.name),
+    sorter: (a: FileManagerEntry, b: FileManagerEntry) => a.name.localeCompare(b.name),
   },
   {
     title: '大小',
     dataIndex: 'size',
     key: 'size',
     width: 100,
-    sorter: (a, b) => (a.size || 0) - (b.size || 0),
+    sorter: (a: FileManagerEntry, b: FileManagerEntry) => (a.size || 0) - (b.size || 0),
   },
   {
     title: '修改时间',
     dataIndex: 'modified',
     key: 'modified',
     width: 150,
-    sorter: (a, b) => new Date(a.modified) - new Date(b.modified),
+    sorter: (a: FileManagerEntry, b: FileManagerEntry) => new Date(a.modified || 0).getTime() - new Date(b.modified || 0).getTime(),
   },
 ]
 
@@ -153,7 +154,7 @@ const canGoForward = computed(() => historyIndex.value < history.value.length - 
 const isAtRoot = computed(() => !currentPath.value || currentPath.value === '/')
 
 // 获取文件图标
-function getFileIcon(file) {
+function getFileIcon(file: FileManagerEntry) {
   if (file.isDirectory) return FolderOutlined
   
   const ext = file.name.split('.').pop()?.toLowerCase()
@@ -175,7 +176,7 @@ function getFileIcon(file) {
 }
 
 // 获取文件颜色
-function getFileColor(file) {
+function getFileColor(file: FileManagerEntry) {
   if (file.isDirectory) return '#1890ff'
   
   const ext = file.name.split('.').pop()?.toLowerCase()
@@ -193,7 +194,7 @@ function getFileColor(file) {
 }
 
 // 格式化文件大小
-function formatSize(bytes) {
+function formatSize(bytes?: number) {
   if (!bytes || bytes === 0) return '-'
   const sizes = ['B', 'KB', 'MB', 'GB']
   const i = Math.floor(Math.log(bytes) / Math.log(1024))
@@ -201,7 +202,7 @@ function formatSize(bytes) {
 }
 
 // 格式化日期
-function formatDate(date) {
+function formatDate(date?: string) {
   if (!date) return '-'
   return new Date(date).toLocaleString()
 }
@@ -211,16 +212,16 @@ async function loadFiles(path = '') {
   loading.value = true
   try {
     // 如果路径为空，获取用户主目录
-    const targetPath = path || await invoke('get_home_dir')
+    const targetPath = path || await invoke<string>('get_home_dir')
     
     // 调用后端API获取文件列表
-    const fileList = await invoke('list_files', { 
+    const fileList = await invoke<LocalFileListEntry[]>('list_files', { 
       path: targetPath, 
       showHidden: showHidden.value 
     })
     
     // 转换数据格式并添加key
-    files.value = fileList.map((file, index) => ({
+    files.value = fileList.map((file, index): FileManagerEntry => ({
       key: index,
       name: file.name,
       path: file.path,
@@ -247,7 +248,7 @@ async function loadFiles(path = '') {
 }
 
 // 行点击事件
-function onRowClick(record) {
+function onRowClick(record: FileManagerEntry) {
   updateActivity()
   if (record.isDirectory) {
     loadFiles(record.path)
@@ -258,7 +259,7 @@ function onRowClick(record) {
 }
 
 // 用系统默认程序打开文件
-async function openFileWithSystem(filePath) {
+async function openFileWithSystem(filePath: string) {
   try {
     await invoke('open_file_explorer', { path: filePath })
     message.success('文件已打开')
@@ -268,17 +269,17 @@ async function openFileWithSystem(filePath) {
 }
 
 // 选择变化
-function onSelectionChange(selectedRowKeys) {
+function onSelectionChange(selectedRowKeys: number[]) {
   updateActivity()
   selectedFiles.value = selectedRowKeys
 }
 
 // 导航操作
-async function navigateTo(index) {
+async function navigateTo(index: number) {
   try {
     // 构建路径
     const parts = pathParts.value.slice(0, index + 1)
-    let newPath
+    let newPath: string
     
     if (currentPath.value.includes('\\')) {
       // Windows路径
@@ -315,7 +316,7 @@ function goForward() {
 async function goUp() {
   if (!isAtRoot.value) {
     try {
-      const parentPath = await invoke('get_parent_dir', { path: currentPath.value })
+      const parentPath = await invoke<string | null>('get_parent_dir', { path: currentPath.value })
       if (parentPath) {
         loadFiles(parentPath)
       }

@@ -179,43 +179,49 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import { CloseOutlined, ReloadOutlined } from '@ant-design/icons-vue'
-import { message } from 'ant-design-vue'
+import { CloseOutlined, ReloadOutlined } from '@antdv-next/icons'
+import { message } from 'antdv-next'
 import { invoke } from '@tauri-apps/api/core'
+import type {
+  CpuInfo,
+  DiskInfo,
+  DynamicSystemInfoBatch,
+  MemoryInfo,
+  NetworkInfo,
+  ProcessInfo,
+  SystemInfoBatch,
+  SystemStaticInfo,
+} from '../types/app'
 
-const props = defineProps({
-  visible: {
-    type: Boolean,
-    default: false
-  },
-  connectionId: {
-    type: String,
-    required: true
-  }
+const props = withDefaults(defineProps<{
+  visible?: boolean
+  connectionId: string
+}>(), {
+  visible: false
 })
 
 const emit = defineEmits(['close'])
 
 // 状态数据
 const loading = ref(false)
-const lastUpdate = ref(null)
-const systemInfo = ref({}) // 静态系统信息（hostname, os, arch, kernel, boot_time）
-const cpuInfo = ref({}) // 包含静态的 model 和动态的 usage、cores
-const memoryInfo = ref({})
-const diskInfo = ref([])
-const networkInfo = ref([])
-const processInfo = ref({})
+const lastUpdate = ref<number | null>(null)
+const systemInfo = ref<SystemStaticInfo>({})
+const cpuInfo = ref<CpuInfo>({})
+const memoryInfo = ref<MemoryInfo>({})
+const diskInfo = ref<DiskInfo[]>([])
+const networkInfo = ref<NetworkInfo[]>([])
+const processInfo = ref<ProcessInfo>({})
 
 // 标记是否已获取过首次数据
 const isFirstFetch = ref(true)
 
-let refreshTimer = null
-let refreshDebounceTimer = null
+let refreshTimer: ReturnType<typeof setInterval> | null = null
+let refreshDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
 // 本地计算运行时间
-function calculateLocalUptime(bootTime) {
+function calculateLocalUptime(bootTime?: number) {
   if (!bootTime) return 0
   const now = Math.floor(Date.now() / 1000) // 当前时间戳（秒）
   return Math.max(0, now - bootTime)
@@ -229,7 +235,7 @@ async function refreshData() {
   try {
     if (isFirstFetch.value) {
       // 首次获取：全量数据
-      const data = await invoke('get_all_system_info_batch', { 
+      const data = await invoke<SystemInfoBatch>('get_all_system_info_batch', { 
         connectionId: props.connectionId 
       })
       
@@ -243,7 +249,7 @@ async function refreshData() {
       isFirstFetch.value = false
     } else {
       // 后续获取：只有动态数据
-      const data = await invoke('get_dynamic_system_info_batch', { 
+      const data = await invoke<DynamicSystemInfoBatch>('get_dynamic_system_info_batch', { 
         connectionId: props.connectionId 
       })
       
@@ -276,7 +282,7 @@ async function refreshDataSilent() {
   
   try {
     // 只获取动态数据
-    const data = await invoke('get_dynamic_system_info_batch', { 
+    const data = await invoke<DynamicSystemInfoBatch>('get_dynamic_system_info_batch', { 
       connectionId: props.connectionId 
     })
     
@@ -331,7 +337,7 @@ function stopAutoRefresh() {
 }
 
 // 格式化文件大小
-function formatSize(bytes) {
+function formatSize(bytes?: number) {
   if (!bytes || bytes === 0) return '0 B'
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
   const i = Math.floor(Math.log(bytes) / Math.log(1024))
@@ -339,7 +345,7 @@ function formatSize(bytes) {
 }
 
 // 格式化网络速度
-function formatNetworkSpeed(bytesPerSecond) {
+function formatNetworkSpeed(bytesPerSecond?: number) {
   if (!bytesPerSecond || bytesPerSecond === 0) return '0 B/s'
   const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s']
   const i = Math.floor(Math.log(bytesPerSecond) / Math.log(1024))
@@ -347,7 +353,7 @@ function formatNetworkSpeed(bytesPerSecond) {
 }
 
 // 格式化运行时间（本地计算）
-function formatUptime(uptime) {
+function formatUptime(uptime?: number) {
   // 如果有 boot_time，使用本地计算
   if (systemInfo.value.boot_time) {
     const localUptime = calculateLocalUptime(systemInfo.value.boot_time)
@@ -358,7 +364,7 @@ function formatUptime(uptime) {
 }
 
 // 实际格式化函数
-function formatUptimeImpl(seconds) {
+function formatUptimeImpl(seconds?: number) {
   if (!seconds || seconds === 0) return '-'
   
   const days = Math.floor(seconds / 86400)
@@ -375,7 +381,7 @@ function formatUptimeImpl(seconds) {
 }
 
 // 获取进度条颜色
-function getProgressColor(percentage) {
+function getProgressColor(percentage: number) {
   if (percentage < 50) return '#52c41a'
   if (percentage < 80) return '#faad14'
   return '#ff4d4f'

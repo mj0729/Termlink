@@ -1,23 +1,54 @@
 <template>
-  <div class="status-bar flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border-subtle)] bg-[var(--status-strip-bg)] px-[18px] py-3">
-    <div class="status-cluster flex min-w-0 items-center gap-2.5">
-      <span class="status-label rounded-full border border-[var(--border-color)] bg-[var(--surface-2)] px-3 py-2">当前会话</span>
-      <span class="status-connection" v-if="activeConnection">
-        {{ activeConnection }}
-      </span>
-      <span v-else class="status-disconnected">
-        等待连接
+  <div class="status-bar">
+    <div class="status-bar__main">
+      <span class="status-dot" :class="{ 'is-active': activeConnection }"></span>
+      <span class="status-connection">
+        {{ activeConnection || '从顶部连接带或连接中心开始' }}
       </span>
     </div>
-    
-    <div class="status-cluster status-cluster--compact flex items-center gap-2">
-      <span class="status-info rounded-full border border-[var(--border-color)] bg-[var(--surface-2)] px-3 py-2">标签 {{ tabCount }}</span>
-      <span class="status-info rounded-full border border-[var(--border-color)] bg-[var(--surface-2)] px-3 py-2">主题 {{ theme === 'dark' ? '深色' : '浅色' }}</span>
+    <div class="status-bar__meta">
+      <a-button
+        class="status-panel-btn"
+        @click="$emit('showSettings')"
+        aria-label="设置"
+        title="设置"
+        type="text"
+        size="small"
+      >
+        <EllipsisOutlined />
+      </a-button>
+      <a-button
+        class="status-panel-btn"
+        :class="{ 'is-active': rightPanelTab === 'monitor' && !rightPanelCollapsed }"
+        @click="$emit('selectRightPanelTab', 'monitor')"
+        aria-label="系统监控"
+        title="系统监控"
+        type="text"
+        size="small"
+      >
+        <DesktopOutlined />
+      </a-button>
+      <a-button
+        class="status-panel-btn"
+        :class="{ 'is-active': rightPanelTab === 'download' && !rightPanelCollapsed }"
+        @click="$emit('selectRightPanelTab', 'download')"
+        aria-label="传输管理"
+        title="传输管理"
+        type="text"
+        size="small"
+      >
+        <DownloadOutlined />
+      </a-button>
+      <span class="status-hint">{{ tabCount }} 个工作区</span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { DesktopOutlined, DownloadOutlined, EllipsisOutlined } from '@antdv-next/icons'
+import type { PropType } from 'vue'
+import type { MonitorTab } from '../types/app'
+
 defineProps({
   activeConnection: {
     type: String,
@@ -27,66 +58,133 @@ defineProps({
     type: Number,
     default: 0
   },
-  theme: {
-    type: String,
-    default: 'dark'
+  rightPanelTab: {
+    type: String as PropType<MonitorTab>,
+    default: 'monitor'
+  },
+  rightPanelCollapsed: {
+    type: Boolean,
+    default: false
   }
 })
+
+defineEmits(['selectRightPanelTab', 'showSettings'])
 </script>
 
 <style scoped>
 .status-bar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 10px;
-  padding: 10px 18px 12px;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 4px 10px 6px;
   background: var(--status-strip-bg);
-  border-top: 1px solid var(--border-subtle);
   color: var(--muted-color);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.status-cluster {
+.status-bar__main,
+.status-bar__meta {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 
-.status-cluster--compact {
-  gap: 8px;
+.status-bar__main {
+  flex: 1;
 }
 
-.status-label,
-.status-info {
-  padding: 7px 10px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  border: 1px solid var(--border-color);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+.status-bar__meta {
+  flex-shrink: 0;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(128, 145, 168, 0.7);
+}
+
+.status-dot.is-active {
+  background: var(--primary-color);
+  box-shadow: 0 0 0 4px rgba(45, 125, 255, 0.1);
 }
 
 .status-connection {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-color);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 600;
 }
 
-.status-disconnected {
+.status-hint {
+  flex-shrink: 0;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.status-panel-btn {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  padding: 0;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.2);
   color: var(--muted-color);
+  cursor: pointer;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.status-panel-btn:hover {
+  background: rgba(255, 255, 255, 0.4);
+  color: var(--text-color);
+}
+
+.status-panel-btn.is-active {
+  background: rgba(255, 255, 255, 0.62);
+  color: var(--primary-color);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+}
+
+.status-panel-btn:deep(.ant-btn) {
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 8px;
+}
+
+.status-panel-btn :deep(.anticon) {
+  font-size: 13px;
 }
 
 @media (max-width: 768px) {
   .status-bar {
-    flex-direction: column;
-    align-items: flex-start;
+    padding-top: 3px;
+  }
+
+  .status-bar__meta {
+    gap: 6px;
+  }
+
+  .status-hint {
+    display: none;
   }
 }
 </style>

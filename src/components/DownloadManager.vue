@@ -100,7 +100,6 @@ import {
   ReloadOutlined,
   DeleteOutlined 
 } from '@antdv-next/icons'
-import { message } from 'antdv-next'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import type { DownloadItem, DownloadProgressPayload } from '../types/app'

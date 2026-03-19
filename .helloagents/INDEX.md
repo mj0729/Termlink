@@ -4,7 +4,7 @@
 project: Termlink
 kb_version: 1
 created: 2026-03-18
-updated: 2026-03-18
+updated: 2026-03-19
 primary_language: zh-CN
 tech_stack:
   - Vue 3.5
@@ -16,8 +16,8 @@ active_package:
 
 ## 当前重点
 
-- 进行中: `ant-design-vue` 迁移到 `antdv-next`
-- 目标: 保持现有布局、深浅主题和主要交互手感，同时完成组件 API、图标包与样式兼容迁移
+- 最近完成: 工作台紧凑化重设计，外层边框壳和左右分栏硬边界已被移除
+- 当前目标: 在保持三栏工作台结构的前提下，继续提升终端主内容区占比与小屏使用体验
 
 ## 知识库内容
 

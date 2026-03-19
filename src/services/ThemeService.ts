@@ -1,4 +1,4 @@
-import type { TerminalConfig, TerminalCursorStyle, ThemeConfig, ThemeName } from '../types/app'
+import type { TerminalConfig, TerminalCursorStyle, ThemeConfig, ThemeName, WorkspaceDensity } from '../types/app'
 
 /**
  * 主题服务 - 处理主题相关功能
@@ -12,10 +12,11 @@ class ThemeService {
     // 初始化主题
     this.theme = (localStorage.getItem('termlink_theme') as ThemeName) || 'light'
     this.terminalConfig = {
-      fontSize: parseInt(localStorage.getItem('termlink_fontSize') || '14'),
+      fontSize: parseInt(localStorage.getItem('termlink_fontSize') || '13'),
       fontFamily: localStorage.getItem('termlink_fontFamily') || 'SFMono-Regular, Menlo, Monaco, Consolas, monospace',
       cursorBlink: localStorage.getItem('termlink_cursorBlink') !== 'false',
-      cursorStyle: (localStorage.getItem('termlink_cursorStyle') as TerminalCursorStyle | null) || 'block'
+      cursorStyle: (localStorage.getItem('termlink_cursorStyle') as TerminalCursorStyle | null) || 'block',
+      density: (localStorage.getItem('termlink_density') as WorkspaceDensity | null) || 'compact',
     }
     
     // 主题配置
@@ -132,6 +133,7 @@ class ThemeService {
     localStorage.setItem('termlink_fontFamily', this.terminalConfig.fontFamily)
     localStorage.setItem('termlink_cursorBlink', String(this.terminalConfig.cursorBlink))
     localStorage.setItem('termlink_cursorStyle', this.terminalConfig.cursorStyle)
+    localStorage.setItem('termlink_density', this.terminalConfig.density)
     
     return { ...this.terminalConfig }
   }

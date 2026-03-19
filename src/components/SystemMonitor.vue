@@ -182,7 +182,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { CloseOutlined, ReloadOutlined } from '@antdv-next/icons'
-import { message } from 'antdv-next'
 import { invoke } from '@tauri-apps/api/core'
 import type {
   CpuInfo,

@@ -2,8 +2,8 @@
   <div class="left-panel" :class="{ collapsed: collapsed }">
     <div class="panel-header">
       <div class="panel-header__content">
-        <span class="panel-header__eyebrow">Resources</span>
-        <span class="panel-header__title">连接管理</span>
+        <span class="panel-header__eyebrow">Explorer</span>
+        <span class="panel-header__title">文件</span>
       </div>
       <a-button 
         type="text" 
@@ -17,123 +17,9 @@
     
     <div class="panel-content" v-if="!collapsed">
       <div class="section-title">
-        <span>已保存的连接</span>
-        <span class="section-pill">{{ filteredProfiles.length }}</span>
-      </div>
-      
-      <!-- 搜索框 -->
-      <div class="search-section">
-        <a-input-search
-          v-model:value="searchText"
-          placeholder="搜索连接..."
-          size="small"
-          allow-clear
-          @search="onSearch"
-          @change="onSearch"
-        />
-      </div>
-      
-      <!-- 分组视图切换 -->
-      <div class="view-controls">
-        <a-segmented 
-          v-model:value="viewMode" 
-          :options="[
-            { label: '列表', value: 'list' },
-            { label: '分组', value: 'group' }
-          ]"
-          size="small"
-        />
-      </div>
-      
-      <!-- 列表视图 -->
-      <div v-if="viewMode === 'list'" class="list-view">
-        <div class="profile-list">
-          <div
-            v-for="item in filteredProfiles"
-            :key="item.id"
-            @click="$emit('launchProfile', item)" 
-            @contextmenu.prevent="handleContextMenu($event, item)"
-            class="profile-item"
-          >
-            <div class="profile-main">
-              <div class="profile-title">
-                <span>{{ item.name || (item.username ? `${item.username}@${item.host}` : item.host) }}</span>
-                <div class="profile-tags" v-if="item.tags && item.tags.length">
-                  <a-tag v-for="tag in item.tags" :key="tag" size="small">{{ tag }}</a-tag>
-                </div>
-              </div>
-              <div class="profile-desc">
-                <span>{{ item.host }}:{{ item.port }}</span>
-                <a-tag v-if="item.group" size="small" color="blue">{{ item.group }}</a-tag>
-              </div>
-            </div>
-            <a-button 
-              type="text" 
-              size="small" 
-              danger
-              @click.stop="deleteProfile(item)"
-              class="delete-btn"
-              title="删除连接"
-            >
-              <DeleteOutlined />
-            </a-button>
-          </div>
-        </div>
-      </div>
-      
-      <!-- 分组视图 -->
-      <div v-else class="group-view">
-        <div v-for="(groupProfiles, groupName) in groupedProfiles" :key="groupName" class="group-section">
-          <div class="group-header" @click="toggleGroup(groupName)">
-            <span class="group-icon">
-              {{ expandedGroups.has(groupName) ? '▼' : '▶' }}
-            </span>
-            <span class="group-name">{{ groupName || '未分组' }}</span>
-            <a-tag size="small">{{ groupProfiles.length }}</a-tag>
-          </div>
-          <div v-show="expandedGroups.has(groupName)" class="group-content">
-            <div 
-              v-for="item in groupProfiles" 
-              :key="item.id"
-              @click="$emit('launchProfile', item)"
-              @contextmenu.prevent="handleContextMenu($event, item)"
-              class="group-item"
-            >
-              <div class="item-content">
-                <div class="item-title">{{ item.name || (item.username ? `${item.username}@${item.host}` : item.host) }}</div>
-                <div class="item-desc">{{ item.host }}:{{ item.port }}</div>
-                <div class="item-tags" v-if="item.tags && item.tags.length">
-                  <a-tag v-for="tag in item.tags" :key="tag" size="small">{{ tag }}</a-tag>
-                </div>
-              </div>
-              <a-button 
-                type="text" 
-                size="small" 
-                danger
-                @click.stop="deleteProfile(item)"
-                class="delete-btn"
-                title="删除连接"
-              >
-                <DeleteOutlined />
-              </a-button>
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      <div class="section-title">
         <span>文件管理器</span>
-        <span v-if="currentSftpConnection" class="section-pill section-pill--live">已连接</span>
       </div>
       <div class="file-manager-section">
-        <!-- SFTP连接状态显示 -->
-        <div v-if="currentSftpConnection" class="current-connection">
-          <div class="connection-info">
-            <div class="status-indicator connected"></div>
-            <span>{{ currentSftpConnection.title }}</span>
-          </div>
-        </div>
-        
         <!-- SFTP文件浏览器 -->
         <div v-if="currentSftpConnection" class="sftp-browser">
           <div class="browser-toolbar">
@@ -217,7 +103,7 @@
         
         <!-- 未连接状态 -->
         <div v-else class="no-connection">
-          <a-empty description="请切换到SSH标签页来浏览远程文件" size="small" />
+          <a-empty description="从顶部连接带或连接中心选择 SSH 后再浏览远程文件" size="small" />
         </div>
       </div>
     </div>
@@ -244,7 +130,6 @@ import {
   CloudUploadOutlined,
   FolderAddOutlined
 } from '@antdv-next/icons'
-import { Modal, message } from 'antdv-next'
 import { invoke } from '@tauri-apps/api/core'
 import type {
   ConnectionTab,
@@ -359,9 +244,9 @@ function createInitialSftpState(): SftpState {
 const currentConnectionId = computed<string | null>(() => {
   if (!props.activeTab) return null
   
-  // SSH标签页：使用 sftpConnectionId
-  if (props.activeTab.type === 'ssh' && props.activeTab.sftpConnectionId) {
-    return props.activeTab.sftpConnectionId
+  // SSH标签页：直接使用 connection_id
+  if (props.activeTab.type === 'ssh') {
+    return props.activeTab.id
   }
   
   // File标签页：使用 connectionId（从SSH继承）
@@ -892,6 +777,20 @@ function handleDragLeave(event: DragEvent) {
   }
 }
 
+async function extractDroppedFiles(dataTransfer: DataTransfer | null) {
+  if (!dataTransfer) return []
+
+  const directFiles = Array.from(dataTransfer.files || [])
+  if (directFiles.length > 0) {
+    return directFiles
+  }
+
+  return Array.from(dataTransfer.items || [])
+    .filter((item) => item.kind === 'file')
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => Boolean(file))
+}
+
 async function handleDrop(event: DragEvent) {
   isDraggingOver.value = false
 
@@ -900,10 +799,13 @@ async function handleDrop(event: DragEvent) {
     return
   }
 
-  const files = event.dataTransfer?.files
-  if (!files || files.length === 0) return
+  const files = await extractDroppedFiles(event.dataTransfer)
+  if (files.length === 0) {
+    message.warning('未检测到可上传的文件')
+    return
+  }
 
-  for (const file of Array.from(files)) {
+  for (const file of files) {
     await uploadFileToServer(file)
   }
 }
@@ -914,23 +816,17 @@ async function uploadFileToServer(file: File) {
   if (!state || !currentSftpConnection.value) return
 
   try {
-    const localPath = 'path' in file ? String((file as File & { path?: string }).path || '') : ''
-
-    if (!localPath) {
-      message.error(`无法获取文件路径: ${file.name}`)
-      return
-    }
-
     const remotePath = state.currentPath === '/'
       ? `/${file.name}`
       : `${state.currentPath}/${file.name}`
+    const data = Array.from(new Uint8Array(await file.arrayBuffer()))
 
     message.loading(`正在上传 ${file.name}...`, 0)
 
-    await invoke('upload_sftp_file', {
+    await invoke('upload_sftp_content', {
       connectionId: currentSftpConnection.value.id,
-      localPath,
-      remotePath
+      remotePath,
+      data,
     })
 
     message.destroy()
@@ -1132,18 +1028,19 @@ function copyProfileConfig(profile: SshProfile) {
 
 <style scoped>
 .left-panel {
-  width: 292px;
+  width: 258px;
   display: flex;
   flex-direction: column;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.08)),
     var(--panel-bg);
-  border-right: 1px solid var(--border-subtle);
+  border-radius: 24px;
+  backdrop-filter: blur(16px);
   transition: width 0.28s ease;
 }
 
 .left-panel.collapsed {
-  width: 64px;
+  width: 56px;
 }
 
 .left-panel.collapsed .panel-header__content {
@@ -1153,44 +1050,43 @@ function copyProfileConfig(profile: SshProfile) {
 .panel-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 18px 18px 16px;
-  background: var(--panel-header-bg);
-  border-bottom: 1px solid var(--border-subtle);
+  gap: 10px;
+  padding: 14px 14px 10px;
+  background: transparent;
 }
 
 .panel-header__content {
   display: flex;
   flex-direction: column;
+  flex: 1;
   min-width: 0;
 }
 
 .panel-header__eyebrow {
   color: var(--muted-color);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
 .panel-header__title {
   color: var(--text-color);
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 700;
-  margin-top: 3px;
+  margin-top: 2px;
 }
 
 .collapse-btn {
-  width: 34px !important;
-  height: 34px !important;
-  border-radius: 12px;
+  width: 30px !important;
+  height: 30px !important;
+  border-radius: 999px;
   color: var(--muted-color);
 }
 
 .panel-content {
   flex: 1;
-  padding: 16px 16px 18px;
+  padding: 8px 12px 14px;
   overflow-y: auto;
 }
 
@@ -1199,217 +1095,25 @@ function copyProfileConfig(profile: SshProfile) {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   color: var(--muted-color);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
-.section-pill {
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  border: 1px solid var(--border-color);
-  color: var(--muted-color);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0;
-}
-
-.section-pill--live {
-  background: rgba(74, 169, 107, 0.12);
-  border-color: rgba(74, 169, 107, 0.2);
-  color: var(--success-color);
-}
-
-.search-section {
-  margin-bottom: 12px;
-}
-
-.view-controls {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 16px;
-}
-
-.list-view,
-.group-view {
-  max-height: 316px;
-  overflow-y: auto;
-  margin-bottom: 22px;
-}
-
-.profile-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.profile-item,
-.group-item {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 14px 14px 12px;
-  border-radius: 18px;
-  border: 1px solid var(--border-color);
-  background: var(--surface-1);
-  box-shadow: 0 10px 24px rgba(32, 55, 96, 0.06);
-  cursor: pointer;
-  transition:
-    transform 0.2s ease,
-    border-color 0.2s ease,
-    background-color 0.2s ease,
-    box-shadow 0.2s ease;
-}
-
-.profile-item:hover,
-.group-item:hover {
-  transform: translateY(-1px);
-  border-color: var(--strong-border);
-  background: var(--surface-2);
-  box-shadow: var(--shadow-card);
-}
-
-.profile-main,
-.item-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.profile-title {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.profile-title > span,
-.item-title {
-  color: var(--text-color);
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.35;
-  word-break: break-all;
-}
-
-.profile-tags,
-.item-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.profile-desc,
-.item-desc {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-  color: var(--muted-color);
-  font-size: 12px;
-}
-
-.delete-btn {
-  opacity: 0;
-  color: var(--error-color) !important;
-  transition: opacity 0.2s ease;
-}
-
-.profile-item:hover .delete-btn,
-.group-item:hover .delete-btn {
-  opacity: 1;
-}
-
-.group-section {
-  margin-bottom: 10px;
-}
-
-.group-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  border-radius: 16px;
-  background: var(--surface-2);
-  border: 1px solid var(--border-color);
-  cursor: pointer;
-  transition:
-    background-color 0.2s ease,
-    border-color 0.2s ease;
-  user-select: none;
-}
-
-.group-header:hover {
-  background: var(--hover-bg);
-  border-color: var(--strong-border);
-}
-
-.group-icon {
-  min-width: 14px;
-  color: var(--muted-color);
-  font-size: 12px;
-}
-
-.group-name {
-  flex: 1;
-  color: var(--text-color);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.group-content {
-  margin: 10px 0 0 14px;
-  padding-left: 12px;
-  border-left: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
 .file-manager-section {
-  border-radius: 22px;
-  border: 1px solid var(--border-color);
-  background: var(--surface-1);
-  box-shadow: 0 16px 32px rgba(41, 71, 116, 0.08);
-  padding: 14px;
-}
-
-.current-connection {
-  margin-bottom: 12px;
-}
-
-.connection-info {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: var(--surface-2);
-  color: var(--text-color);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.status-indicator {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--success-color);
-}
-
-.status-indicator.connected {
-  box-shadow: 0 0 0 7px rgba(74, 169, 107, 0.14);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.44);
+  box-shadow: 0 18px 32px rgba(41, 71, 116, 0.08);
+  padding: 12px;
 }
 
 .sftp-browser {
   border-radius: 18px;
   overflow: hidden;
-  border: 1px solid var(--border-color);
-  background: var(--panel-bg);
+  background: rgba(255, 255, 255, 0.22);
 }
 
 .browser-toolbar {
@@ -1417,9 +1121,8 @@ function copyProfileConfig(profile: SshProfile) {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 12px;
-  background: var(--toolbar-bg);
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .toolbar-right {
@@ -1433,9 +1136,8 @@ function copyProfileConfig(profile: SshProfile) {
 }
 
 .current-path {
-  padding: 10px 12px;
-  background: var(--panel-bg);
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.18);
 }
 
 .path-input {
@@ -1445,12 +1147,12 @@ function copyProfileConfig(profile: SshProfile) {
 
 .file-list {
   position: relative;
-  min-height: 280px;
+  min-height: 260px;
   max-height: 420px;
   overflow-y: auto;
   resize: vertical;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0)),
     var(--panel-bg);
   transition:
     border-color 0.24s ease,
@@ -1490,9 +1192,9 @@ function copyProfileConfig(profile: SshProfile) {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 11px 12px;
+  padding: 9px 10px;
   margin: 4px;
-  border-radius: 14px;
+  border-radius: 12px;
   cursor: pointer;
   color: var(--text-color);
   font-size: 12px;
@@ -1540,11 +1242,11 @@ function copyProfileConfig(profile: SshProfile) {
 
 @media (max-width: 768px) {
   .left-panel {
-    width: 230px !important;
+    width: 220px !important;
   }
 
   .left-panel.collapsed {
-    width: 58px !important;
+    width: 52px !important;
   }
 
   .file-list {

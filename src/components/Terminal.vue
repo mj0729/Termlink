@@ -1,5 +1,8 @@
 <template>
-  <div class="terminal-area" :class="[`terminal-area--${theme}`, { 'is-active': active }]">
+  <div
+    class="terminal-area"
+    :class="[`terminal-area--${theme}`, `terminal-area--${density}`, { 'is-active': active }]"
+  >
     <div class="terminal-frame">
       <div ref="container" class="terminal-container" />
     </div>
@@ -14,12 +17,12 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { message } from 'antdv-next'
 import '@xterm/xterm/css/xterm.css'
 import SshService from '../services/SshService'
 import type { ITheme, Terminal as XTermTerminal } from '@xterm/xterm'
 import type { FitAddon as XTermFitAddon } from '@xterm/addon-fit'
-import type { TerminalConfig, ThemeName } from '../types/app'
+import type { TerminalConfig, ThemeName, WorkspaceDensity } from '../types/app'
+import type { SshTerminalChunk } from '../services/SshService'
 
 const props = withDefaults(defineProps<{
   id: string
@@ -27,29 +30,40 @@ const props = withDefaults(defineProps<{
   theme?: ThemeName
   config?: TerminalConfig
   autoPassword?: string
+  sshUser?: string
   type?: string
 }>(), {
   active: false,
   theme: 'dark',
   config: () => ({
-    fontSize: 14,
+    fontSize: 13,
     fontFamily: 'Consolas, monospace',
     cursorBlink: true,
-    cursorStyle: 'block'
+    cursorStyle: 'block',
+    density: 'compact',
   }),
   autoPassword: '',
+  sshUser: '',
   type: 'local'
 })
 
-const emit = defineEmits(['close', 'reconnect'])
+const emit = defineEmits(['close', 'reconnect', 'currentDirectoryChange'])
 
 const container = ref<HTMLElement | null>(null)
 const terminal = ref<XTermTerminal | null>(null)
 const fitAddon = ref<XTermFitAddon | null>(null)
+const SSH_CWD_MARKER_PREFIX = '\u001fTERMLINK_CWD:'
+let lastReceivedSeq = 0
+let commandBuffer = ''
+let shellCwd = ''
+let previousShellCwd = ''
+let homeCwd = ''
+let sshOutputBuffer = ''
 const hasScrollContent = computed(() => {
   if (!terminal.value) return false
   return terminal.value.buffer.active.viewportY > 0
 })
+const density = computed<WorkspaceDensity>(() => props.config.density || 'balanced')
 
 // 主题配置
 const themes: Record<ThemeName, ITheme> = {
@@ -77,12 +91,12 @@ const themes: Record<ThemeName, ITheme> = {
     brightWhite: '#ffffff'
   },
   light: {
-    background: '#ffffff',
-    foreground: '#000000',
-    cursor: '#000000',
-    selectionBackground: '#0078d4',
+    background: '#f7fbff',
+    foreground: '#1b2433',
+    cursor: '#1b2433',
+    selectionBackground: '#d7e8ff',
     selectionForeground: '#ffffff',
-    black: '#000000',
+    black: '#1b2433',
     red: '#cd3131',
     green: '#00bc00',
     yellow: '#949800',
@@ -98,6 +112,230 @@ const themes: Record<ThemeName, ITheme> = {
     brightMagenta: '#bc05bc',
     brightCyan: '#0598bc',
     brightWhite: '#000000'
+  }
+}
+
+function resolveTerminalLineHeight(nextDensity: WorkspaceDensity) {
+  if (nextDensity === 'comfortable') return 1.12
+  if (nextDensity === 'balanced') return 1.06
+  return 1.01
+}
+
+function normalizePosixPath(path: string) {
+  const segments = path.split('/')
+  const normalized: string[] = []
+
+  for (const segment of segments) {
+    if (!segment || segment === '.') continue
+    if (segment === '..') {
+      normalized.pop()
+      continue
+    }
+    normalized.push(segment)
+  }
+
+  return `/${normalized.join('/')}`.replace(/\/+/g, '/')
+}
+
+function stripWrappingQuotes(value: string) {
+  const trimmed = value.trim()
+  if (trimmed.length < 2) return trimmed
+
+  const first = trimmed[0]
+  const last = trimmed[trimmed.length - 1]
+  if ((first === '"' && last === '"') || (first === '\'' && last === '\'')) {
+    return trimmed.slice(1, -1)
+  }
+
+  return trimmed
+}
+
+function extractCdArgument(command: string) {
+  const trimmed = command.trim()
+  if (!trimmed.startsWith('cd')) return null
+
+  const cdMatch = trimmed.match(/^cd(?:\s+(.+?))?(?:\s*(?:&&|\|\||;).*)?$/)
+  if (!cdMatch) return null
+
+  return stripWrappingQuotes(cdMatch[1] || '')
+}
+
+function resolveCdTarget(target: string) {
+  const nextTarget = target.trim()
+
+  if (!nextTarget || nextTarget === '~') {
+    return homeCwd || shellCwd || ''
+  }
+
+  if (nextTarget === '-') {
+    return previousShellCwd || shellCwd || ''
+  }
+
+  if (nextTarget.startsWith('~/')) {
+    const base = homeCwd || shellCwd
+    return base ? normalizePosixPath(`${base}/${nextTarget.slice(2)}`) : ''
+  }
+
+  if (nextTarget.startsWith('/')) {
+    return normalizePosixPath(nextTarget)
+  }
+
+  const base = shellCwd || homeCwd
+  if (!base) return ''
+
+  return normalizePosixPath(`${base}/${nextTarget}`)
+}
+
+function getUserHomePath() {
+  if (!props.sshUser) return ''
+  return props.sshUser === 'root' ? '/root' : `/home/${props.sshUser}`
+}
+
+function resolvePromptPath(token: string) {
+  const value = token.trim()
+  if (!value) return ''
+
+  if (value === '~') {
+    return getUserHomePath()
+  }
+
+  if (value.startsWith('~/')) {
+    const home = getUserHomePath()
+    return home ? normalizePosixPath(`${home}/${value.slice(2)}`) : ''
+  }
+
+  if (value.startsWith('/')) {
+    return normalizePosixPath(value)
+  }
+
+  return ''
+}
+
+function stripAnsi(value: string) {
+  return value.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+}
+
+function consumeSshOutput(rawOutput: string) {
+  const combined = sshOutputBuffer + rawOutput
+  let cursor = 0
+  let renderedOutput = ''
+
+  while (cursor < combined.length) {
+    const markerStart = combined.indexOf(SSH_CWD_MARKER_PREFIX, cursor)
+    if (markerStart === -1) {
+      renderedOutput += combined.slice(cursor)
+      sshOutputBuffer = ''
+      return renderedOutput
+    }
+
+    renderedOutput += combined.slice(cursor, markerStart)
+
+    const markerValueStart = markerStart + SSH_CWD_MARKER_PREFIX.length
+    const markerEnd = combined.indexOf('\u001f', markerValueStart)
+    if (markerEnd === -1) {
+      sshOutputBuffer = combined.slice(markerStart)
+      return renderedOutput
+    }
+
+    const nextPath = combined.slice(markerValueStart, markerEnd).trim()
+    if (nextPath) {
+      updateShellDirectory(nextPath)
+    }
+
+    cursor = markerEnd + 1
+  }
+
+  sshOutputBuffer = ''
+  return renderedOutput
+}
+
+function updateShellDirectory(nextPath: string) {
+  const normalized = normalizePosixPath(nextPath)
+  if (!normalized || normalized === shellCwd) return
+
+  previousShellCwd = shellCwd || previousShellCwd
+  shellCwd = normalized
+  if (!homeCwd) {
+    homeCwd = normalized
+  }
+  emit('currentDirectoryChange', normalized)
+}
+
+function handleSubmittedCommand(rawCommand: string) {
+  const command = rawCommand.trim()
+  if (!command) return
+
+  const cdTarget = extractCdArgument(command)
+  if (cdTarget === null) return
+
+  const nextPath = resolveCdTarget(cdTarget)
+  if (nextPath) {
+    updateShellDirectory(nextPath)
+  }
+}
+
+function trackTerminalInput(data: string) {
+  for (const char of data) {
+    if (char === '\r') {
+      handleSubmittedCommand(commandBuffer)
+      commandBuffer = ''
+      continue
+    }
+
+    if (char === '\u007f') {
+      commandBuffer = commandBuffer.slice(0, -1)
+      continue
+    }
+
+    if (char === '\u0015' || char === '\u0003' || char === '\u001b') {
+      commandBuffer = ''
+      continue
+    }
+
+    if (char >= ' ') {
+      commandBuffer += char
+    }
+  }
+}
+
+function syncDirectoryFromPrompt(output: string) {
+  const lines = stripAnsi(output).split(/\r?\n/)
+  const promptPatterns = [
+    /\[[^@\]]+@[^ ]+\s+([^\]]+)\][#$]\s*$/,
+    /^[^@\s]+@[^:\s]+:([^\s]+)[#$]\s*$/,
+  ]
+
+  for (const line of lines) {
+    const trimmedLine = line.trim()
+    if (!trimmedLine) continue
+
+    const matchedPath = promptPatterns
+      .map((pattern) => trimmedLine.match(pattern)?.[1] || '')
+      .find(Boolean)
+
+    if (!matchedPath) continue
+
+    const nextPath = resolvePromptPath(matchedPath)
+    if (nextPath) {
+      updateShellDirectory(nextPath)
+    }
+  }
+}
+
+async function syncInitialDirectory() {
+  if (!props.id.startsWith('ssh-')) return
+  if (shellCwd) return
+
+  try {
+    const pwd = await SshService.executeCommand(props.id, 'pwd')
+    if (pwd) {
+      shellCwd = normalizePosixPath(pwd)
+      homeCwd = shellCwd
+      previousShellCwd = shellCwd
+      emit('currentDirectoryChange', shellCwd)
+    }
+  } catch (error) {
+    console.warn('获取 SSH 当前目录失败:', error)
   }
 }
 
@@ -118,7 +356,7 @@ async function createTerminal() {
     convertEol: true,
     fontFamily: props.config.fontFamily,
     fontSize: props.config.fontSize,
-    lineHeight: 1.2,
+    lineHeight: resolveTerminalLineHeight(density.value),
     windowsMode: false, // 禁用Windows模式以正确处理Clink输出
     cursorBlink: props.config.cursorBlink,
     cursorStyle: props.config.cursorStyle,
@@ -145,6 +383,9 @@ async function createTerminal() {
   term.onData(data => {
     // 只有当这个终端实例是激活状态时才发送数据
     if (props.active) {
+      if (props.id.startsWith('ssh-')) {
+        trackTerminalInput(data)
+      }
       if (props.id.startsWith('ssh-')) {
         // SSH终端
         SshService.writeTerminal(props.id, data).catch(() => {})
@@ -207,13 +448,27 @@ async function createTerminal() {
 async function bindSession() {
   // 根据终端类型绑定不同的事件
   if (props.id.startsWith('ssh-')) {
-    // SSH终端
-    const offDataP = listen(`ssh_data://${props.id}`, e => {
-      // 只有当这个终端实例是激活状态时才写入数据
-      if (terminal.value) {
-        const output = String(e.payload || '')
+    let hydrating = true
+    const pendingChunks: SshTerminalChunk[] = []
+
+    const applyChunk = (chunk: SshTerminalChunk) => {
+      if (!terminal.value || chunk.seq <= lastReceivedSeq) return
+      const output = consumeSshOutput(chunk.data)
+      if (output) {
+        syncDirectoryFromPrompt(output)
         terminal.value.write(output)
       }
+      lastReceivedSeq = chunk.seq
+    }
+
+    // SSH终端
+    const offDataP = listen<SshTerminalChunk>(`ssh_data://${props.id}`, e => {
+      const chunk = e.payload
+      if (hydrating) {
+        pendingChunks.push(chunk)
+        return
+      }
+      applyChunk(chunk)
     })
     
     const offExitP = listen(`ssh_exit://${props.id}`, () => {
@@ -238,6 +493,17 @@ async function bindSession() {
         })
       }
     })
+
+    const snapshot = await SshService.readTerminalSnapshot(props.id)
+    snapshot.chunks.forEach((chunk) => {
+      applyChunk(chunk)
+    })
+    pendingChunks
+      .sort((a, b) => a.seq - b.seq)
+      .forEach((chunk) => {
+        applyChunk(chunk)
+      })
+    hydrating = false
     
     return async () => { 
       (await offDataP)(); 
@@ -297,6 +563,10 @@ function applyConfig() {
     terminal.value.options.fontFamily = props.config.fontFamily
     terminal.value.options.cursorBlink = props.config.cursorBlink
     terminal.value.options.cursorStyle = props.config.cursorStyle
+    terminal.value.options.lineHeight = resolveTerminalLineHeight(density.value)
+    requestAnimationFrame(() => {
+      applySize()
+    })
   }
 }
 
@@ -463,11 +733,20 @@ watch(() => props.active, (isActive) => {
 let unbindSession = null
 
 onMounted(async () => {
+  lastReceivedSeq = 0
+  commandBuffer = ''
+  shellCwd = ''
+  previousShellCwd = ''
+  homeCwd = ''
+  sshOutputBuffer = ''
+
   // 创建终端
   await createTerminal()
   
   // 绑定会话
   unbindSession = await bindSession()
+
+  await syncInitialDirectory()
   
   // 应用主题和配置
   applyTheme()
@@ -510,41 +789,50 @@ onBeforeUnmount(async () => {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  padding: 22px 24px 24px;
-  background:
-    radial-gradient(circle at top left, rgba(45, 125, 255, 0.08), transparent 22%),
-    linear-gradient(180deg, transparent, rgba(45, 125, 255, 0.02)),
-    var(--workspace-terminal-bg);
+  padding: 0;
+  background: var(--workspace-center-bg);
 }
 
 .terminal-frame {
+  position: relative;
   height: 100%;
-  border-radius: 24px;
+  border-radius: 0;
   overflow: hidden;
-  background: var(--terminal-shell-bg);
-  border: 1px solid var(--terminal-shell-border);
-  box-shadow: 0 20px 44px rgba(31, 53, 92, 0.1);
+  background: transparent;
+  border: none;
+  box-shadow: none;
 }
 
 .terminal-container {
-  width: 100%;
-  height: 100%;
-  padding: 18px 20px 20px;
+  position: absolute;
+  inset: 0;
+}
+
+.terminal-area--comfortable .terminal-container {
+  inset: 0;
+}
+
+.terminal-area--balanced .terminal-container {
+  inset: 0;
+}
+
+.terminal-area--compact .terminal-container {
+  inset: 0;
 }
 
 .scroll-indicator {
   position: absolute;
-  top: 18px;
+  top: 8px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(20, 32, 52, 0.78);
-  color: #fff;
+  background: rgba(20, 32, 52, 0.68);
+  color: rgba(255, 255, 255, 0.96);
   text-align: center;
-  padding: 8px 14px;
+  padding: 4px 9px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 10px;
   z-index: 10;
-  opacity: 0.85;
+  opacity: 0.82;
   transition: opacity 0.3s ease;
 }
 

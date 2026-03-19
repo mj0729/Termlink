@@ -7,48 +7,48 @@
 }
 
 :root {
-  --bg-color: #eaf1fb;
-  --surface-0: #eef4fc;
-  --surface-1: rgba(255, 255, 255, 0.92);
-  --surface-2: #f3f7fd;
-  --surface-3: #e7eef8;
-  --chrome-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(245, 249, 255, 0.72));
-  --panel-bg: #f7faff;
-  --panel-header-bg: #eef4fb;
-  --menu-bg: #f7faff;
-  --tabs-bg: #f4f8fd;
-  --toolbar-bg: #edf3fb;
-  --status-bg: #f4f8fd;
-  --terminal-bg: #f8fbff;
+  --bg-color: #edf4fd;
+  --surface-0: #f3f8ff;
+  --surface-1: rgba(255, 255, 255, 0.94);
+  --surface-2: #f7faff;
+  --surface-3: #ebf2fb;
+  --chrome-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(244, 249, 255, 0.8));
+  --panel-bg: rgba(246, 249, 255, 0.78);
+  --panel-header-bg: rgba(248, 251, 255, 0.88);
+  --menu-bg: rgba(249, 251, 255, 0.84);
+  --tabs-bg: rgba(246, 249, 255, 0.78);
+  --toolbar-bg: rgba(244, 248, 255, 0.82);
+  --status-bg: rgba(244, 248, 255, 0.72);
+  --terminal-bg: #f7fbff;
   --text-color: #192435;
   --muted-color: #6f7f95;
-  --border-color: #d5e0ef;
-  --border-subtle: #e5ecf6;
-  --strong-border: #bfd0e7;
-  --hover-bg: #eaf2fd;
-  --primary-color: #2d7dff;
-  --primary-soft: rgba(45, 125, 255, 0.12);
-  --primary-ring: rgba(45, 125, 255, 0.22);
+  --border-color: #d6e2f1;
+  --border-subtle: #e8eef7;
+  --strong-border: #bfd4ef;
+  --hover-bg: #edf4ff;
+  --primary-color: #2f7cff;
+  --primary-soft: rgba(47, 124, 255, 0.1);
+  --primary-ring: rgba(47, 124, 255, 0.18);
   --success-color: #4aa96b;
   --warning-color: #efad3d;
   --error-color: #ea5f61;
-  --shadow-soft: 0 28px 70px rgba(53, 84, 132, 0.16);
+  --shadow-soft: 0 28px 70px rgba(53, 84, 132, 0.08);
   --shadow-card: 0 12px 30px rgba(41, 71, 116, 0.12);
-  --workspace-frame-bg: rgba(255, 255, 255, 0.76);
+  --workspace-frame-bg: transparent;
   --workspace-frame-border: rgba(214, 225, 239, 0.95);
-  --workspace-center-bg: linear-gradient(180deg, rgba(250, 252, 255, 0.96), rgba(243, 247, 252, 0.92));
-  --workspace-terminal-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(247, 250, 255, 0.98));
-  --workspace-empty-bg: linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(241, 246, 255, 0.9));
+  --workspace-center-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(246, 250, 255, 0.72));
+  --workspace-terminal-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(246, 250, 255, 0.72));
+  --workspace-empty-bg: linear-gradient(145deg, rgba(255, 255, 255, 0.52), rgba(241, 246, 255, 0.34));
   --workspace-empty-border: #cfe0f3;
-  --topbar-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 254, 0.88));
-  --tabs-strip-bg: linear-gradient(180deg, rgba(251, 252, 255, 0.96), rgba(244, 247, 252, 0.92));
-  --status-strip-bg: linear-gradient(180deg, rgba(250, 252, 255, 0.94), rgba(246, 249, 255, 0.9));
-  --monitor-card-bg: linear-gradient(180deg, rgba(246, 250, 255, 0.95), rgba(238, 245, 255, 0.94));
-  --monitor-card-strong: linear-gradient(180deg, rgba(236, 244, 255, 0.98), rgba(227, 238, 255, 0.92));
-  --monitor-rail-bg: linear-gradient(180deg, rgba(244, 248, 255, 0.96), rgba(234, 241, 252, 0.94));
-  --terminal-shell-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 255, 0.98));
-  --terminal-shell-border: rgba(214, 225, 239, 0.95);
-  --terminal-toolbar-bg: rgba(241, 246, 253, 0.96);
+  --topbar-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(246, 250, 255, 0.74));
+  --tabs-strip-bg: linear-gradient(180deg, rgba(250, 252, 255, 0.82), rgba(245, 249, 255, 0.72));
+  --status-strip-bg: linear-gradient(180deg, rgba(250, 252, 255, 0.72), rgba(245, 249, 255, 0.62));
+  --monitor-card-bg: linear-gradient(180deg, rgba(248, 251, 255, 0.86), rgba(241, 247, 255, 0.78));
+  --monitor-card-strong: linear-gradient(180deg, rgba(242, 248, 255, 0.92), rgba(235, 243, 255, 0.84));
+  --monitor-rail-bg: linear-gradient(180deg, rgba(246, 249, 255, 0.78), rgba(239, 245, 255, 0.68));
+  --terminal-shell-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 251, 255, 0.9));
+  --terminal-shell-border: rgba(214, 225, 239, 0.92);
+  --terminal-toolbar-bg: rgba(246, 249, 255, 0.9);
 }
 
 html,
@@ -82,12 +82,12 @@ body[data-theme="dark"] {
   --surface-2: #151f31;
   --surface-3: #1b2840;
   --chrome-bg: linear-gradient(180deg, rgba(13, 20, 34, 0.9), rgba(16, 25, 42, 0.84));
-  --panel-bg: #0f1828;
-  --panel-header-bg: #131e31;
-  --menu-bg: #101b2c;
-  --tabs-bg: #101a2a;
-  --toolbar-bg: #142133;
-  --status-bg: #101b2c;
+  --panel-bg: rgba(15, 24, 40, 0.5);
+  --panel-header-bg: rgba(19, 30, 49, 0.42);
+  --menu-bg: rgba(16, 27, 44, 0.36);
+  --tabs-bg: rgba(16, 26, 42, 0.28);
+  --toolbar-bg: rgba(20, 33, 51, 0.38);
+  --status-bg: rgba(16, 27, 44, 0.24);
   --terminal-bg: #08101c;
   --text-color: #e7eefb;
   --muted-color: #94a4bb;
@@ -103,18 +103,18 @@ body[data-theme="dark"] {
   --error-color: #ff7b7d;
   --shadow-soft: 0 28px 80px rgba(0, 0, 0, 0.4);
   --shadow-card: 0 14px 34px rgba(0, 0, 0, 0.28);
-  --workspace-frame-bg: rgba(12, 19, 31, 0.84);
+  --workspace-frame-bg: transparent;
   --workspace-frame-border: rgba(38, 55, 80, 0.95);
-  --workspace-center-bg: linear-gradient(180deg, rgba(14, 22, 35, 0.96), rgba(11, 18, 29, 0.94));
-  --workspace-terminal-bg: linear-gradient(180deg, rgba(10, 18, 30, 0.97), rgba(8, 14, 24, 0.98));
-  --workspace-empty-bg: linear-gradient(145deg, rgba(14, 23, 37, 0.94), rgba(12, 19, 31, 0.92));
+  --workspace-center-bg: linear-gradient(180deg, rgba(14, 22, 35, 0.58), rgba(11, 18, 29, 0.38));
+  --workspace-terminal-bg: linear-gradient(180deg, rgba(10, 18, 30, 0.72), rgba(8, 14, 24, 0.5));
+  --workspace-empty-bg: linear-gradient(145deg, rgba(14, 23, 37, 0.56), rgba(12, 19, 31, 0.36));
   --workspace-empty-border: #2a3d5c;
-  --topbar-bg: linear-gradient(180deg, rgba(14, 22, 35, 0.92), rgba(16, 24, 38, 0.88));
-  --tabs-strip-bg: linear-gradient(180deg, rgba(15, 24, 39, 0.96), rgba(14, 22, 35, 0.94));
-  --status-strip-bg: linear-gradient(180deg, rgba(13, 20, 32, 0.92), rgba(12, 19, 30, 0.9));
-  --monitor-card-bg: linear-gradient(180deg, rgba(17, 28, 44, 0.96), rgba(14, 23, 36, 0.94));
-  --monitor-card-strong: linear-gradient(180deg, rgba(20, 33, 51, 0.98), rgba(16, 27, 42, 0.94));
-  --monitor-rail-bg: linear-gradient(180deg, rgba(15, 24, 39, 0.96), rgba(12, 20, 33, 0.94));
+  --topbar-bg: linear-gradient(180deg, rgba(14, 22, 35, 0.38), rgba(16, 24, 38, 0.22));
+  --tabs-strip-bg: linear-gradient(180deg, rgba(15, 24, 39, 0.18), rgba(14, 22, 35, 0.1));
+  --status-strip-bg: linear-gradient(180deg, rgba(13, 20, 32, 0.08), rgba(12, 19, 30, 0.02));
+  --monitor-card-bg: linear-gradient(180deg, rgba(17, 28, 44, 0.66), rgba(14, 23, 36, 0.5));
+  --monitor-card-strong: linear-gradient(180deg, rgba(20, 33, 51, 0.76), rgba(16, 27, 42, 0.56));
+  --monitor-rail-bg: linear-gradient(180deg, rgba(15, 24, 39, 0.24), rgba(12, 20, 33, 0.14));
   --terminal-shell-bg: linear-gradient(180deg, rgba(12, 20, 33, 0.97), rgba(8, 14, 24, 0.98));
   --terminal-shell-border: rgba(37, 53, 77, 0.96);
   --terminal-toolbar-bg: rgba(19, 30, 47, 0.96);
@@ -169,11 +169,11 @@ select {
 .ant-popover-inner,
 .ant-message-notice-content,
 .ant-notification-notice {
-  border-radius: 14px !important;
+  border-radius: 12px !important;
 }
 
 .ant-btn {
-  height: 38px;
+  height: 32px;
   border-color: var(--border-color) !important;
   background: var(--surface-1) !important;
   color: var(--text-color) !important;
@@ -203,6 +203,26 @@ body[data-theme="dark"] .ant-btn-primary {
 .ant-btn-text,
 .ant-btn-link {
   background: transparent !important;
+}
+
+.ant-segmented {
+  padding: 3px !important;
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, 0.42) !important;
+}
+
+.ant-segmented-item {
+  min-height: 28px !important;
+  border-radius: 999px !important;
+  color: var(--muted-color) !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+}
+
+.ant-segmented-item-selected {
+  background: rgba(255, 255, 255, 0.82) !important;
+  color: var(--text-color) !important;
+  box-shadow: 0 8px 20px rgba(35, 58, 95, 0.08) !important;
 }
 
 .ant-input,
@@ -256,6 +276,16 @@ body[data-theme="dark"] .ant-btn-primary {
 .ant-dropdown-menu-submenu-title {
   color: var(--text-color) !important;
   border-radius: 10px !important;
+}
+
+.ant-tag {
+  margin-inline-end: 0 !important;
+  border: none !important;
+  border-radius: 999px !important;
+  background: rgba(45, 125, 255, 0.12) !important;
+  color: var(--primary-color) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
 }
 
 .ant-dropdown-menu-item:hover,

@@ -30,7 +30,8 @@ All Tauri commands are registered in `src/lib.rs` via `invoke_handler`. The full
 | `start_ssh_terminal` | `ssh_terminal_russh::start_ssh_terminal` | Connect to SSH server and open interactive shell |
 | `write_ssh_terminal` | `ssh_terminal_russh::write_ssh_terminal` | Send data to SSH terminal |
 | `resize_ssh_terminal` | `ssh_terminal_russh::resize_ssh_terminal` | Resize SSH terminal window |
-| `close_ssh_terminal` | `ssh_terminal_russh::close_ssh_terminal` | Close SSH terminal session |
+| `preview_ssh_host_key` | `ssh_terminal_russh::preview_ssh_host_key` | Preview host key trust state before retry |
+| `save_ssh_host_key_decision` | `ssh_terminal_russh::save_ssh_host_key_decision` | Persist trusted host key decision |
 
 ### SSH Profile Management
 | Command | Function | Description |
@@ -45,9 +46,6 @@ All Tauri commands are registered in `src/lib.rs` via `invoke_handler`. The full
 ### SFTP Operations
 | Command | Function | Description |
 |---------|----------|-------------|
-| `connect_sftp` | `sftp_russh::connect_sftp` | Establish independent SFTP connection |
-| `create_sftp_from_ssh` | `sftp_russh::create_sftp_from_ssh` | (TODO) Create SFTP from existing SSH session |
-| `disconnect_sftp` | `sftp_russh::disconnect_sftp` | Close SFTP connection |
 | `list_sftp_files` | `sftp_russh::list_sftp_files` | List remote directory contents |
 | `download_sftp_file` | `sftp_russh::download_sftp_file` | Download file with real-time progress |
 | `upload_sftp_file` | `sftp_russh::upload_sftp_file` | Upload local file to remote |
@@ -68,9 +66,8 @@ All Tauri commands are registered in `src/lib.rs` via `invoke_handler`. The full
 ### SSH Command Execution
 | Command | Function | Description |
 |---------|----------|-------------|
-| `execute_ssh_command` | `ssh_command::execute_ssh_command` | Execute command on remote via dedicated connection pool |
-| `connect_ssh_for_monitoring` | `ssh_command::connect_ssh_for_monitoring` | Establish/reuse SSH connection for monitoring |
-| `disconnect_ssh_monitoring` | `ssh_command::disconnect_ssh_monitoring` | Close monitoring SSH connection |
+| `execute_ssh_command` | `ssh_command::execute_ssh_command` | Execute command on remote via shared connection actor |
+| `disconnect_ssh_connection` | `ssh_command::disconnect_ssh_connection` | Close the shared SSH transport and all attached channels |
 
 ### Download & Filesystem
 | Command | Function | Description |
@@ -89,13 +86,16 @@ All Tauri commands are registered in `src/lib.rs` via `invoke_handler`. The full
 
 | File | Lines | Responsibility |
 |------|-------|----------------|
-| `lib.rs` | ~83 | Module declarations, Tauri builder setup, command registration |
+| `lib.rs` | ~76 | Module declarations, Tauri builder setup, command registration |
 | `main.rs` | ~6 | Binary entry point |
 | `terminal.rs` | ~134 | Local PTY via `portable-pty`. Global `PTY_SENDERS` HashMap for session management. |
-| `ssh_terminal_russh.rs` | ~375 | SSH terminal via `russh`. Async session in dedicated thread with `tokio::Runtime`. Supports terminal I/O + command execution for monitoring. |
+| `connection_manager.rs` | ~390 | Shared SSH connection actor. Owns transport, terminal channel, lazy SFTP session, and remote command execution. |
+| `ssh_terminal_russh.rs` | ~40 | Thin Tauri command adapter for SSH terminal + host-key flow. |
 | `ssh.rs` | ~104 | SSH profile CRUD. Stores profiles as JSON in `ProjectDirs` config dir. Passwords stored via `keyring`. |
-| `sftp_russh.rs` | ~547 | Full SFTP implementation via `russh-sftp`. Independent connection pool. 32KB chunk download with progress events. |
-| `ssh_command.rs` | ~166 | Dedicated SSH connection pool for command execution. Used by system monitor. Separate from terminal sessions to avoid interference. |
+| `ssh_auth.rs` | ~300 | SSH authentication and strict host-key verification. |
+| `host_key_store.rs` | ~120 | Local host-key persistence for trusted fingerprints. |
+| `sftp_russh.rs` | ~360 | Full SFTP implementation via `russh-sftp`. Reuses `ConnectionManager` actor sessions. |
+| `ssh_command.rs` | ~10 | Thin Tauri command adapter for shared remote command execution + disconnect. |
 | `system_monitor.rs` | ~572 | Remote system monitoring. Executes batch shell commands to gather CPU, memory, disk, network, process info. Parses `/proc/` output. Network speed calculation with caching. |
 | `download_manager.rs` | ~129 | Download helpers: location selection, file info, cross-platform file manager opening. |
 | `fs.rs` | ~142 | Local filesystem operations: directory listing, home dir, parent dir, file explorer launch. |
@@ -142,9 +142,7 @@ FileInfo { name, size, modified? }
 ### Global State
 
 - `PTY_SENDERS: Lazy<Mutex<HashMap<String, Sender<PtyMsg>>>>` -- local terminal sessions
-- `SSH_TERMINALS: Lazy<Mutex<HashMap<String, SshTerminal>>>` -- SSH terminal sessions
-- `SFTP_CONNECTIONS: Lazy<Mutex<HashMap<String, SftpConnection>>>` -- SFTP sessions
-- `SSH_SESSIONS: Arc<Mutex<HashMap<String, Arc<Mutex<Handle>>>>>` -- SSH command execution pool
+- `CONNECTION_MANAGERS: Lazy<Mutex<HashMap<String, UnboundedSender<ConnectionCmd>>>>` -- shared SSH connection actors
 - `NETWORK_CACHE: Arc<Mutex<HashMap<String, NetworkSpeedCache>>>` -- network speed calculation cache
 
 ## Testing & Quality
@@ -158,17 +156,14 @@ Recommended additions:
 
 ## Known TODOs
 
-1. `sftp_russh.rs`: `create_sftp_from_ssh()` is unimplemented (returns error string)
-2. `ssh_terminal_russh.rs`: `check_server_key()` accepts all keys (security risk)
-3. `sftp_russh.rs`: `check_server_key()` accepts all keys (security risk)
-4. `ssh.rs`: `restart_ssh_connection()` only cleans up, reconnection handled in frontend
-5. `download_manager.rs`: `download_sftp_file_with_progress()` is a placeholder with simulated delay
-6. Only password authentication is supported; private key auth returns error
+1. `ssh.rs`: `restart_ssh_connection()` only cleans up, reconnection handled in frontend
+2. `download_manager.rs`: `download_sftp_file_with_progress()` is a placeholder with simulated delay
+3. Private key auth still needs full passphrase support
 
 ## FAQ
 
-**Q: Why are there multiple SSH connection pools?**
-A: Three separate pools exist to avoid interference: (1) `SSH_TERMINALS` for interactive terminal sessions, (2) `SFTP_CONNECTIONS` for file transfer sessions, (3) `SSH_SESSIONS` for monitoring command execution. Each SSH terminal also creates a new `tokio::Runtime` in its own thread.
+**Q: How are terminal, SFTP, and monitoring connections related now?**
+A: A single `connection_id` maps to one `ConnectionManager` actor. Terminal I/O, lazy SFTP session creation, and monitoring commands all reuse the same SSH transport instead of opening three independent pools.
 
 **Q: How does system monitoring work without a local agent?**
 A: The system monitor executes batch shell commands (`cat /proc/stat`, `df -h`, etc.) over SSH and parses the text output. This means it only works on Linux targets.
@@ -190,11 +185,14 @@ src-tauri/
   src/
     main.rs                        -- Binary entry point
     lib.rs                         -- Library entry + command registry
+    connection_manager.rs         -- Shared SSH connection actor
     terminal.rs                    -- Local PTY management
     ssh_terminal_russh.rs          -- SSH terminal sessions
+    ssh_auth.rs                    -- SSH auth + host-key verification
+    host_key_store.rs              -- Trusted host-key storage
     ssh.rs                         -- SSH profile CRUD + keyring
     sftp_russh.rs                  -- SFTP file operations
-    ssh_command.rs                 -- SSH command execution pool
+    ssh_command.rs                 -- Shared SSH command adapter
     system_monitor.rs              -- Remote system monitoring
     download_manager.rs            -- Download helper functions
     fs.rs                          -- Local filesystem operations

@@ -20,7 +20,7 @@
 
 - `src/main.ts`: Vue 应用入口与 UI 组件库注册
 - `src/App.vue`: 应用壳层与全局消息调用
-- `src/components/`: 主要页面与业务组件，当前有多个文件直接使用 Ant Design Vue 组件
+- `src/components/`: 主要页面与业务组件，当前已统一到 `antdv-next` 体系，只有隐藏文件输入和编辑器 `textarea` 等性能/平台敏感实现继续保留原生控件
 - `src/services/`: SSH、SFTP、主题等前端服务，已迁移为 `.ts`
 - `src/types/`: 前端共享类型定义
 - `src/style.css`: 全局样式、主题变量与 Tailwind 4 入口
@@ -34,4 +34,6 @@
 - 第二轮类型收口已完成，`RightPanel`、`SystemMonitor`、`Sidebar`、`Terminal`、`SshModal`、`FileManager`、`SettingsModal` 等组件已切到显式共享类型
 - 当前前端验收基线为 `vue-tsc --noEmit` 与 `pnpm run build` 双通过，可在此基础上继续做功能开发或进一步类型细化
 - 第三轮已完成首屏构建体积优化：[App.vue](/Users/mengjia/WebstormProjects/Termlink/src/App.vue) 中的 [FileEditor.vue](/Users/mengjia/WebstormProjects/Termlink/src/components/FileEditor.vue) 已异步加载，Monaco 改为运行时懒加载并做了模块缓存
-- 当前生产构建的主入口包已从多 MB 级降到约 `64.88 kB`，但 `antdv-next` 与 `monaco-editor` 仍各自保留一个较大的异步 vendor chunk，后续如要继续优化需进入 UI 库按需注册或 Monaco 语言能力精拆阶段
+- 第四轮已完成低风险 vendor 分包优化：`vite.config.ts` 将 `antdv-next` 拆为 `icons / style / date / data-entry / structure / display / feedback` 多组 vendor chunk，已消除单个 `antdv` chunk 超过 500 kB 的告警
+- 第五轮已完成 `antdv-next` 自动按需注册：入口已移除 `app.use(AntdvNext)`，改由 `unplugin-vue-components` 解析 `<a-*>` 模板组件、`unplugin-auto-import` 注入 `Input / Modal / message`，同时生成 `src/components.d.ts` 与 `src/auto-imports.d.ts`
+- 当前构建中 `antdv-next` 相关产物已进一步收缩到约 `49K / 53K / 118K / 236K / 282K / 353K` 的多组 vendor chunk，且上一轮的 circular chunk 提示已消失

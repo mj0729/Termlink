@@ -96,7 +96,6 @@ import {
   VideoCameraOutlined,
   SoundOutlined
 } from '@antdv-next/icons'
-import { message } from 'antdv-next'
 import { invoke } from '@tauri-apps/api/core'
 import type { FileManagerEntry, LocalFileListEntry } from '../types/app'
 

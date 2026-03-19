@@ -1,5 +1,5 @@
 <template>
-  <div class="right-panel">
+  <div class="right-panel" :class="`right-panel--${activeTab}`">
     <!-- 内容区 - 可折叠，在左侧 -->
     <div class="panel-content-wrapper" :class="{ collapsed: collapsed }">
     
@@ -7,10 +7,10 @@
       <div class="panel-header">
         <div class="panel-header__copy">
           <span class="panel-header__eyebrow">Insights</span>
-          <span class="panel-header__title">{{ activeTab === 'monitor' ? '系统监控' : '下载管理' }}</span>
+          <span class="panel-header__title">{{ activeTab === 'monitor' ? '系统监控' : '传输管理' }}</span>
         </div>
         <span class="panel-header__meta">
-          {{ activeTab === 'monitor' ? '实时遥测' : `${downloads.length} 个任务` }}
+          {{ activeTab === 'monitor' ? '实时遥测' : `运行 ${transferStats.running} / 完成 ${transferStats.completed} / 失败 ${transferStats.error}` }}
         </span>
         <a-button 
           type="text" 
@@ -201,81 +201,118 @@
         </div>
     </div>
     
-    <!-- 下载管理内容 -->
-    <div class="panel-content download-content" v-if="activeTab === 'download'">
-      <div v-if="downloads.length === 0" class="empty-state">
-        <a-empty description="暂无下载任务" />
+    <!-- 传输管理内容 -->
+      <div class="panel-content download-content" v-if="activeTab === 'download'">
+      <div class="transfer-toolbar" v-if="transfers.length > 0">
+        <a-segmented
+          v-model:value="transferFilter"
+          class="transfer-filter"
+          :options="transferFilterOptions"
+        />
+      </div>
+
+      <div v-if="visibleTransferGroups.length === 0" class="empty-state">
+        <a-empty description="暂无传输任务" />
       </div>
       
       <div v-else class="download-list">
         <div 
-          v-for="download in downloads" 
-          :key="download.id"
+          v-for="group in visibleTransferGroups" 
+          :key="group.id"
           class="download-item"
           :class="{ 
-            completed: download.status === 'completed', 
-            error: download.status === 'error' 
+            completed: group.status === 'completed', 
+            error: group.status === 'error' 
           }"
         >
           <div class="download-info">
-            <div class="file-name">{{ download.fileName }}</div>
-            <div class="file-path">{{ download.savePath }}</div>
+            <div class="file-name-row">
+              <component
+                :is="group.direction === 'download' ? DownloadOutlined : UploadOutlined"
+                class="file-direction-icon"
+              />
+              <div class="file-name">{{ group.label }}</div>
+              <span class="direction-badge">{{ group.direction === 'download' ? '下载' : '上传' }}</span>
+              <span v-if="group.count > 1" class="direction-badge">{{ group.count }} 项</span>
+            </div>
+            <div class="file-path"><span class="file-path__label">来源</span>{{ group.sourceLabel }}</div>
+            <div class="file-path"><span class="file-path__label">目标</span>{{ group.targetLabel }}</div>
+            <div v-if="group.note" class="transfer-note">{{ group.note }}</div>
             
             <!-- 进度条 -->
             <a-progress 
-              v-if="download.status === 'downloading'"
-              :percent="download.progress" 
+              v-if="group.status === 'running'"
+              :percent="group.progress" 
               size="small"
               :show-info="false"
             />
             
             <!-- 状态信息 -->
             <div class="download-status">
-              <span v-if="download.status === 'downloading'">
-                <template v-if="download.total > 0">
-                  {{ formatSize(download.downloaded) }} / {{ formatSize(download.total) }}
-                  <span v-if="download.progress > 0">({{ download.progress }}%)</span>
+              <span v-if="group.status === 'running'">
+                <template v-if="group.total > 0">
+                  {{ group.direction === 'download' ? '下载中' : '上传中' }} -
+                  {{ formatSize(group.transferred) }} / {{ formatSize(group.total) }}
+                  <span v-if="group.progress > 0">({{ group.progress }}%)</span>
+                  <span v-if="group.speed > 0"> - {{ formatSpeed(group.speed) }}</span>
                 </template>
                 <template v-else>
-                  正在下载...
+                  {{ group.direction === 'download' ? '正在下载...' : '正在上传...' }}
                 </template>
               </span>
-              <span v-else-if="download.status === 'completed'" class="success">
-                完成 - {{ formatSize(download.total) }}
+              <span v-else-if="group.status === 'completed'" class="success">
+                {{ group.direction === 'download' ? '下载完成' : '上传完成' }}
+                <span v-if="group.total > 0"> - {{ formatSize(group.total) }}</span>
               </span>
-              <span v-else-if="download.status === 'error'" class="error">
-                失败: {{ download.error }}
+              <span v-else-if="group.status === 'error'" class="error">
+                失败: {{ group.error }}
+              </span>
+              <span v-else-if="group.status === 'cancelled'">
+                已取消
+              </span>
+              <span v-else-if="group.status === 'skipped'">
+                已跳过
               </span>
             </div>
           </div>
           
           <div class="download-actions">
             <a-button 
-              v-if="download.status === 'downloading'"
+              v-if="group.status === 'running'"
               type="text" 
               size="small" 
               danger
-              @click="cancelDownload(download.id)"
+              @click="cancelTransferGroup(group.id)"
               title="取消"
             >
               <StopOutlined />
             </a-button>
             
             <a-button 
-              v-if="download.status === 'completed'"
+              v-if="group.status === 'completed' && group.direction === 'download' && group.count === 1"
               type="text" 
               size="small"
-              @click="openFileLocation(download.savePath)"
+              @click="openFileLocation(group.items[0].targetPath)"
               title="打开"
             >
               <FolderOpenOutlined />
+            </a-button>
+
+            <a-button
+              v-if="group.status === 'error'"
+              type="text"
+              size="small"
+              @click="retryTransferGroup(group.id)"
+              title="重试"
+            >
+              <ReloadOutlined />
             </a-button>
             
             <a-button 
               type="text" 
               size="small" 
               danger
-              @click="removeDownload(download.id)"
+              @click="removeTransferGroup(group.id)"
               title="移除"
             >
               <DeleteOutlined />
@@ -284,43 +321,18 @@
         </div>
       </div>
       
-      <div class="download-footer" v-if="downloads.length > 0">
+      <div class="download-footer" v-if="transfers.length > 0">
         <a-button size="small" @click="clearCompleted">
           清除已完成
         </a-button>
       </div>
     </div>
     </div>
-    
-    <!-- 按钮栏 - 始终显示，在最右侧 -->
-    <div class="sidebar-buttons">
-      <a-tooltip placement="left" title="系统监控">
-        <a-button 
-          :type="activeTab === 'monitor' ? 'primary' : 'default'"
-          size="large"
-          @click="handleTabClick('monitor')"
-          class="sidebar-btn"
-        >
-          <DesktopOutlined />
-        </a-button>
-      </a-tooltip>
-      
-      <a-tooltip placement="left" title="下载管理">
-        <a-button 
-          :type="activeTab === 'download' ? 'primary' : 'default'"
-          size="large"
-          @click="handleTabClick('download')"
-          class="sidebar-btn"
-        >
-          <DownloadOutlined />
-        </a-button>
-      </a-tooltip>
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { computed, h, ref, onMounted, onUnmounted, watch } from 'vue'
 import { 
   DesktopOutlined,
   LaptopOutlined,
@@ -333,16 +345,17 @@ import {
   HddOutlined,
   WifiOutlined,
   DownloadOutlined,
+  UploadOutlined,
   StopOutlined,
   FolderOpenOutlined,
   DeleteOutlined,
+  ReloadOutlined,
   RightOutlined
 } from '@antdv-next/icons'
-import { message } from 'antdv-next'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import type {
-  DownloadItem,
+  DownloadRequest,
   DownloadProgressPayload,
   MonitorTab,
   SshProfile,
@@ -352,19 +365,52 @@ import type {
   MemoryInfo,
   DiskInfo,
   NetworkInfo,
+  TransferItem,
+  UploadProgressPayload,
+  UploadRequest,
 } from '../types/app'
+
+type TransferFilter = 'all' | 'download' | 'upload' | 'running' | 'completed' | 'error'
+type UploadConflictAction = 'overwrite' | 'rename' | 'skip'
+
+interface TransferTask extends TransferItem {
+  downloadRequest?: DownloadRequest
+  uploadRequest?: UploadRequest
+  note?: string
+  lastProgressAt?: number
+  lastTransferred?: number
+}
+
+interface TransferGroup {
+  id: string
+  direction: 'download' | 'upload'
+  status: 'running' | 'completed' | 'error' | 'cancelled' | 'skipped'
+  label: string
+  sourceLabel: string
+  targetLabel: string
+  note: string
+  error: string | null
+  progress: number
+  transferred: number
+  total: number
+  speed: number
+  count: number
+  items: TransferTask[]
+}
 
 const props = withDefaults(defineProps<{
   collapsed?: boolean
   connectionId?: string
   sshProfile?: SshProfile | null
+  activeTab?: MonitorTab
 }>(), {
   collapsed: false,
   connectionId: '',
-  sshProfile: null
+  sshProfile: null,
+  activeTab: 'monitor'
 })
 
-const emit = defineEmits(['toggle'])
+const emit = defineEmits(['toggle', 'tab-change'])
 
 // 状态数据
 const systemInfo = ref<SystemStaticInfo>({})
@@ -374,30 +420,12 @@ const diskInfo = ref<DiskInfo[]>([])
 const networkInfo = ref<NetworkInfo[]>([])
 
 // 下载管理状态
-const activeTab = ref<MonitorTab>('monitor')
-const downloads = ref<DownloadItem[]>([])
-let downloadIdCounter = 0
-let progressUnlisten: (() => void) | null = null
-
-// 活跃下载数量
-const activeDownloads = computed(() => {
-  return downloads.value.filter(d => d.status === 'downloading').length
-})
-
-// 处理标签点击
-function handleTabClick(tab: MonitorTab) {
-  // 如果点击的是当前激活的标签，切换折叠状态
-  if (activeTab.value === tab) {
-    emit('toggle')
-  } else {
-    // 切换到新标签
-    activeTab.value = tab
-    // 如果当前是折叠状态，自动展开
-    if (props.collapsed) {
-      emit('toggle')
-    }
-  }
-}
+const activeTab = ref<MonitorTab>(props.activeTab)
+const transfers = ref<TransferTask[]>([])
+const transferFilter = ref<TransferFilter>('all')
+let transferIdCounter = 0
+let downloadProgressUnlisten: (() => void) | null = null
+let uploadProgressUnlisten: (() => void) | null = null
 
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
 let refreshInterval = 3000 // 初始刷新间隔3秒
@@ -405,60 +433,62 @@ const minInterval = 3000 // 最小间隔3秒
 const maxInterval = 30000 // 最大间隔30秒
 let errorCount = 0
 
-// 存储监控连接的配置信息
-let monitoringProfile: SshProfile | null = null
-let monitoringConnectionEstablished = false
+const transferFilterOptions: Array<{ label: string; value: TransferFilter }> = [
+  { label: '全部', value: 'all' },
+  { label: '下载', value: 'download' },
+  { label: '上传', value: 'upload' },
+  { label: '进行中', value: 'running' },
+  { label: '失败', value: 'error' },
+  { label: '完成', value: 'completed' },
+]
 
-// 确保监控SSH连接已建立
-async function ensureMonitoringConnection() {
-  if (!props.connectionId) {
-    console.warn('connectionId为空，无法建立监控连接')
-    return false
-  }
-  
-  // 如果连接已经建立，直接返回
-  if (monitoringConnectionEstablished) {
-    return true
-  }
-  
-  try {
-    // 使用传入的profile信息（从App.vue传递）
-    if (!props.sshProfile) {
-      console.error('未收到SSH配置信息')
-      return false
+const transferStats = computed(() => ({
+  running: transfers.value.filter((item) => item.status === 'running').length,
+  completed: transfers.value.filter((item) => item.status === 'completed').length,
+  error: transfers.value.filter((item) => item.status === 'error').length,
+}))
+
+const transferGroups = computed<TransferGroup[]>(() => {
+  const map = new Map<string, TransferTask[]>()
+
+  for (const transfer of transfers.value) {
+    const key = transfer.batchId || `${transfer.direction}-${transfer.id}`
+    const group = map.get(key)
+    if (group) {
+      group.push(transfer)
+    } else {
+      map.set(key, [transfer])
     }
-    
-    // 获取密码
-    let password: string | null = null
-    if (props.sshProfile.save_password) {
-      try {
-        password = await invoke<string>('get_ssh_password', { id: props.sshProfile.id })
-      } catch (pwdError) {
-        console.error('获取SSH密码失败:', pwdError)
-        return false
-      }
-    }
-    
-    // 建立或复用监控连接
-    await invoke('connect_ssh_for_monitoring', {
-      connectionId: props.connectionId,
-      host: props.sshProfile.host,
-      port: props.sshProfile.port,
-      username: props.sshProfile.username,
-      password: password
+  }
+
+  return Array.from(map.entries())
+    .map(([id, items]) => buildTransferGroup(id, items))
+    .sort((left, right) => {
+      const leftTime = Math.max(...left.items.map((item) => item.startTime))
+      const rightTime = Math.max(...right.items.map((item) => item.startTime))
+      return rightTime - leftTime
     })
-    
-    // 保存配置信息以便后续使用
-    monitoringProfile = props.sshProfile
-    monitoringConnectionEstablished = true
-    console.log('✓ 监控SSH连接已建立/复用')
-    return true
-    
-  } catch (error) {
-    console.error('建立监控SSH连接失败:', error)
-    monitoringConnectionEstablished = false
-    return false
+})
+
+const visibleTransferGroups = computed(() => {
+  switch (transferFilter.value) {
+    case 'download':
+      return transferGroups.value.filter((group) => group.direction === 'download')
+    case 'upload':
+      return transferGroups.value.filter((group) => group.direction === 'upload')
+    case 'running':
+      return transferGroups.value.filter((group) => group.status === 'running')
+    case 'completed':
+      return transferGroups.value.filter((group) => group.status === 'completed')
+    case 'error':
+      return transferGroups.value.filter((group) => group.status === 'error')
+    default:
+      return transferGroups.value
   }
+})
+
+function getTransferTask(transferId: number) {
+  return transfers.value.find((item) => item.id === transferId) || null
 }
 
 // 监控数据刷新
@@ -468,12 +498,6 @@ async function refreshData() {
   const startTime = Date.now()
   
   try {
-    // 确保监控连接已建立
-    const connected = await ensureMonitoringConnection()
-    if (!connected) {
-      throw new Error('无法建立监控SSH连接')
-    }
-    
     // 使用批量命令一次性获取所有系统信息，大幅减少SSH请求次数
     const batchInfo = await invoke<SystemInfoBatch>('get_all_system_info_batch', { connectionId: props.connectionId })
     
@@ -526,16 +550,6 @@ function stopAutoRefresh() {
     clearTimeout(refreshTimer)
     refreshTimer = null
   }
-  
-  // 断开监控连接
-  if (props.connectionId && monitoringConnectionEstablished) {
-    invoke('disconnect_ssh_monitoring', { connectionId: props.connectionId })
-      .then(() => {
-        monitoringConnectionEstablished = false
-        console.log('✓ 监控SSH连接已断开')
-      })
-      .catch(err => console.error('断开监控连接失败:', err))
-  }
 }
 
 // 格式化文件大小
@@ -570,19 +584,207 @@ function getProgressColor(percentage: number) {
   return '#ff4d4f'
 }
 
+function formatSpeed(bytesPerSecond: number) {
+  return `${formatSize(bytesPerSecond)}/s`
+}
+
+function updateTransferMetrics(transfer: TransferTask, transferred: number, total: number, progress: number) {
+  const now = Date.now()
+  const previousTransferred = transfer.lastTransferred ?? 0
+  const previousTime = transfer.lastProgressAt ?? transfer.startTime
+  const elapsedSeconds = Math.max((now - previousTime) / 1000, 0.001)
+  const delta = Math.max(transferred - previousTransferred, 0)
+
+  transfer.transferred = transferred
+  transfer.total = total
+  transfer.progress = progress
+  transfer.speed = delta / elapsedSeconds
+  transfer.lastTransferred = transferred
+  transfer.lastProgressAt = now
+}
+
+function buildTransferGroup(id: string, items: TransferTask[]): TransferGroup {
+  const first = items[0]
+  const count = items.length
+  const transferred = items.reduce((sum, item) => sum + item.transferred, 0)
+  const total = items.reduce((sum, item) => sum + item.total, 0)
+  const speed = items.reduce((sum, item) => sum + item.speed, 0)
+  const hasRunning = items.some((item) => item.status === 'running')
+  const hasError = items.some((item) => item.status === 'error')
+  const hasCancelled = items.some((item) => item.status === 'cancelled')
+  const hasSkipped = items.some((item) => item.status === 'skipped')
+
+  let status: TransferGroup['status'] = 'completed'
+  if (hasRunning) {
+    status = 'running'
+  } else if (hasError) {
+    status = 'error'
+  } else if (hasCancelled) {
+    status = 'cancelled'
+  } else if (hasSkipped) {
+    status = 'skipped'
+  }
+
+  const progress = total > 0 ? Math.round((transferred / total) * 100) : (status === 'completed' ? 100 : 0)
+  const note = items.map((item) => item.note).find(Boolean) || ''
+  const error = items.map((item) => item.error).find(Boolean) || null
+
+  return {
+    id,
+    direction: first.direction,
+    status,
+    label: count > 1 ? (first.batchLabel || `批量${first.direction === 'download' ? '下载' : '上传'} (${count}项)`) : first.fileName,
+    sourceLabel: count > 1 ? `${count} 个来源` : first.sourcePath,
+    targetLabel: count > 1 ? `${count} 个目标` : first.targetPath,
+    note,
+    error,
+    progress,
+    transferred,
+    total,
+    speed,
+    count,
+    items,
+  }
+}
+
+function dispatchTransferComplete(transfer: TransferItem) {
+  window.dispatchEvent(new CustomEvent('transfer-complete', {
+    detail: {
+      direction: transfer.direction,
+      connectionId: transfer.connectionId,
+      sourcePath: transfer.sourcePath,
+      targetPath: transfer.targetPath,
+      status: transfer.status,
+    },
+  }))
+}
+
+async function resolveDownloadTarget(request: DownloadRequest) {
+  const resolvedPath = await invoke<string>('resolve_local_target_path', {
+    path: request.savePath,
+  })
+
+  return {
+    targetPath: resolvedPath,
+    note: resolvedPath !== request.savePath ? '检测到同名本地文件，已自动重命名' : '',
+  }
+}
+
+async function resolveUploadTarget(request: UploadRequest) {
+  const exists = await invoke<boolean>('check_sftp_path_exists', {
+    connectionId: request.connectionId,
+    path: request.targetPath,
+  })
+
+  if (!exists) {
+    return {
+      action: 'overwrite' as const,
+      targetPath: request.targetPath,
+      note: '',
+    }
+  }
+
+  const action = await promptUploadConflictAction(request)
+
+  if (action === 'skip') {
+    return {
+      action,
+      targetPath: request.targetPath,
+      note: '检测到同名远程文件，已跳过上传',
+    }
+  }
+
+  if (action === 'overwrite') {
+    return {
+      action,
+      targetPath: request.targetPath,
+      note: '检测到同名远程文件，已选择覆盖上传',
+    }
+  }
+
+  const resolvedPath = await invoke<string>('resolve_sftp_target_path', {
+    connectionId: request.connectionId,
+    path: request.targetPath,
+  })
+
+  return {
+    action,
+    targetPath: resolvedPath,
+    note: resolvedPath !== request.targetPath ? '检测到同名远程文件，已自动重命名' : '',
+  }
+}
+
+function promptUploadConflictAction(request: UploadRequest): Promise<UploadConflictAction> {
+  return new Promise((resolve) => {
+    let settled = false
+    let modalInstance: { destroy: () => void } | null = null
+    const contentStyle = 'display:grid;gap:8px;line-height:1.6;'
+    const pathStyle = 'padding:10px 12px;border-radius:10px;background:rgba(15,23,42,.06);color:var(--text-color);font-family:"SFMono-Regular","JetBrains Mono",Consolas,monospace;font-size:12px;word-break:break-all;'
+    const descStyle = 'color:var(--muted-color);font-size:13px;'
+    const footerStyle = 'display:flex;justify-content:flex-end;gap:8px;width:100%;'
+    const baseButtonStyle = 'min-width:88px;height:32px;border-radius:8px;font-size:13px;cursor:pointer;transition:all .2s ease;padding:0 14px;'
+    const finish = (action: UploadConflictAction) => {
+      if (settled) return
+      settled = true
+      modalInstance?.destroy()
+      resolve(action)
+    }
+
+    modalInstance = Modal.confirm({
+      title: '发现同名远程文件',
+      content: h('div', { style: contentStyle }, [
+        h('div', { style: pathStyle }, request.targetPath),
+        h('div', { style: descStyle }, `请选择如何处理“${request.fileName}”`),
+      ]),
+      okCancel: false,
+      closable: false,
+      maskClosable: false,
+      keyboard: false,
+      footer: () => h('div', { style: footerStyle }, [
+        h('button', {
+          type: 'button',
+          style: `${baseButtonStyle}border:1px solid rgba(148,163,184,.38);background:#fff;color:var(--text-color);`,
+          onClick: () => finish('skip'),
+        }, '跳过'),
+        h('button', {
+          type: 'button',
+          style: `${baseButtonStyle}border:1px solid rgba(59,130,246,.24);background:rgba(59,130,246,.08);color:var(--text-color);`,
+          onClick: () => finish('rename'),
+        }, '自动重命名'),
+        h('button', {
+          type: 'button',
+          style: `${baseButtonStyle}border:1px solid var(--primary-color);background:var(--primary-color);color:#fff;`,
+          onClick: () => finish('overwrite'),
+        }, '覆盖'),
+      ]),
+      onClose: () => finish('skip'),
+    })
+  })
+}
+
 // 生命周期
 onMounted(async () => {
   // 不自动刷新，等待用户手动展开
   
-  // 监听下载进度事件
-  progressUnlisten = await listen<DownloadProgressPayload>('download-progress', (event) => {
+  downloadProgressUnlisten = await listen<DownloadProgressPayload>('download-progress', (event) => {
     const { downloadId, downloaded, total, progress } = event.payload
-    const download = downloads.value.find(d => d.id === downloadId)
-    if (download && download.status === 'downloading') {
-      download.downloaded = downloaded
-      download.total = total
-      download.progress = progress
-      console.log(`📥 下载进度: ${download.fileName} - ${progress}% (${formatSize(downloaded)}/${formatSize(total)})`)
+    const transfer = transfers.value.find(item => item.id === downloadId && item.direction === 'download')
+    if (transfer && transfer.status === 'running') {
+      updateTransferMetrics(transfer, downloaded, total, progress)
+    }
+  })
+
+  uploadProgressUnlisten = await listen<UploadProgressPayload>('upload-progress', (event) => {
+    const { uploadId, uploaded, total, progress } = event.payload
+    const transfer = transfers.value.find(item => item.id === uploadId && item.direction === 'upload')
+    if (transfer && transfer.status === 'running') {
+      updateTransferMetrics(transfer, uploaded, total, progress)
+      if (total > 0 && uploaded >= total) {
+        transfer.status = 'completed'
+        transfer.progress = 100
+        transfer.speed = 0
+        dispatchTransferComplete(transfer)
+      }
     }
   })
 })
@@ -590,9 +792,8 @@ onMounted(async () => {
 onUnmounted(() => {
   stopAutoRefresh()
   // 取消事件监听
-  if (progressUnlisten) {
-    progressUnlisten()
-  }
+  downloadProgressUnlisten?.()
+  uploadProgressUnlisten?.()
 })
 
 // 监听属性变化
@@ -616,115 +817,250 @@ watch(() => props.connectionId, (newConnectionId) => {
   }
 })
 
-// ============ 下载管理函数 ============
+watch(() => props.activeTab, (newTab) => {
+  activeTab.value = newTab
+})
 
-// 添加下载任务
+watch(activeTab, (newTab) => {
+  emit('tab-change', newTab)
+}, { immediate: true })
+
+// ============ 传输管理函数 ============
+
 function addDownload(fileName: string, remotePath: string, savePath: string, connectionId: string) {
-  console.log('=== addDownload 被调用 ===', {
-    fileName,
-    remotePath,
-    savePath,
-    connectionId
-  })
-  
-  const downloadId = ++downloadIdCounter
-  const download: DownloadItem = {
-    id: downloadId,
+  const request: DownloadRequest = {
     fileName,
     remotePath,
     savePath,
     connectionId,
-    status: 'downloading',
+  }
+
+  const transfer: TransferTask = {
+    id: ++transferIdCounter,
+    direction: 'download',
+    fileName,
+    sourcePath: remotePath,
+    targetPath: savePath,
+    connectionId,
+    batchId: request.batchId,
+    batchLabel: request.batchLabel,
+    status: 'running',
     progress: 0,
-    downloaded: 0,
+    transferred: 0,
     total: 0,
     speed: 0,
     startTime: Date.now(),
-    error: null
+    error: null,
+    downloadRequest: request,
   }
-  
-  downloads.value.push(download)
-  console.log('下载任务已添加到列表，开始下载...')
-  startDownload(download)
-  
-  // 自动切换到下载标签页
+
+  transfers.value.push(transfer)
+  startDownload(transfer)
   activeTab.value = 'download'
-  
-  return downloadId
 }
 
-// 开始下载
-async function startDownload(download: DownloadItem) {
-  console.log('=== startDownload 开始（真实进度）===', download)
-  
+function addUpload(upload: UploadRequest) {
+  const sourcePath = upload.source.kind === 'local-path' ? upload.source.localPath : upload.fileName
+  const transfer: TransferTask = {
+    id: ++transferIdCounter,
+    direction: 'upload',
+    fileName: upload.fileName,
+    sourcePath,
+    targetPath: upload.targetPath,
+    connectionId: upload.connectionId,
+    batchId: upload.batchId,
+    batchLabel: upload.batchLabel,
+    status: 'running',
+    progress: 0,
+    transferred: 0,
+    total: 0,
+    speed: 0,
+    startTime: Date.now(),
+    error: null,
+    uploadRequest: upload,
+  }
+
+  transfers.value.push(transfer)
+  startUpload(transfer, upload)
+  activeTab.value = 'download'
+}
+
+async function startDownload(transfer: TransferTask) {
   try {
-    console.log('开始调用 download_sftp_file API（带真实进度）...')
-    
-    // 调用后端下载API（带真实进度）
+    const task = getTransferTask(transfer.id) || transfer
+    const request = task.downloadRequest
+    if (!request) {
+      throw new Error('下载请求不存在')
+    }
+
+    const resolved = await resolveDownloadTarget(request)
+    task.targetPath = resolved.targetPath
+    task.note = resolved.note
+
     await invoke('download_sftp_file', {
-      connectionId: download.connectionId,
-      remotePath: download.remotePath,
-      localPath: download.savePath,
-      downloadId: download.id
+      connectionId: task.connectionId,
+      remotePath: task.sourcePath,
+      localPath: task.targetPath,
+      downloadId: task.id
     })
-    
-    console.log('✓ download_sftp_file API 调用成功')
-    
-    if (download.status !== 'cancelled') {
-      download.status = 'completed'
-      download.progress = 100
-      console.log('✓ 下载完成！')
-      message.success(`文件下载完成: ${download.fileName}`)
+
+    if (task.status !== 'cancelled') {
+      task.status = 'completed'
+      task.progress = 100
+      message.success(`下载完成: ${task.fileName}`)
+      dispatchTransferComplete(task)
     }
   } catch (error) {
-    console.error('✗ 下载过程中出错:', error)
-    if (download.status !== 'cancelled') {
-      download.status = 'error'
-      download.error = error.toString()
-      message.error(`下载失败: ${download.fileName}`)
+    const task = getTransferTask(transfer.id) || transfer
+    if (task.status !== 'cancelled') {
+      task.status = 'error'
+      task.error = error.toString()
+      message.error(`下载失败: ${task.fileName}`)
+      dispatchTransferComplete(task)
     }
   }
 }
 
-// 取消下载
-function cancelDownload(downloadId: number) {
-  const download = downloads.value.find(d => d.id === downloadId)
-  if (download) {
-    download.status = 'cancelled'
-    message.info(`已取消下载: ${download.fileName}`)
+async function startUpload(transfer: TransferTask, upload: UploadRequest) {
+  try {
+    const task = getTransferTask(transfer.id) || transfer
+    const resolved = await resolveUploadTarget(upload)
+    task.targetPath = resolved.targetPath
+    task.note = resolved.note
+
+    if (resolved.action === 'skip') {
+      task.status = 'skipped'
+      task.progress = 0
+      task.transferred = 0
+      task.total = 0
+      task.speed = 0
+      task.error = null
+      message.info(`已跳过上传: ${task.fileName}`)
+      dispatchTransferComplete(task)
+      return
+    }
+
+    if (upload.source.kind === 'file') {
+      const data = Array.from(new Uint8Array(await upload.source.file.arrayBuffer()))
+      await invoke('upload_sftp_content', {
+        connectionId: task.connectionId,
+        remotePath: task.targetPath,
+        data,
+        uploadId: task.id,
+      })
+    } else {
+      await invoke('upload_sftp_file', {
+        connectionId: task.connectionId,
+        localPath: upload.source.localPath,
+        remotePath: task.targetPath,
+        uploadId: task.id,
+      })
+    }
+
+    if (task.status !== 'cancelled') {
+      task.status = 'completed'
+      task.progress = 100
+      message.success(`上传完成: ${task.fileName}`)
+      dispatchTransferComplete(task)
+    }
+  } catch (error) {
+    const task = getTransferTask(transfer.id) || transfer
+    if (task.status !== 'cancelled') {
+      task.status = 'error'
+      task.error = error.toString()
+      message.error(`上传失败: ${task.fileName}`)
+      dispatchTransferComplete(task)
+    }
   }
 }
 
-// 打开文件位置
+function cancelTransfer(transferId: number) {
+  const transfer = transfers.value.find(item => item.id === transferId)
+  if (!transfer) return
+
+  transfer.status = 'cancelled'
+  message.info(`${transfer.direction === 'download' ? '已取消下载' : '已取消上传'}: ${transfer.fileName}`)
+  dispatchTransferComplete(transfer)
+}
+
+async function cancelTransferGroup(groupId: string) {
+  const group = transferGroups.value.find((item) => item.id === groupId)
+  if (!group) return
+
+  for (const transfer of group.items.filter((item) => item.status === 'running')) {
+    try {
+      await invoke('cancel_download', { downloadId: transfer.id })
+    } catch (error) {
+      console.error('取消传输失败:', error)
+    }
+    cancelTransfer(transfer.id)
+  }
+}
+
+function retryTransfer(transferId: number) {
+  const transfer = transfers.value.find((item) => item.id === transferId)
+  if (!transfer) return
+
+  transfer.status = 'running'
+  transfer.progress = 0
+  transfer.transferred = 0
+  transfer.total = 0
+  transfer.error = null
+  transfer.note = ''
+  transfer.startTime = Date.now()
+
+  if (transfer.direction === 'download' && transfer.downloadRequest) {
+    startDownload(transfer)
+    return
+  }
+
+  if (transfer.direction === 'upload' && transfer.uploadRequest) {
+    startUpload(transfer, transfer.uploadRequest)
+  }
+}
+
+function retryTransferGroup(groupId: string) {
+  const group = transferGroups.value.find((item) => item.id === groupId)
+  if (!group) return
+
+  for (const transfer of group.items.filter((item) => item.status === 'error')) {
+    retryTransfer(transfer.id)
+  }
+}
+
 async function openFileLocation(filePath: string) {
-  console.log('打开文件位置:', filePath)
   try {
     await invoke('open_file_location', { path: filePath })
-    message.success('已打开文件所在位置')
   } catch (error) {
-    console.error('打开文件位置失败:', error)
     message.error('无法打开文件位置: ' + error)
   }
 }
 
-// 移除下载记录
-function removeDownload(downloadId: number) {
-  const index = downloads.value.findIndex(d => d.id === downloadId)
+function removeTransfer(transferId: number) {
+  const index = transfers.value.findIndex(item => item.id === transferId)
   if (index !== -1) {
-    downloads.value.splice(index, 1)
+    transfers.value.splice(index, 1)
   }
 }
 
-// 清除已完成的下载
+function removeTransferGroup(groupId: string) {
+  const group = transferGroups.value.find((item) => item.id === groupId)
+  if (!group) return
+
+  const ids = new Set(group.items.map((item) => item.id))
+  transfers.value = transfers.value.filter((item) => !ids.has(item.id))
+}
+
 function clearCompleted() {
-  downloads.value = downloads.value.filter(d => 
-    d.status === 'downloading'
+  transfers.value = transfers.value.filter(item => 
+    item.status === 'running' || item.status === 'error'
   )
 }
 
 // 暴露方法给父组件
 defineExpose({
-  addDownload
+  addDownload,
+  addUpload,
 })
 </script>
 
@@ -732,67 +1068,44 @@ defineExpose({
 .right-panel {
   display: flex;
   height: 100%;
-  background: var(--panel-bg);
+  background: transparent;
   position: relative;
+  min-height: 0;
 }
 
 .panel-content-wrapper {
   display: flex;
   flex-direction: column;
-  width: 328px;
-  border-left: 1px solid var(--border-subtle);
+  width: 282px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.38), rgba(255, 255, 255, 0)),
-    var(--panel-bg);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.08)),
+    rgba(244, 248, 254, 0.42);
   transition:
     width 0.28s ease,
     opacity 0.28s ease;
   overflow: hidden;
   flex-shrink: 0;
+  border-radius: 14px 0 0 14px;
+  backdrop-filter: blur(14px);
+  box-shadow:
+    inset 1px 0 0 rgba(255, 255, 255, 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 
 .panel-content-wrapper.collapsed {
   width: 0;
   opacity: 0;
   pointer-events: none;
-  border-left: none;
-}
-
-.sidebar-buttons {
-  width: 72px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 18px 12px;
-  background: var(--monitor-rail-bg);
-  border-left: 1px solid var(--border-subtle);
-  margin-left: auto;
-}
-
-.sidebar-btn {
-  width: 48px !important;
-  height: 48px !important;
-  padding: 0 !important;
-  display: flex !important;
-  align-items: center;
-  justify-content: center;
-  border-radius: 16px;
-  background: var(--surface-1) !important;
-}
-
-.sidebar-btn :deep(.anticon) {
-  font-size: 20px;
 }
 
 .panel-header {
   display: grid;
   grid-template-columns: 1fr auto auto;
   align-items: center;
-  gap: 10px;
-  padding: 18px 18px 16px;
-  background: var(--panel-header-bg);
-  border-bottom: 1px solid var(--border-subtle);
+  gap: 8px;
+  padding: 10px 10px 8px;
+  background: transparent;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .panel-header__copy {
@@ -803,38 +1116,41 @@ defineExpose({
 
 .panel-header__eyebrow {
   color: var(--muted-color);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
 .panel-header__title {
-  margin-top: 4px;
+  margin-top: 2px;
   color: var(--text-color);
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 700;
 }
 
 .panel-header__meta {
-  padding: 6px 10px;
+  padding: 3px 8px;
   border-radius: 999px;
-  background: var(--surface-2);
-  border: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.54);
   color: var(--muted-color);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 9px;
+  font-weight: 800;
+  max-width: 132px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .collapse-btn {
-  width: 34px !important;
-  height: 34px !important;
-  border-radius: 12px;
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: 10px;
   color: var(--muted-color);
 }
 
 .panel-content {
-  padding: 16px;
+  padding: 8px 8px 10px;
   overflow-y: auto;
 }
 
@@ -844,44 +1160,45 @@ defineExpose({
 }
 
 .info-section {
-  margin-bottom: 18px;
+  margin-bottom: 10px;
 }
 
 .section-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-  padding: 0 4px;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 0 2px;
 }
 
 .section-icon {
   color: var(--primary-color);
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .section-header h4 {
   margin: 0;
   color: var(--text-color);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.04em;
 }
 
 .info-card {
-  padding: 14px;
-  border-radius: 20px;
+  padding: 9px;
+  border-radius: 12px;
   background: var(--monitor-card-bg);
-  border: 1px solid var(--border-color);
-  box-shadow: 0 14px 28px rgba(41, 71, 116, 0.08);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 8px 18px rgba(41, 71, 116, 0.04);
 }
 
 .info-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 10px 0;
+  gap: 10px;
+  padding: 8px 0;
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -892,15 +1209,15 @@ defineExpose({
 .info-label {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   color: var(--muted-color);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
 }
 
 .item-icon {
   color: var(--primary-color);
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .info-value,
@@ -917,7 +1234,7 @@ defineExpose({
 
 .info-value {
   color: var(--text-color);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -933,13 +1250,13 @@ defineExpose({
 
 .cpu-info,
 .memory-info {
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .cpu-model,
 .memory-label {
   color: var(--text-color);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   flex: 1;
   min-width: 0;
@@ -955,7 +1272,7 @@ defineExpose({
 .usage-percent,
 .disk-usage {
   color: var(--primary-color);
-  font-size: 20px;
+  font-size: 17px;
   font-weight: 700;
 }
 
@@ -964,7 +1281,7 @@ defineExpose({
 .interface-info {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .memory-usage,
@@ -974,57 +1291,56 @@ defineExpose({
 .stat-label,
 .disk-type {
   color: var(--muted-color);
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .progress-container {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
 }
 
 .memory-details,
 .disk-stats,
 .network-stats {
-  margin-top: 12px;
+  margin-top: 10px;
 }
 
 .memory-details {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .detail-item,
 .disk-item,
 .network-item,
 .stat-item {
-  border-radius: 16px;
-  border: 1px solid var(--border-color);
+  border-radius: 12px;
 }
 
 .detail-item {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 10px;
+  gap: 3px;
+  padding: 8px;
   background: var(--surface-1);
   align-items: flex-start;
 }
 
 .disk-item,
 .network-item {
-  padding: 12px;
+  padding: 10px;
   background: var(--monitor-card-strong);
 }
 
 .disk-item + .disk-item,
 .network-item + .network-item {
-  margin-top: 10px;
+  margin-top: 8px;
 }
 
 .disk-device,
 .interface-name {
   color: var(--text-color);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -1036,16 +1352,16 @@ defineExpose({
 }
 
 .disk-type {
-  padding: 4px 8px;
+  padding: 3px 7px;
   border-radius: 999px;
   background: var(--surface-1);
   text-transform: uppercase;
 }
 
 .interface-status {
-  padding: 4px 10px;
+  padding: 3px 8px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
   background: rgba(234, 95, 97, 0.14);
@@ -1060,20 +1376,20 @@ defineExpose({
 .network-stat {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: 6px;
 }
 
 .stat-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px;
+  gap: 6px;
+  padding: 8px;
   background: var(--surface-1);
 }
 
 .stat-icon {
   color: var(--primary-color);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -1091,31 +1407,57 @@ defineExpose({
   justify-content: center;
 }
 
+.transfer-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.transfer-filter {
+  max-width: 100%;
+  background: rgba(255, 255, 255, 0.52);
+}
+
+.transfer-filter:deep(.ant-segmented-group) {
+  flex-wrap: wrap;
+}
+
+.transfer-filter:deep(.ant-segmented-item) {
+  min-height: 26px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted-color);
+}
+
+.transfer-filter:deep(.ant-segmented-item-selected) {
+  color: var(--primary-color);
+  background: rgba(45, 125, 255, 0.14);
+  border-color: rgba(45, 125, 255, 0.18);
+}
+
 .download-list {
   flex: 1;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .download-item {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 14px;
-  border-radius: 18px;
-  border: 1px solid var(--border-color);
+  gap: 9px;
+  padding: 10px;
+  border-radius: 12px;
   background: var(--monitor-card-bg);
   transition:
     transform 0.2s ease,
-    border-color 0.2s ease,
     background-color 0.2s ease;
 }
 
 .download-item:hover {
   transform: translateY(-1px);
-  border-color: var(--strong-border);
   background: var(--monitor-card-strong);
 }
 
@@ -1135,27 +1477,62 @@ defineExpose({
 
 .download-info .file-name {
   color: var(--text-color);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
-  margin-bottom: 4px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.download-info .file-path {
-  margin-bottom: 8px;
+.file-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 5px;
+}
+
+.file-direction-icon {
+  color: var(--primary-color);
+  font-size: 13px;
+}
+
+.direction-badge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.48);
   color: var(--muted-color);
-  font-size: 11px;
+  font-size: 9px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.download-info .file-path {
+  color: var(--muted-color);
+  font-size: 10px;
   font-family: "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
+  margin-bottom: 3px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.file-path__label {
+  display: inline-block;
+  min-width: 26px;
+  margin-right: 6px;
+  color: var(--text-color);
+  opacity: 0.72;
+}
+
+.transfer-note {
+  margin-top: 4px;
+  color: var(--warning-color);
+  font-size: 10px;
 }
 
 .download-status {
   margin-top: 6px;
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted-color);
 }
 
@@ -1174,19 +1551,12 @@ defineExpose({
 }
 
 .download-footer {
-  padding: 12px 16px 16px;
-  border-top: 1px solid var(--border-subtle);
-  background: var(--panel-header-bg);
+  padding: 8px 0 4px;
 }
 
 @media (max-width: 768px) {
   .panel-content-wrapper {
-    width: 250px;
-  }
-
-  .sidebar-buttons {
-    width: 60px;
-    padding-inline: 8px;
+    width: 236px;
   }
 }
 </style>

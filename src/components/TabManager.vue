@@ -1,19 +1,31 @@
 <template>
-  <div class="tabs-container border-b border-[var(--border-subtle)] bg-[var(--tabs-strip-bg)] px-[18px] pt-2">
-    <a-tabs
-      type="editable-card"
-      :active-key="activeId"
-      :items="tabItems"
-      @change="$emit('change', $event)"
-      @edit="onEditTab"
-      :hide-add="true"
-      :animated="false"
-    />
+  <div v-if="tabs.length" class="tabs-container">
+    <div class="tabs-container__main">
+      <a-tabs
+        class="tabs-container__tabs"
+        type="editable-card"
+        :active-key="activeId"
+        :items="tabItems"
+        @change="$emit('change', $event)"
+        @edit="onEditTab"
+        :hide-add="true"
+        :animated="false"
+      />
+      <a-button
+        type="text"
+        size="small"
+        class="tabs-container__add"
+        @click="$emit('openConnectionCenter')"
+      >
+        <PlusOutlined />
+      </a-button>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, h } from 'vue'
+import { PlusOutlined } from '@antdv-next/icons'
 import type { ConnectionTab } from '../types/app'
 
 const props = defineProps({
@@ -27,12 +39,18 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['change', 'close'])
+const emit = defineEmits(['change', 'close', 'openConnectionCenter'])
 const tabItems = computed(() => (props.tabs as ConnectionTab[]).map((tab) => ({
   key: tab.id,
   closable: true,
   label: h('span', { class: 'tab-content flex items-center gap-2' }, [
-    h('span', { class: 'tab-icon' }, tab.type === 'ssh' ? '🔑' : tab.type === 'file' ? '📄' : '💻'),
+    h('span', { class: ['tab-kind', `tab-kind--${tab.type}`] }, tab.type === 'ssh' ? 'SSH' : tab.type === 'file' ? 'FILE' : tab.type === 'connections' ? 'HUB' : 'LOCAL'),
+    ((tab.type === 'ssh') || (tab.type === 'file' && tab.connectionId))
+      ? h('span', {
+          class: ['tab-status', tab.type === 'ssh' ? 'is-live' : 'is-linked'],
+          'aria-label': tab.type === 'ssh' ? '连接中' : '关联连接'
+        })
+      : null,
     h('span', { class: 'tab-title' }, tab.title),
   ]),
   content: null,
@@ -48,23 +66,99 @@ function onEditTab(targetKeyOrEvent: string | MouseEvent, action: 'add' | 'remov
 <style scoped>
 .tabs-container {
   background: var(--tabs-strip-bg);
-  border-bottom: 1px solid var(--border-subtle);
-  padding: 8px 18px 0;
+  padding: 3px 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.tabs-container__main {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tabs-container__tabs {
+  min-width: 0;
+  flex: 1;
+}
+
+.tabs-container__add {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 9px !important;
+  color: var(--primary-color) !important;
+  background: rgba(255, 255, 255, 0.52) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 
 .tab-content {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
-.tab-icon {
-  font-size: 15px;
+.tab-kind {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: rgba(128, 148, 177, 0.12);
+  color: var(--muted-color);
+}
+
+.tab-kind--ssh {
+  background: rgba(45, 125, 255, 0.12);
+  color: var(--primary-color);
+}
+
+.tab-kind--local {
+  background: rgba(74, 169, 107, 0.12);
+  color: var(--success-color);
+}
+
+.tab-kind--file {
+  background: rgba(240, 177, 79, 0.14);
+  color: var(--warning-color);
+}
+
+.tab-kind--connections {
+  background: rgba(148, 102, 255, 0.12);
+  color: #7758d8;
 }
 
 .tab-title {
-  font-size: 13px;
+  max-width: 176px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
   font-weight: 700;
+}
+
+.tab-status {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(128, 148, 177, 0.5);
+}
+
+.tab-status.is-live {
+  background: var(--success-color);
+  box-shadow: 0 0 0 3px rgba(74, 169, 107, 0.14);
+}
+
+.tab-status.is-linked {
+  background: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(45, 125, 255, 0.12);
 }
 
 :deep(.ant-tabs-nav) {
@@ -76,22 +170,21 @@ function onEditTab(targetKeyOrEvent: string | MouseEvent, action: 'add' | 'remov
 }
 
 :deep(.ant-tabs-tab) {
-  height: 48px;
-  margin-right: 10px !important;
-  padding: 0 18px !important;
-  background: var(--surface-1) !important;
-  border: 1px solid var(--border-color) !important;
-  border-radius: 16px 16px 0 0 !important;
+  height: 30px;
+  margin-right: 4px !important;
+  padding: 0 9px !important;
+  background: rgba(255, 255, 255, 0.32) !important;
+  border: none !important;
+  border-radius: 9px !important;
   color: var(--muted-color) !important;
-  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 
 :deep(.ant-tabs-tab-active) {
-  background: linear-gradient(180deg, var(--surface-1), var(--surface-2)) !important;
-  border-color: var(--strong-border) !important;
+  background: rgba(255, 255, 255, 0.72) !important;
   box-shadow:
-    0 20px 40px rgba(41, 70, 116, 0.1),
-    0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+    0 8px 20px rgba(41, 70, 116, 0.08),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.22);
 }
 
 :deep(.ant-tabs-tab-btn) {
@@ -108,8 +201,12 @@ function onEditTab(targetKeyOrEvent: string | MouseEvent, action: 'add' | 'remov
 
 :deep(.ant-tabs-ink-bar) {
   background: linear-gradient(90deg, #2d7dff, #79b0ff) !important;
-  height: 3px !important;
+  height: 2px !important;
   border-radius: 999px !important;
+}
+
+:deep(.ant-tabs-tab-remove .anticon) {
+  font-size: 11px;
 }
 
 :deep(.ant-tabs-content-holder) {

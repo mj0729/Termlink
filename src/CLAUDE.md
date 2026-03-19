@@ -4,13 +4,13 @@
 
 ## Module Responsibility
 
-The `src/` directory contains the entire frontend layer of Termlink. It renders the desktop application UI using Vue 3 Composition API, Ant Design Vue, xterm.js for terminal emulation, and Monaco Editor for remote file editing. All backend interaction goes through Tauri's `invoke()` IPC and `listen()` event APIs.
+The `src/` directory contains the entire frontend layer of Termlink. It renders the desktop application UI using Vue 3 Composition API, `antdv-next`, xterm.js for terminal emulation, and Monaco Editor for remote file editing. All backend interaction goes through Tauri's `invoke()` IPC and `listen()` event APIs.
 
 ## Entry & Startup
 
-- **Entry point**: `src/main.js` -- creates the Vue app, registers Ant Design Vue globally, mounts to `#app`
+- **Entry point**: `src/main.ts` -- creates the Vue app, keeps `antdv-next/dist/reset.css`, and mounts to `#app`; component registration is now handled by Vite auto-import plugins
 - **Root component**: `src/App.vue` -- orchestrates all child components, manages tabs, themes, profiles, and lifecycle
-- **HTML shell**: `index.html` -- minimal HTML that loads `src/main.js` as a module
+- **HTML shell**: `index.html` -- minimal HTML that loads `src/main.ts` as a module
 
 ## Component Architecture
 
@@ -18,12 +18,12 @@ The `src/` directory contains the entire frontend layer of Termlink. It renders 
 
 | Component | File | Responsibility |
 |-----------|------|----------------|
-| `App.vue` | `src/App.vue` | Root layout: TopMenu + Sidebar + Content + RightPanel + StatusBar. Manages tab state, SSH connections, theme toggling. |
-| `TopMenu.vue` | `src/components/TopMenu.vue` | Horizontal menu bar with session/view/settings menus and quick-action buttons. |
+| `App.vue` | `src/App.vue` | Root layout: TabManager + workspace content + RightPanel + StatusBar. Manages tab state, SSH connections, theme toggling, downloads/uploads, and modal visibility. |
+| `TopMenu.vue` | `src/components/TopMenu.vue` | Legacy top menu component kept in repo for potential reuse; not currently mounted by `App.vue`. |
 | `TabManager.vue` | `src/components/TabManager.vue` | Tab bar using Ant Design's editable-card tabs. Renders tab icons and handles close. |
 | `Sidebar.vue` | `src/components/Sidebar.vue` | Left panel: saved SSH profiles (list/group views with search), SFTP file browser, drag-and-drop upload. ~1500 LOC, the largest component. |
-| `RightPanel.vue` | `src/components/RightPanel.vue` | Right panel: system monitor dashboard + download manager. Toggle between tabs via sidebar buttons. |
-| `StatusBar.vue` | `src/components/StatusBar.vue` | Bottom status bar showing active connection and theme info. |
+| `RightPanel.vue` | `src/components/RightPanel.vue` | Right panel: system monitor dashboard + transfer manager. Toggle between tabs via bottom status bar actions. |
+| `StatusBar.vue` | `src/components/StatusBar.vue` | Bottom status bar showing active connection, workspace count, and right-panel shortcuts. |
 
 ### Feature Components
 
@@ -41,19 +41,21 @@ The `src/` directory contains the entire frontend layer of Termlink. It renders 
 
 | Service | File | Pattern | Responsibility |
 |---------|------|---------|----------------|
-| `SshService` | `src/services/SshService.js` | Singleton class | SSH lifecycle: create/launch/reconnect/close connections, SFTP auto-connect, error formatting |
-| `SftpService` | `src/services/SftpService.js` | Singleton class | SFTP operations: list/read/write/download/upload/delete files, language detection |
-| `ThemeService` | `src/services/ThemeService.js` | Singleton class | Theme management: dark/light themes with terminal color schemes, localStorage persistence |
+| `SshService` | `src/services/SshService.ts` | Singleton class | SSH lifecycle: create/launch/reconnect/close connections, host-key trust flow, password retry, error formatting |
+| `SftpService` | `src/services/SftpService.ts` | Singleton class | SFTP operations: list/read/write/download/upload/delete files, language detection |
+| `ThemeService` | `src/services/ThemeService.ts` | Singleton class | Theme management: dark/light themes with terminal color schemes, localStorage persistence |
 
 ## External Interfaces (Tauri IPC)
 
 All Tauri commands are called via `invoke('command_name', { params })`. Key command groups:
 
 - **Terminal**: `start_pty`, `write_pty`, `resize_pty`, `close_pty`
-- **SSH Terminal**: `start_ssh_terminal`, `write_ssh_terminal`, `resize_ssh_terminal`, `close_ssh_terminal`
+- **SSH Terminal**: `start_ssh_terminal`, `write_ssh_terminal`, `resize_ssh_terminal`
+- **SSH Connection**: `disconnect_ssh_connection`
 - **SSH Profiles**: `save_ssh_profile`, `list_ssh_profiles`, `get_ssh_password`, `delete_ssh_profile`, `get_profiles_dir`
-- **SFTP**: `connect_sftp`, `list_sftp_files`, `download_sftp_file`, `upload_sftp_file`, `read_sftp_file`, `write_sftp_file`, `delete_sftp_file`, `create_sftp_directory`, `rename_sftp_file`, `delete_sftp_directory`
-- **System Monitor**: `get_all_system_info_batch`, `get_dynamic_system_info_batch`, `connect_ssh_for_monitoring`, `disconnect_ssh_monitoring`
+- **Host key**: `preview_ssh_host_key`, `save_ssh_host_key_decision`
+- **SFTP**: `list_sftp_files`, `download_sftp_file`, `upload_sftp_file`, `read_sftp_file`, `write_sftp_file`, `delete_sftp_file`, `create_sftp_directory`, `rename_sftp_file`, `delete_sftp_directory`
+- **System Monitor**: `get_all_system_info_batch`, `get_dynamic_system_info_batch`
 - **Download**: `select_download_location`, `download_sftp_file_with_progress`, `cancel_download`, `open_file_location`
 - **Filesystem**: `list_files`, `get_home_dir`, `get_parent_dir`, `open_file_explorer`
 
@@ -68,18 +70,20 @@ Events (backend -> frontend via `listen`):
 ## Key Dependencies
 
 - `vue` 3.5.x -- UI framework
-- `ant-design-vue` 4.2.x -- UI component library
+- `antdv-next` 1.0.x -- UI component library
+- `unplugin-vue-components` 31.x -- template component auto registration
+- `unplugin-auto-import` 21.x -- script-side auto imports for selected APIs
 - `@xterm/xterm` 5.5.x -- terminal emulator
 - `@xterm/addon-fit` 0.10.x -- terminal auto-fit addon
 - `monaco-editor` 0.52.x -- code editor (lazy loaded, chunk-split)
 - `@tauri-apps/api` 2.8.x -- Tauri IPC bridge
-- `less` 4.4.x -- CSS preprocessor (for Ant Design)
+- `less` 4.4.x -- CSS preprocessor (for antdv-next theme compatibility)
 
 ## Data Model
 
 Frontend state is managed via Vue 3 reactive refs in `App.vue`:
 
-- `tabs: Array<{ id, title, type, profile?, sftpConnectionId?, fileInfo?, connectionId? }>`
+- `tabs: Array<{ id, title, type, profile?, fileInfo?, connectionId? }>`
 - `activeId: string`
 - `profiles: Array<SshProfileMeta>` -- loaded from backend
 - `theme: 'dark' | 'light'`
@@ -97,7 +101,7 @@ Recommended additions:
 ## FAQ
 
 **Q: How are SSH and SFTP connections related?**
-A: When an SSH terminal tab is created, `SshService` establishes the SSH terminal first, then after a 2-second delay, creates an independent SFTP connection. The SFTP connection ID is stored on the tab object as `sftpConnectionId`.
+A: A single `connection_id` now owns one backend `ConnectionManager` actor. Terminal IO, SFTP session creation and system monitoring commands all reuse that same SSH transport. SSH workspace tabs use their own `id` directly as the shared connection identifier, and SFTP sessions are opened lazily on first file operation.
 
 **Q: How does theming work?**
 A: `ThemeService` sets `data-theme` attribute on `<body>`. CSS variables in `style.css` and `App.vue` respond to this attribute. Terminal colors are separate theme objects passed to xterm.js.
@@ -109,7 +113,7 @@ A: `SystemMonitor.vue` is an older floating panel implementation. `RightPanel.vu
 
 ```
 src/
-  main.js                          -- App entry point
+  main.ts                          -- App entry point
   App.vue                          -- Root component (~400 LOC)
   style.css                        -- Global styles + theme variables (~700 LOC)
   components/
@@ -125,11 +129,10 @@ src/
     SshModal.vue                   -- SSH connection dialog (~290 LOC)
     SettingsModal.vue              -- Settings dialog (~225 LOC)
     StatusBar.vue                  -- Bottom status bar (~77 LOC)
-    HelloWorld.vue                 -- Unused template component
   services/
-    SshService.js                  -- SSH connection service (~360 LOC)
-    SftpService.js                 -- SFTP file operation service (~220 LOC)
-    ThemeService.js                -- Theme management service (~135 LOC)
+    SshService.ts                  -- SSH connection service
+    SftpService.ts                 -- SFTP file operation service
+    ThemeService.ts                -- Theme management service
 ```
 
 ## Changelog

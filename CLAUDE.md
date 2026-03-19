@@ -1,24 +1,29 @@
 # Termlink
 
-A modern MobaXterm-style terminal management tool built with Tauri 2.x + Vue 3 + Rust. Provides SSH terminal sessions, SFTP file management, remote system monitoring, and download management in a cross-platform desktop application.
+一个基于 Tauri 2.x + Vue 3 + Rust 构建的现代化 MobaXterm 风格终端管理工具。提供 SSH 终端会话、SFTP 文件管理、远程系统监控和下载管理功能，支持跨平台桌面应用。
 
-## Architecture Overview
+## 项目愿景
 
-Termlink follows a **Tauri 2.x hybrid architecture**:
+Termlink 旨在提供一个轻量级、高性能的跨平台终端管理工具，集成 SSH 连接、文件传输、系统监控等功能，为开发者和运维人员提供便捷的远程服务器管理体验。
 
-- **Frontend (Vue 3 + Vite)**: Renders the UI using Ant Design Vue components, xterm.js for terminal emulation, and Monaco Editor for file editing. Communicates with the backend via Tauri's `invoke()` IPC mechanism.
-- **Backend (Rust)**: Handles all system-level operations including local PTY management (`portable-pty`), SSH connections (`russh`), SFTP file transfers (`russh-sftp`), credential storage (`keyring`), and remote system monitoring via SSH command execution.
-- **IPC Layer**: Tauri's command system bridges frontend and backend. Commands are registered in `src-tauri/src/lib.rs` and invoked from JavaScript via `@tauri-apps/api/core`.
+## 架构总览
 
-### Module Structure Diagram
+Termlink 采用 **Tauri 2.x 混合架构**：
+
+- **前端 (Vue 3 + Vite)**: 使用 Ant Design Vue Next 组件、xterm.js 终端模拟器和 Monaco Editor 文件编辑器渲染 UI。通过 Tauri 的 `invoke()` IPC 机制与后端通信。
+- **后端 (Rust)**: 处理所有系统级操作，包括本地 PTY 管理 (`portable-pty`)、SSH 连接 (`russh`)、SFTP 文件传输 (`russh-sftp`)、凭证存储 (`keyring`) 和远程系统监控（通过 SSH 命令执行）。
+- **IPC 层**: Tauri 命令系统桥接前后端。命令在 `src-tauri/src/lib.rs` 中注册，从 TypeScript 通过 `@tauri-apps/api/core` 调用。
+
+### 模块结构图
 
 ```mermaid
 graph TD
-    A["Termlink (Root)"] --> B["src (Frontend - Vue 3)"];
-    A --> C["src-tauri (Backend - Rust)"];
+    A["(根) Termlink"] --> B["src (前端 - Vue 3 + TypeScript)"];
+    A --> C["src-tauri (后端 - Rust)"];
 
     B --> D["components"];
     B --> E["services"];
+    B --> F["types"];
 
     D --> D1["App.vue"];
     D --> D2["Terminal.vue"];
@@ -33,110 +38,129 @@ graph TD
     D --> D11["SystemMonitor.vue"];
     D --> D12["FileManager.vue"];
     D --> D13["DownloadManager.vue"];
+    D --> D14["ConnectionHub.vue"];
+    D --> D15["RemoteFileWorkbench.vue"];
+    D --> D16["SshWorkspace.vue"];
 
-    E --> E1["SshService.js"];
-    E --> E2["SftpService.js"];
-    E --> E3["ThemeService.js"];
+    E --> E1["SshService.ts"];
+    E --> E2["SftpService.ts"];
+    E --> E3["ThemeService.ts"];
 
-    C --> F["src (Rust modules)"];
-    F --> F1["lib.rs (entry + command registry)"];
-    F --> F2["terminal.rs (local PTY)"];
-    F --> F3["ssh_terminal_russh.rs (SSH terminal)"];
-    F --> F4["ssh.rs (profile management)"];
-    F --> F5["sftp_russh.rs (SFTP operations)"];
-    F --> F6["ssh_command.rs (SSH command exec)"];
-    F --> F7["system_monitor.rs (remote monitoring)"];
-    F --> F8["download_manager.rs (download helpers)"];
-    F --> F9["fs.rs (local filesystem)"];
+    F --> F1["app.ts"];
 
-    click B "./src/CLAUDE.md" "View frontend module docs"
-    click C "./src-tauri/CLAUDE.md" "View backend module docs"
+    C --> G["src (Rust 模块)"];
+    G --> G1["lib.rs (入口 + 命令注册)"];
+    G --> G2["terminal.rs (本地 PTY)"];
+    G --> G3["ssh_terminal_russh.rs (SSH 终端)"];
+    G --> G4["ssh.rs (配置管理)"];
+    G --> G5["sftp_russh.rs (SFTP 操作)"];
+    G --> G6["ssh_command.rs (SSH 命令执行)"];
+    G --> G7["system_monitor.rs (远程监控)"];
+    G --> G8["download_manager.rs (下载辅助)"];
+    G --> G9["fs.rs (本地文件系统)"];
+
+    click B "./src/CLAUDE.md" "查看前端模块文档"
+    click C "./src-tauri/CLAUDE.md" "查看后端模块文档"
 ```
 
-### Module Index
+### 模块索引
 
-| Module | Path | Language | Description |
-|--------|------|----------|-------------|
-| Frontend | `src/` | Vue 3 + JS | UI layer: terminal, file manager, system monitor, settings |
-| Backend | `src-tauri/` | Rust | Core logic: PTY, SSH, SFTP, system monitoring, file ops |
+| 模块 | 路径 | 语言 | 描述 |
+|------|------|------|------|
+| 前端 | `src/` | Vue 3 + TypeScript | UI 层：终端、文件管理器、系统监控、设置 |
+| 后端 | `src-tauri/` | Rust | 核心逻辑：PTY、SSH、SFTP、系统监控、文件操作 |
 
-## Development & Running
+## 运行与开发
 
-### Prerequisites
+### 前置要求
 
 - Node.js 18+
 - Rust 1.77.2+ (edition 2021)
-- Platform: Windows / macOS / Linux
+- pnpm 10.28.0+
+- 平台: Windows / macOS / Linux
 
-### Commands
+### 命令
 
 ```bash
-# Install frontend dependencies
+# 安装前端依赖
 pnpm install
 
-# Development mode (Vite + Tauri)
+# 开发模式 (Vite + Tauri)
 pnpm run tauri:dev
-# or: cargo tauri dev
+# 或: cargo tauri dev
 
-# Production build
+# 生产构建
 pnpm run tauri:build
-# or: cargo tauri build
+# 或: cargo tauri build
 
-# Frontend-only dev server
+# 仅前端开发服务器
 pnpm run dev
 
-# Frontend-only build
+# 仅前端构建
 pnpm run build
 ```
 
-### Configuration
+### 配置
 
-- Tauri config: `src-tauri/tauri.conf.json`
-- Vite config: `vite.config.js`
-- Rust dependencies: `src-tauri/Cargo.toml`
-- Tauri capabilities: `src-tauri/capabilities/default.json`
+- Tauri 配置: `src-tauri/tauri.conf.json`
+- Vite 配置: `vite.config.ts`
+- Rust 依赖: `src-tauri/Cargo.toml`
+- Tauri 权限: `src-tauri/capabilities/default.json`
+- TypeScript 配置: `tsconfig.json`
 
-## Testing Strategy
+## 测试策略
 
-**No test files were found in this project.** There are no unit tests, integration tests, or end-to-end tests currently. This is the most significant gap.
+**当前项目中未发现测试文件。** 没有单元测试、集成测试或端到端测试。这是最显著的缺口。
 
-Recommended testing approach:
-- **Frontend**: Add Vitest for unit/component tests, Playwright or Cypress for E2E
-- **Backend**: Add Rust `#[cfg(test)]` modules for core logic (SSH parsing, file operations, system monitor parsing)
+推荐测试方案：
+- **前端**: 添加 Vitest 进行单元/组件测试，Playwright 或 Cypress 进行 E2E 测试
+- **后端**: 添加 Rust `#[cfg(test)]` 模块测试核心逻辑（SSH 解析、文件操作、系统监控解析）
 
-## Coding Conventions
+## 编码规范
 
-### Frontend (Vue 3)
-- **Composition API** with `<script setup>` syntax throughout
-- **Ant Design Vue 4.x** as the UI component library
-- **Services as singletons**: `SshService`, `SftpService`, `ThemeService` are class instances exported as `new XxxService()`
-- **CSS variables** for theming via `data-theme` attribute on `<body>`
-- **Event communication**: Tauri event listeners (`listen`) for backend-to-frontend data flow; `invoke` for frontend-to-backend commands
-- **No TypeScript**: All frontend code is plain JavaScript despite some TS references in README
+### 前端 (Vue 3 + TypeScript)
+- **Composition API** 使用 `<script setup>` 语法
+- **Ant Design Vue Next (antdv-next)** 作为 UI 组件库
+- **服务单例模式**: `SshService`、`SftpService`、`ThemeService` 导出为 `new XxxService()` 单例
+- **CSS 变量** 通过 `data-theme` 属性在 `<body>` 上实现主题切换
+- **事件通信**: Tauri 事件监听器 (`listen`) 用于后端到前端数据流；`invoke` 用于前端到后端命令
+- **TypeScript**: 项目已从 JavaScript 迁移到 TypeScript，类型定义在 `src/types/app.ts`
+- **Tailwind CSS**: 使用 Tailwind CSS 4.x 进行样式管理
 
-### Backend (Rust)
-- **Tauri command pattern**: Functions decorated with `#[tauri::command]` exposed via `invoke_handler`
-- **Global state via `Lazy<Mutex<HashMap>>`**: Connection pools for PTY, SSH terminals, SFTP sessions, SSH monitoring sessions
-- **russh library**: For SSH/SFTP operations (async, using `tokio` runtime)
-- **portable-pty**: For local terminal emulation
-- **keyring crate**: For secure credential storage
-- **Error handling**: Return `Result<T, String>` from all commands; errors as human-readable strings
+### 后端 (Rust)
+- **Tauri 命令模式**: 函数使用 `#[tauri::command]` 装饰，通过 `invoke_handler` 暴露
+- **全局状态通过 `Lazy<Mutex<HashMap>>`**: 连接池用于 PTY、SSH 终端、SFTP 会话、SSH 监控会话
+- **russh 库**: 用于 SSH/SFTP 操作（异步，使用 `tokio` 运行时）
+- **portable-pty**: 用于本地终端模拟
+- **keyring crate**: 用于安全凭证存储
+- **错误处理**: 所有命令返回 `Result<T, String>`；错误以人类可读字符串形式返回
 
-### Key Patterns
-- Tab-based multi-session architecture: each tab has a unique ID (`local-{timestamp}` or `ssh-{timestamp}`)
-- SFTP connections are established independently alongside SSH terminals (delayed by 2 seconds)
-- System monitoring uses a separate SSH connection pool to avoid interfering with terminal sessions
-- Theme persistence via `localStorage`
+### 关键模式
+- 基于标签页的多会话架构：每个标签页有唯一 ID (`local-{timestamp}` 或 `ssh-{timestamp}`)
+- SFTP 连接与 SSH 终端独立建立（延迟 2 秒）
+- 系统监控使用独立的 SSH 连接池以避免干扰终端会话
+- 主题持久化通过 `localStorage`
 
-## AI Usage Guidelines
+## AI 使用指引
 
-- The project structure is straightforward: frontend in `src/`, backend in `src-tauri/src/`
-- All Tauri IPC commands are listed in `src-tauri/src/lib.rs` -- this is the single source of truth for the backend API surface
-- When modifying SSH/SFTP functionality, check both `ssh_terminal_russh.rs` and `ssh_command.rs` as they maintain separate connection pools
-- The `RightPanel.vue` component handles both system monitoring AND download management
-- Monaco Editor is lazy-loaded and chunk-split in Vite config
-- Security note: `check_server_key` returns `true` for all hosts (no host key verification) -- marked as TODO for production
+- 项目结构清晰：前端在 `src/`，后端在 `src-tauri/src/`
+- 所有 Tauri IPC 命令列在 `src-tauri/src/lib.rs` 中 -- 这是后端 API 表面的唯一真实来源
+- 修改 SSH/SFTP 功能时，检查 `ssh_terminal_russh.rs` 和 `ssh_command.rs`，因为它们维护独立的连接池
+- `RightPanel.vue` 组件同时处理系统监控和下载管理
+- Monaco Editor 在 Vite 配置中延迟加载并分块
+- 安全注意：`check_server_key` 对所有主机返回 `true`（无主机密钥验证）-- 标记为生产环境 TODO
 
-## Changelog
+## 变更记录 (Changelog)
 
-- **2026-03-18T08:46:36**: Initial project scan and CLAUDE.md generation. Full coverage achieved.
+- **2026-03-18T13:10:51**: 项目重新初始化扫描。主要变更：
+  - 前端从 JavaScript 迁移到 TypeScript
+  - npm 迁移到 pnpm (10.28.0)
+  - Ant Design Vue 更新为 antdv-next
+  - 添加 Tailwind CSS 4.x 支持
+  - 入口文件从 `main.js` 改为 `main.ts`
+  - 服务文件从 `.js` 改为 `.ts`
+  - 添加 `tsconfig.json` 和类型定义 (`src/types/app.ts`)
+  - Vite 配置从 `.js` 改为 `.ts`
+  - 新增组件：`ConnectionHub.vue`、`RemoteFileWorkbench.vue`、`SshWorkspace.vue`
+  - 完整覆盖率达成
+- **2026-03-18T08:46:36**: 初始项目扫描和 CLAUDE.md 生成。完整覆盖率达成。

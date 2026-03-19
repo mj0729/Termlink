@@ -1,6 +1,7 @@
 export type ThemeName = 'light' | 'dark'
-export type TabType = 'ssh' | 'local' | 'file'
+export type TabType = 'ssh' | 'local' | 'file' | 'connections'
 export type TerminalCursorStyle = 'block' | 'underline' | 'bar'
+export type WorkspaceDensity = 'comfortable' | 'balanced' | 'compact'
 
 export interface ThemeConfig {
   background: string
@@ -30,6 +31,7 @@ export interface TerminalConfig {
   fontFamily: string
   cursorBlink: boolean
   cursorStyle: TerminalCursorStyle
+  density: WorkspaceDensity
 }
 
 export interface SshProfile {
@@ -66,6 +68,8 @@ export interface SftpFileEntry {
   size: number
   is_dir?: boolean
   is_directory?: boolean
+  modified?: number
+  permissions?: string
   [key: string]: unknown
 }
 
@@ -81,6 +85,21 @@ export interface DownloadRequest {
   remotePath: string
   savePath: string
   connectionId: string
+  batchId?: string
+  batchLabel?: string
+}
+
+export type UploadSource =
+  | { kind: 'file'; file: File }
+  | { kind: 'local-path'; localPath: string }
+
+export interface UploadRequest {
+  fileName: string
+  targetPath: string
+  connectionId: string
+  source: UploadSource
+  batchId?: string
+  batchLabel?: string
 }
 
 export interface ConnectionTab {
@@ -89,25 +108,46 @@ export interface ConnectionTab {
   type: TabType
   profile?: SshProfile | null
   autoPassword?: string | null
-  sftpConnectionId?: string | null
   fileInfo?: SftpFileEntry
   connectionId?: string
   off?: () => void
 }
 
-export interface SftpConnectedDetail {
-  sshId: string
-  sftpId: string
-}
-
 export type DownloadStatus = 'downloading' | 'completed' | 'error' | 'cancelled'
 export type MonitorTab = 'monitor' | 'download'
+export type TransferDirection = 'download' | 'upload'
+export type TransferStatus = 'running' | 'completed' | 'error' | 'cancelled' | 'skipped'
 
 export interface DownloadProgressPayload {
   downloadId: number
   downloaded: number
   total: number
   progress: number
+}
+
+export interface UploadProgressPayload {
+  uploadId: number
+  uploaded: number
+  total: number
+  progress: number
+}
+
+export interface TransferItem {
+  id: number
+  direction: TransferDirection
+  fileName: string
+  sourcePath: string
+  targetPath: string
+  connectionId: string
+  batchId?: string
+  batchLabel?: string
+  status: TransferStatus
+  progress: number
+  transferred: number
+  total: number
+  speed: number
+  startTime: number
+  error: string | null
 }
 
 export interface DownloadItem {
@@ -226,4 +266,23 @@ export interface SshModalForm extends SshConnectionPayload {
   savePassword: boolean
   group: string
   tags: string[]
+}
+
+export interface ImportPreviewItem {
+  id: string
+  name: string
+  host: string
+  username: string
+}
+
+export interface ImportPreview {
+  connectionCount: number
+  includesPasswords: boolean
+  connections: ImportPreviewItem[]
+}
+
+export interface ImportResult {
+  importedCount: number
+  skippedCount: number
+  overwrittenCount: number
 }

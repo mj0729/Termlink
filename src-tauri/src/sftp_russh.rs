@@ -1,16 +1,222 @@
-use once_cell::sync::Lazy;
-use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::sync::Arc;
-use russh::*;
-use russh_keys::*;
+use crate::{connection_manager, download_manager};
 use russh_sftp::client::SftpSession;
-use tokio::io::{AsyncWriteExt, AsyncReadExt};
+use serde::{Deserialize, Serialize};
+use std::path::Path;
+use std::sync::Arc;
 use tauri::Emitter;
+use tokio::fs;
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
-// SFTP文件信息
-#[derive(Serialize, Deserialize, Debug)]
+const UPLOAD_CHUNK_SIZE: usize = 64 * 1024;
+
+#[derive(Clone, Copy)]
+enum TextEncoding {
+    Utf8,
+    Utf16Le,
+    Utf16Be,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SftpTextChunk {
+    pub content: String,
+    pub next_offset: u64,
+    pub total_bytes: u64,
+    pub has_more: bool,
+}
+
+fn decode_utf16_bytes(bytes: &[u8], little_endian: bool) -> Result<String, String> {
+    if !bytes.len().is_multiple_of(2) {
+        return Err("UTF-16 文本长度不是偶数字节".to_string());
+    }
+
+    let units = bytes
+        .chunks_exact(2)
+        .map(|chunk| {
+            if little_endian {
+                u16::from_le_bytes([chunk[0], chunk[1]])
+            } else {
+                u16::from_be_bytes([chunk[0], chunk[1]])
+            }
+        })
+        .collect::<Vec<_>>();
+
+    String::from_utf16(&units).map_err(|_| "UTF-16 文本解码失败".to_string())
+}
+
+fn detect_utf16_without_bom(bytes: &[u8]) -> Option<bool> {
+    if bytes.len() < 4 || !bytes.len().is_multiple_of(2) {
+        return None;
+    }
+
+    let sample_len = bytes.len().min(512);
+    let sample_len = sample_len - (sample_len % 2);
+    let sample = &bytes[..sample_len];
+    let pair_count = sample.len() / 2;
+
+    let even_zero_count = sample.chunks_exact(2).filter(|pair| pair[0] == 0).count();
+    let odd_zero_count = sample.chunks_exact(2).filter(|pair| pair[1] == 0).count();
+
+    if odd_zero_count * 10 >= pair_count * 7 && even_zero_count * 10 <= pair_count * 2 {
+        return Some(true);
+    }
+
+    if even_zero_count * 10 >= pair_count * 7 && odd_zero_count * 10 <= pair_count * 2 {
+        return Some(false);
+    }
+
+    None
+}
+
+fn detect_text_encoding(bytes: &[u8]) -> Result<(TextEncoding, usize), String> {
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        return Ok((TextEncoding::Utf8, 3));
+    }
+
+    if bytes.starts_with(&[0xFF, 0xFE]) {
+        return Ok((TextEncoding::Utf16Le, 2));
+    }
+
+    if bytes.starts_with(&[0xFE, 0xFF]) {
+        return Ok((TextEncoding::Utf16Be, 2));
+    }
+
+    if let Some(little_endian) = detect_utf16_without_bom(bytes) {
+        return Ok((
+            if little_endian {
+                TextEncoding::Utf16Le
+            } else {
+                TextEncoding::Utf16Be
+            },
+            0,
+        ));
+    }
+
+    match String::from_utf8(bytes.to_vec()) {
+        Ok(content) if !content.contains('\0') => Ok((TextEncoding::Utf8, 0)),
+        Ok(_) => Err("文件包含不可显示的空字节，可能不是纯文本文件".to_string()),
+        Err(_) => Err("文件内容不是有效的 UTF-8 或 UTF-16 文本".to_string()),
+    }
+}
+
+fn decode_utf8_chunk(bytes: &[u8]) -> Result<(String, usize), String> {
+    if bytes.is_empty() {
+        return Ok((String::new(), 0));
+    }
+
+    for leading_trim in 0..bytes.len().min(4) {
+        let candidate = &bytes[leading_trim..];
+        match std::str::from_utf8(candidate) {
+            Ok(content) => return Ok((content.to_string(), leading_trim + candidate.len())),
+            Err(error) => {
+                let valid_up_to = error.valid_up_to();
+
+                if valid_up_to > 0 && error.error_len().is_none() {
+                    let content = std::str::from_utf8(&candidate[..valid_up_to])
+                        .map_err(|_| "UTF-8 分段解码失败".to_string())?;
+                    return Ok((content.to_string(), leading_trim + valid_up_to));
+                }
+
+                if valid_up_to == 0 && leading_trim < 3 {
+                    continue;
+                }
+
+                return Err("文件内容不是有效的 UTF-8 文本".to_string());
+            }
+        }
+    }
+
+    Err("UTF-8 分段解码失败".to_string())
+}
+
+fn decode_utf16_chunk(bytes: &[u8], little_endian: bool) -> Result<(String, usize), String> {
+    if bytes.is_empty() {
+        return Ok((String::new(), 0));
+    }
+
+    let mut usable_len = bytes.len() - (bytes.len() % 2);
+    if usable_len == 0 {
+        return Ok((String::new(), 0));
+    }
+
+    let read_unit = |index: usize| -> u16 {
+        let pair = [bytes[index], bytes[index + 1]];
+        if little_endian {
+            u16::from_le_bytes(pair)
+        } else {
+            u16::from_be_bytes(pair)
+        }
+    };
+
+    let first_unit = read_unit(0);
+    let mut leading_trim = 0usize;
+    if (0xDC00..=0xDFFF).contains(&first_unit) {
+        leading_trim = 2;
+    }
+
+    while usable_len >= leading_trim + 2 {
+        let last_unit = read_unit(usable_len - 2);
+        if (0xD800..=0xDBFF).contains(&last_unit) {
+            usable_len -= 2;
+            continue;
+        }
+        break;
+    }
+
+    if usable_len <= leading_trim {
+        return Ok((String::new(), usable_len));
+    }
+
+    let slice = &bytes[leading_trim..usable_len];
+    let content = decode_utf16_bytes(slice, little_endian)?;
+    Ok((content, usable_len))
+}
+
+fn decode_chunk_with_encoding(
+    bytes: &[u8],
+    encoding: TextEncoding,
+) -> Result<(String, usize), String> {
+    match encoding {
+        TextEncoding::Utf8 => decode_utf8_chunk(bytes),
+        TextEncoding::Utf16Le => decode_utf16_chunk(bytes, true),
+        TextEncoding::Utf16Be => decode_utf16_chunk(bytes, false),
+    }
+}
+
+fn decode_remote_text(data: Vec<u8>) -> Result<String, String> {
+    let (encoding, bom_len) = detect_text_encoding(&data)?;
+    let bytes = &data[bom_len..];
+    let (content, consumed) = decode_chunk_with_encoding(bytes, encoding)?;
+
+    if consumed != bytes.len() {
+        return Err("文件内容不是完整的纯文本数据".to_string());
+    }
+
+    if content.contains('\0') {
+        Err("文件包含不可显示的空字节，可能不是纯文本文件".to_string())
+    } else {
+        Ok(content)
+    }
+}
+
+async fn detect_remote_file_encoding(
+    session: &SftpSession,
+    path: &str,
+) -> Result<(TextEncoding, usize), String> {
+    let file = session
+        .open(path)
+        .await
+        .map_err(|e| format!("打开远程文件失败: {}", e))?;
+    let mut sample = Vec::new();
+    file.take(1024)
+        .read_to_end(&mut sample)
+        .await
+        .map_err(|e| format!("读取文件编码探测样本失败: {}", e))?;
+    detect_text_encoding(&sample)
+}
+
+// SFTP 文件信息
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SftpFileInfo {
     pub name: String,
     pub is_dir: bool,
@@ -19,513 +225,848 @@ pub struct SftpFileInfo {
     pub permissions: String,
 }
 
-// SFTP连接管理
-struct SftpConnection {
-    session: Arc<SftpSession>,
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UploadProgressPayload {
+    upload_id: u32,
+    uploaded: u64,
+    total: u64,
+    progress: u32,
 }
 
-static SFTP_CONNECTIONS: Lazy<Mutex<HashMap<String, SftpConnection>>> = 
-    Lazy::new(|| Mutex::new(HashMap::new()));
+fn normalize_local_path(path: &str) -> String {
+    let mut normalized = path.trim().to_string();
 
-// SSH客户端处理器
-struct SftpClient;
-
-#[async_trait::async_trait]
-impl client::Handler for SftpClient {
-    type Error = russh::Error;
-
-    async fn check_server_key(
-        self,
-        _server_public_key: &key::PublicKey,
-    ) -> Result<(Self, bool), Self::Error> {
-        // 接受所有服务器密钥 (在生产环境中应该验证)
-        Ok((self, true))
+    if let Some(stripped) = normalized.strip_prefix("file://") {
+        normalized = stripped.to_string();
     }
+
+    if cfg!(target_os = "windows") {
+        let bytes = normalized.as_bytes();
+        if bytes.len() >= 4
+            && bytes[0] == b'/'
+            && bytes[2] == b':'
+            && bytes[3] == b'/'
+            && bytes[1].is_ascii_alphabetic()
+        {
+            normalized = normalized[1..].to_string();
+        }
+    }
+
+    normalized
 }
 
-// 连接到SFTP服务器
-#[tauri::command]
-pub async fn connect_sftp(
-    connection_id: String, 
-    host: String, 
-    port: u16, 
-    username: String, 
-    password: Option<String>
-) -> Result<(), String> {
-    println!("连接SFTP服务器: {}@{}:{}", username, host, port);
-    
-    // 创建客户端配置
-    let config = client::Config {
-        inactivity_timeout: Some(std::time::Duration::from_secs(300)),
-        ..<_>::default()
-    };
-    
-    println!("连接到SSH服务器...");
-    
-    // 连接到服务器
-    let mut session = match client::connect(Arc::new(config), (&host[..], port), SftpClient).await {
-        Ok(session) => {
-            println!("✓ SSH连接成功");
-            session
-        },
-        Err(e) => {
-            return Err(format!("SSH连接失败: {}", e));
-        }
-    };
-    
-    // 进行认证
-    if let Some(pwd) = password {
-        println!("开始密码认证...");
-        match session.authenticate_password(&username, &pwd).await {
-            Ok(true) => {
-                println!("✓ 密码认证成功");
-            },
-            Ok(false) => {
-                return Err("密码认证失败：用户名或密码错误".to_string());
-            },
-            Err(e) => {
-                return Err(format!("密码认证过程失败: {}", e));
-            }
-        }
+fn join_remote_path(parent: &str, child: &str) -> String {
+    if parent == "/" {
+        format!("/{}", child)
     } else {
-        return Err("当前仅支持密码认证".to_string());
+        format!("{}/{}", parent.trim_end_matches('/'), child)
     }
-    
-    println!("创建SFTP通道...");
-    
-    // 创建SFTP通道
-    let channel = match session.channel_open_session().await {
-        Ok(channel) => channel,
-        Err(e) => {
-            return Err(format!("创建通道失败: {}", e));
-        }
+}
+
+fn split_remote_path(path: &str) -> (String, String) {
+    match path.rfind('/') {
+        Some(0) => ("/".to_string(), path[1..].to_string()),
+        Some(index) => (path[..index].to_string(), path[index + 1..].to_string()),
+        None => ("".to_string(), path.to_string()),
+    }
+}
+
+fn build_remote_conflict_name(file_name: &str, index: u32) -> String {
+    let path = Path::new(file_name);
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or(file_name);
+    let extension = path.extension().and_then(|value| value.to_str());
+
+    if let Some(ext) = extension {
+        format!("{stem} ({index}).{ext}")
+    } else {
+        format!("{stem} ({index})")
+    }
+}
+
+async fn emit_upload_progress(
+    app: &tauri::AppHandle,
+    upload_id: Option<u32>,
+    uploaded: u64,
+    total: u64,
+) -> Result<(), String> {
+    let Some(upload_id) = upload_id else {
+        return Ok(());
     };
-    
-    // 请求SFTP子系统
-    if let Err(e) = channel.request_subsystem(true, "sftp").await {
-        return Err(format!("请求SFTP子系统失败: {}", e));
-    }
-    
-    // 创建SFTP会话
-    let sftp_session = match SftpSession::new(channel.into_stream()).await {
-        Ok(session) => {
-            println!("✓ SFTP会话创建成功");
-            session
+
+    let progress = if total == 0 {
+        100
+    } else {
+        ((uploaded as f64 / total as f64) * 100.0).round() as u32
+    };
+
+    app.emit(
+        "upload-progress",
+        UploadProgressPayload {
+            upload_id,
+            uploaded,
+            total,
+            progress,
         },
-        Err(e) => {
-            return Err(format!("创建SFTP会话失败: {}", e));
+    )
+    .map_err(|e| format!("发送上传进度事件失败: {}", e))
+}
+
+fn ensure_transfer_not_cancelled(transfer_id: Option<u32>) -> Result<(), String> {
+    if let Some(transfer_id) = transfer_id {
+        if download_manager::is_transfer_cancelled(transfer_id) {
+            return Err("传输已取消".to_string());
         }
-    };
-    
-    // 保存连接
-    let connection = SftpConnection {
-        session: Arc::new(sftp_session),
-    };
-    
-    SFTP_CONNECTIONS.lock().insert(connection_id, connection);
-    println!("SFTP连接建立成功");
+    }
+
     Ok(())
 }
 
-// 断开SFTP连接
-#[tauri::command]
-pub fn disconnect_sftp(connection_id: String) -> Result<(), String> {
-    let mut connections = SFTP_CONNECTIONS.lock();
-    if let Some(_connection) = connections.remove(&connection_id) {
-        println!("SFTP连接已断开: {}", connection_id);
-        Ok(())
-    } else {
-        Err("SFTP连接不存在".to_string())
+async fn ensure_remote_directory(session: &SftpSession, remote_path: &str) -> Result<(), String> {
+    if session
+        .try_exists(remote_path)
+        .await
+        .map_err(|e| format!("检查远程目录失败: {}", e))?
+    {
+        return Ok(());
+    }
+
+    session
+        .create_dir(remote_path)
+        .await
+        .map_err(|e| format!("创建远程目录失败: {}", e))
+}
+
+async fn resolve_remote_target_path(
+    session: &SftpSession,
+    remote_path: &str,
+) -> Result<String, String> {
+    if !session
+        .try_exists(remote_path)
+        .await
+        .map_err(|e| format!("检查远程路径失败: {}", e))?
+    {
+        return Ok(remote_path.to_string());
+    }
+
+    let (parent, file_name) = split_remote_path(remote_path);
+    let mut index = 1u32;
+
+    loop {
+        let candidate_name = build_remote_conflict_name(&file_name, index);
+        let candidate = if parent.is_empty() {
+            candidate_name
+        } else {
+            join_remote_path(&parent, &candidate_name)
+        };
+
+        if !session
+            .try_exists(&candidate)
+            .await
+            .map_err(|e| format!("检查远程路径失败: {}", e))?
+        {
+            return Ok(candidate);
+        }
+
+        index += 1;
     }
 }
 
-// 列出SFTP目录文件
-#[tauri::command]
-pub async fn list_sftp_files(connection_id: String, path: String) -> Result<Vec<SftpFileInfo>, String> {
-    let session = {
-        let connections = SFTP_CONNECTIONS.lock();
-        let connection = match connections.get(&connection_id) {
-            Some(conn) => conn,
-            None => return Err("SFTP连接不存在".to_string()),
-        };
-        connection.session.clone()
-    }; // 锁在这里自动释放
-    
-    println!("列出目录: {}", path);
-    
-    match session.read_dir(&path).await {
-            Ok(entries) => {
-                let mut files = Vec::new();
-                
-                for entry in entries {
-                    let metadata = entry.metadata();
-                    let file_info = SftpFileInfo {
-                        name: entry.file_name().to_string(),
-                        is_dir: entry.file_type().is_dir(),
-                        size: metadata.len(),
-                        modified: metadata.modified().ok().and_then(|t| 
-                            t.duration_since(std::time::UNIX_EPOCH).ok()
-                        ).map(|d| d.as_secs()),
-                        permissions: {
-                            let perms = metadata.permissions();
-                            // 构建完整的权限字符串，使用可用的字段
-                            let mut perm_str = String::new();
-                            
-                            // 用户权限 (如果字段不存在，显示为 "--x")
-                            perm_str.push_str("---");
-                            
-                            // 组权限 (使用group_字段)
-                            perm_str.push(if perms.group_read { 'r' } else { '-' });
-                            perm_str.push(if perms.group_write { 'w' } else { '-' });
-                            perm_str.push(if perms.group_exec { 'x' } else { '-' });
-                            
-                            // 其他权限 (使用other_字段)
-                            perm_str.push(if perms.other_read { 'r' } else { '-' });
-                            perm_str.push(if perms.other_write { 'w' } else { '-' });
-                            perm_str.push(if perms.other_exec { 'x' } else { '-' });
-                            
-                            perm_str
-                        },
-                    };
-                    files.push(file_info);
-                }
-                
-                // 按名称排序，目录在前
-                files.sort_by(|a, b| {
-                    match (a.is_dir, b.is_dir) {
-                        (true, false) => std::cmp::Ordering::Less,
-                        (false, true) => std::cmp::Ordering::Greater,
-                        _ => a.name.cmp(&b.name),
-                    }
-                });
-                
-                Ok(files)
-            },
-            Err(e) => Err(format!("列出目录失败: {}", e)),
+async fn write_remote_file(
+    session: &SftpSession,
+    remote_path: &str,
+    data: &[u8],
+    app: &tauri::AppHandle,
+    upload_id: Option<u32>,
+    uploaded: &mut u64,
+    total: u64,
+) -> Result<(), String> {
+    ensure_transfer_not_cancelled(upload_id)?;
+    let mut remote_file = session
+        .create(remote_path)
+        .await
+        .map_err(|e| format!("创建远程文件失败: {}", e))?;
+
+    if data.is_empty() {
+        emit_upload_progress(app, upload_id, *uploaded, total).await?;
+    } else {
+        for chunk in data.chunks(UPLOAD_CHUNK_SIZE) {
+            ensure_transfer_not_cancelled(upload_id)?;
+            remote_file
+                .write_all(chunk)
+                .await
+                .map_err(|e| format!("写入远程文件失败: {}", e))?;
+            *uploaded += chunk.len() as u64;
+            emit_upload_progress(app, upload_id, *uploaded, total).await?;
         }
+    }
+
+    remote_file
+        .flush()
+        .await
+        .map_err(|e| format!("刷新远程文件失败: {}", e))
 }
 
-// 下载SFTP文件（带真实进度）
+async fn calculate_local_total_size(local_path: &Path) -> Result<u64, String> {
+    let mut total = 0u64;
+    let mut stack = vec![local_path.to_path_buf()];
+
+    while let Some(current_path) = stack.pop() {
+        let metadata = fs::metadata(&current_path)
+            .await
+            .map_err(|e| format!("读取本地文件失败: {}", e))?;
+
+        if metadata.is_dir() {
+            let mut entries = fs::read_dir(&current_path)
+                .await
+                .map_err(|e| format!("读取本地目录失败: {}", e))?;
+
+            while let Some(entry) = entries
+                .next_entry()
+                .await
+                .map_err(|e| format!("读取本地目录项失败: {}", e))?
+            {
+                stack.push(entry.path());
+            }
+
+            continue;
+        }
+
+        total += metadata.len();
+    }
+
+    Ok(total)
+}
+
+async fn upload_local_entry(
+    session: &SftpSession,
+    local_path: &Path,
+    remote_path: &str,
+    app: &tauri::AppHandle,
+    upload_id: Option<u32>,
+    uploaded: &mut u64,
+    total: u64,
+) -> Result<(), String> {
+    let mut stack = vec![(local_path.to_path_buf(), remote_path.to_string())];
+
+    while let Some((current_local_path, current_remote_path)) = stack.pop() {
+        ensure_transfer_not_cancelled(upload_id)?;
+        let metadata = fs::metadata(&current_local_path)
+            .await
+            .map_err(|e| format!("读取本地文件失败: {}", e))?;
+
+        if metadata.is_dir() {
+            ensure_remote_directory(session, &current_remote_path).await?;
+
+            let mut entries = fs::read_dir(&current_local_path)
+                .await
+                .map_err(|e| format!("读取本地目录失败: {}", e))?;
+
+            let mut children = Vec::new();
+            while let Some(entry) = entries
+                .next_entry()
+                .await
+                .map_err(|e| format!("读取本地目录项失败: {}", e))?
+            {
+                let child_name = entry.file_name().to_string_lossy().to_string();
+                children.push((
+                    entry.path(),
+                    join_remote_path(&current_remote_path, &child_name),
+                ));
+            }
+
+            for child in children.into_iter().rev() {
+                stack.push(child);
+            }
+
+            continue;
+        }
+
+        let data = fs::read(&current_local_path)
+            .await
+            .map_err(|e| format!("读取本地文件失败: {}", e))?;
+
+        write_remote_file(
+            session,
+            &current_remote_path,
+            &data,
+            app,
+            upload_id,
+            uploaded,
+            total,
+        )
+        .await?;
+    }
+
+    Ok(())
+}
+
+async fn delete_remote_directory_recursive(
+    session: &SftpSession,
+    root_path: &str,
+) -> Result<(), String> {
+    let mut stack = vec![(root_path.to_string(), false)];
+
+    while let Some((current_path, visited)) = stack.pop() {
+        if visited {
+            session
+                .remove_dir(&current_path)
+                .await
+                .map_err(|e| format!("删除目录失败: {}", e))?;
+            continue;
+        }
+
+        stack.push((current_path.clone(), true));
+
+        let entries = session
+            .read_dir(&current_path)
+            .await
+            .map_err(|e| format!("读取目录失败: {}", e))?;
+
+        for entry in entries {
+            let name = entry.file_name().to_string();
+            if name == "." || name == ".." {
+                continue;
+            }
+
+            let child_path = join_remote_path(&current_path, &name);
+            if entry.file_type().is_dir() {
+                stack.push((child_path, false));
+            } else {
+                session
+                    .remove_file(&child_path)
+                    .await
+                    .map_err(|e| format!("删除文件失败: {}", e))?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn list_sftp_files(
+    connection_id: String,
+    path: String,
+) -> Result<Vec<SftpFileInfo>, String> {
+    let session = get_sftp_session(&connection_id).await?;
+
+    println!("列出目录: {}", path);
+
+    match session.read_dir(&path).await {
+        Ok(entries) => {
+            let mut files = Vec::new();
+
+            for entry in entries {
+                let metadata = entry.metadata();
+                let file_info = SftpFileInfo {
+                    name: entry.file_name().to_string(),
+                    is_dir: entry.file_type().is_dir(),
+                    size: metadata.len(),
+                    modified: metadata
+                        .modified()
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_secs()),
+                    permissions: {
+                        let perms = metadata.permissions();
+                        // 构建完整的权限字符串，使用可用的字段
+                        let mut perm_str = String::new();
+
+                        // 用户权限 (如果字段不存在，显示为 "--x")
+                        perm_str.push_str("---");
+
+                        // 组权限 (使用group_字段)
+                        perm_str.push(if perms.group_read { 'r' } else { '-' });
+                        perm_str.push(if perms.group_write { 'w' } else { '-' });
+                        perm_str.push(if perms.group_exec { 'x' } else { '-' });
+
+                        // 其他权限 (使用other_字段)
+                        perm_str.push(if perms.other_read { 'r' } else { '-' });
+                        perm_str.push(if perms.other_write { 'w' } else { '-' });
+                        perm_str.push(if perms.other_exec { 'x' } else { '-' });
+
+                        perm_str
+                    },
+                };
+                files.push(file_info);
+            }
+
+            // 按名称排序，目录在前
+            files.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => a.name.cmp(&b.name),
+            });
+
+            Ok(files)
+        }
+        Err(e) => Err(format!("列出目录失败: {}", e)),
+    }
+}
+
+#[tauri::command]
+pub async fn resolve_sftp_target_path(
+    connection_id: String,
+    path: String,
+) -> Result<String, String> {
+    let session = get_sftp_session(&connection_id).await?;
+    resolve_remote_target_path(&session, &path).await
+}
+
+#[tauri::command]
+pub async fn check_sftp_path_exists(connection_id: String, path: String) -> Result<bool, String> {
+    let session = get_sftp_session(&connection_id).await?;
+    session
+        .try_exists(&path)
+        .await
+        .map_err(|e| format!("检查远程路径失败: {}", e))
+}
+
 #[tauri::command]
 pub async fn download_sftp_file(
     app: tauri::AppHandle,
-    connection_id: String, 
-    remote_path: String, 
+    connection_id: String,
+    remote_path: String,
     local_path: String,
-    download_id: u32
+    download_id: u32,
 ) -> Result<(), String> {
-    let session = {
-        let connections = SFTP_CONNECTIONS.lock();
-        let connection = match connections.get(&connection_id) {
-            Some(conn) => conn,
-            None => return Err("SFTP连接不存在".to_string()),
-        };
-        connection.session.clone()
-    }; // 锁在这里自动释放
-        
+    let session = get_sftp_session(&connection_id).await?;
+    download_manager::reset_transfer_cancel(download_id);
+
     println!("下载文件(带进度): {} -> {}", remote_path, local_path);
-    
+
     // 首先获取文件大小
     let metadata = match session.metadata(&remote_path).await {
         Ok(meta) => meta,
         Err(e) => return Err(format!("获取文件元数据失败: {}", e)),
     };
-    
+
     let total_size = metadata.len();
     println!("文件总大小: {} 字节", total_size);
-    
+
     // 发送初始进度
-    let _ = app.emit("download-progress", serde_json::json!({
-        "downloadId": download_id,
-        "downloaded": 0,
-        "total": total_size,
-        "progress": 0
-    }));
-    
+    let _ = app.emit(
+        "download-progress",
+        serde_json::json!({
+            "downloadId": download_id,
+            "downloaded": 0,
+            "total": total_size,
+            "progress": 0
+        }),
+    );
+
     // 打开远程文件进行读取
     let mut file = match session.open(&remote_path).await {
         Ok(f) => f,
         Err(e) => return Err(format!("打开远程文件失败: {}", e)),
     };
-    
+
     // 创建本地文件
     let mut local_file = match tokio::fs::File::create(&local_path).await {
         Ok(f) => f,
         Err(e) => return Err(format!("创建本地文件失败: {}", e)),
     };
-    
+
     // 分块读取和写入
     const CHUNK_SIZE: usize = 32768; // 32KB 每块
     let mut buffer = vec![0u8; CHUNK_SIZE];
     let mut downloaded: u64 = 0;
     let mut last_progress_percent = 0;
-    
+
     loop {
+        if download_manager::is_transfer_cancelled(download_id) {
+            download_manager::reset_transfer_cancel(download_id);
+            return Err("传输已取消".to_string());
+        }
+
         // 使用 AsyncReadExt 的 read 方法读取一块数据
         use tokio::io::AsyncReadExt;
         let bytes_read = match file.read(&mut buffer).await {
             Ok(n) => n,
             Err(e) => return Err(format!("读取远程文件失败: {}", e)),
         };
-        
+
         if bytes_read == 0 {
             break; // 文件读取完成
         }
-        
+
         // 写入本地文件
         if let Err(e) = local_file.write_all(&buffer[..bytes_read]).await {
             return Err(format!("写入本地文件失败: {}", e));
         }
-        
+
         downloaded += bytes_read as u64;
-        
+
         // 计算进度百分比
         let progress = if total_size > 0 {
             ((downloaded as f64 / total_size as f64) * 100.0) as u32
         } else {
             0
         };
-        
+
         // 只在进度变化时发送更新（避免过多事件）
         if progress != last_progress_percent || downloaded == total_size {
             last_progress_percent = progress;
-            
-            let _ = app.emit("download-progress", serde_json::json!({
-                "downloadId": download_id,
-                "downloaded": downloaded,
-                "total": total_size,
-                "progress": progress
-            }));
-            
-            println!("下载进度: {}/{} 字节 ({}%)", downloaded, total_size, progress);
+
+            let _ = app.emit(
+                "download-progress",
+                serde_json::json!({
+                    "downloadId": download_id,
+                    "downloaded": downloaded,
+                    "total": total_size,
+                    "progress": progress
+                }),
+            );
+
+            println!(
+                "下载进度: {}/{} 字节 ({}%)",
+                downloaded, total_size, progress
+            );
         }
     }
-    
+
     // 确保文件写入完成
     if let Err(e) = local_file.flush().await {
         return Err(format!("刷新文件缓冲失败: {}", e));
     }
-    
+
+    download_manager::reset_transfer_cancel(download_id);
     println!("文件下载成功: {}", local_path);
     Ok(())
 }
 
-// 上传文件到SFTP
 #[tauri::command]
 pub async fn upload_sftp_file(
-    connection_id: String, 
-    local_path: String, 
-    remote_path: String
+    app: tauri::AppHandle,
+    connection_id: String,
+    local_path: String,
+    remote_path: String,
+    upload_id: Option<u32>,
 ) -> Result<(), String> {
-    let session = {
-        let connections = SFTP_CONNECTIONS.lock();
-        let connection = match connections.get(&connection_id) {
-            Some(conn) => conn,
-            None => return Err("SFTP连接不存在".to_string()),
-        };
-        connection.session.clone()
-    }; // 锁在这里自动释放
-        
-        println!("上传文件: {} -> {}", local_path, remote_path);
-        
-        // 读取本地文件
-        let data = match tokio::fs::read(&local_path).await {
-            Ok(data) => data,
-            Err(e) => return Err(format!("读取本地文件失败: {}", e)),
-        };
-        
-        // 写入远程文件
-        match session.write(&remote_path, &data).await {
-            Ok(_) => {
-                println!("文件上传成功");
-                Ok(())
-            },
-            Err(e) => Err(format!("写入远程文件失败: {}", e)),
-        }
+    let session = get_sftp_session(&connection_id).await?;
+    if let Some(upload_id) = upload_id {
+        download_manager::reset_transfer_cancel(upload_id);
+    }
+    let local_path = normalize_local_path(&local_path);
+    let local_path = Path::new(&local_path);
+    let total = calculate_local_total_size(local_path).await?;
+    let mut uploaded = 0u64;
+
+    println!("上传路径: {} -> {}", local_path.display(), remote_path);
+
+    emit_upload_progress(&app, upload_id, 0, total).await?;
+    upload_local_entry(
+        &session,
+        local_path,
+        &remote_path,
+        &app,
+        upload_id,
+        &mut uploaded,
+        total,
+    )
+    .await?;
+    emit_upload_progress(&app, upload_id, total, total).await?;
+
+    if let Some(upload_id) = upload_id {
+        download_manager::reset_transfer_cancel(upload_id);
+    }
+    println!("文件上传成功");
+    Ok(())
 }
 
-// 读取SFTP文件内容
+#[tauri::command]
+pub async fn upload_sftp_content(
+    app: tauri::AppHandle,
+    connection_id: String,
+    remote_path: String,
+    data: Vec<u8>,
+    upload_id: Option<u32>,
+) -> Result<(), String> {
+    let session = get_sftp_session(&connection_id).await?;
+    if let Some(upload_id) = upload_id {
+        download_manager::reset_transfer_cancel(upload_id);
+    }
+    let total = data.len() as u64;
+    let mut uploaded = 0u64;
+
+    println!("上传文件内容: {} ({} bytes)", remote_path, data.len());
+
+    emit_upload_progress(&app, upload_id, 0, total).await?;
+    write_remote_file(
+        &session,
+        &remote_path,
+        &data,
+        &app,
+        upload_id,
+        &mut uploaded,
+        total,
+    )
+    .await?;
+    emit_upload_progress(&app, upload_id, total, total).await?;
+
+    if let Some(upload_id) = upload_id {
+        download_manager::reset_transfer_cancel(upload_id);
+    }
+    println!("文件上传成功");
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn read_sftp_file(connection_id: String, path: String) -> Result<String, String> {
-    let session = {
-        let connections = SFTP_CONNECTIONS.lock();
-        let connection = match connections.get(&connection_id) {
-            Some(conn) => conn,
-            None => return Err("SFTP连接不存在".to_string()),
-        };
-        connection.session.clone()
-    }; // 锁在这里自动释放
-        
-        println!("读取文件: {}", path);
-        
-        match session.read(&path).await {
-            Ok(data) => {
-                match String::from_utf8(data) {
-                    Ok(content) => Ok(content),
-                    Err(_) => Err("文件内容不是有效的UTF-8文本".to_string()),
-                }
-            },
-            Err(e) => Err(format!("读取文件失败: {}", e)),
-        }
+    let session = get_sftp_session(&connection_id).await?;
+
+    println!("读取文件: {}", path);
+
+    match session.read(&path).await {
+        Ok(data) => decode_remote_text(data),
+        Err(e) => Err(format!("读取文件失败: {}", e)),
+    }
 }
 
-// 写入SFTP文件内容
+#[tauri::command]
+pub async fn read_sftp_file_chunk(
+    connection_id: String,
+    path: String,
+    offset: u64,
+    max_bytes: u64,
+) -> Result<SftpTextChunk, String> {
+    let session = get_sftp_session(&connection_id).await?;
+    let metadata = session
+        .metadata(&path)
+        .await
+        .map_err(|e| format!("获取文件元数据失败: {}", e))?;
+    let total_bytes = metadata.len();
+
+    if total_bytes == 0 || offset >= total_bytes {
+        return Ok(SftpTextChunk {
+            content: String::new(),
+            next_offset: total_bytes,
+            total_bytes,
+            has_more: false,
+        });
+    }
+
+    let (encoding, bom_len) = detect_remote_file_encoding(&session, &path).await?;
+    let mut start_offset = offset;
+    if start_offset < bom_len as u64 {
+        start_offset = bom_len as u64;
+    }
+
+    if matches!(encoding, TextEncoding::Utf16Le | TextEncoding::Utf16Be)
+        && (start_offset - bom_len as u64) % 2 != 0
+    {
+        start_offset -= 1;
+    }
+
+    let mut bytes_to_read = max_bytes
+        .max(1)
+        .min(total_bytes.saturating_sub(start_offset));
+    if matches!(encoding, TextEncoding::Utf16Le | TextEncoding::Utf16Be) && bytes_to_read % 2 != 0 {
+        bytes_to_read = bytes_to_read.saturating_sub(1);
+    }
+    if bytes_to_read == 0 {
+        bytes_to_read = (total_bytes - start_offset).min(2);
+    }
+
+    let mut file = session
+        .open(&path)
+        .await
+        .map_err(|e| format!("打开远程文件失败: {}", e))?;
+    file.seek(std::io::SeekFrom::Start(start_offset))
+        .await
+        .map_err(|e| format!("定位远程文件失败: {}", e))?;
+
+    let mut raw = Vec::with_capacity(bytes_to_read as usize);
+    file.take(bytes_to_read)
+        .read_to_end(&mut raw)
+        .await
+        .map_err(|e| format!("读取远程文件分段失败: {}", e))?;
+
+    let (content, consumed) = decode_chunk_with_encoding(&raw, encoding)?;
+    let next_offset = (start_offset + consumed as u64).min(total_bytes);
+
+    Ok(SftpTextChunk {
+        content,
+        next_offset,
+        total_bytes,
+        has_more: next_offset < total_bytes,
+    })
+}
+
 #[tauri::command]
 pub async fn write_sftp_file(
-    connection_id: String, 
-    path: String, 
-    content: String
+    app: tauri::AppHandle,
+    connection_id: String,
+    path: String,
+    content: String,
 ) -> Result<(), String> {
-    let session = {
-        let connections = SFTP_CONNECTIONS.lock();
-        let connection = match connections.get(&connection_id) {
-            Some(conn) => conn,
-            None => return Err("SFTP连接不存在".to_string()),
-        };
-        connection.session.clone()
-    }; // 锁在这里自动释放
-        
-        println!("写入文件: {}", path);
-        
-        match session.write(&path, &content.into_bytes()).await {
-            Ok(_) => {
-                println!("文件写入成功");
-                Ok(())
-            },
-            Err(e) => Err(format!("写入文件失败: {}", e)),
-        }
+    let session = get_sftp_session(&connection_id).await?;
+    let total = content.len() as u64;
+    let mut uploaded = 0u64;
+
+    println!("写入文件: {}", path);
+
+    write_remote_file(
+        &session,
+        &path,
+        content.as_bytes(),
+        &app,
+        None,
+        &mut uploaded,
+        total,
+    )
+    .await?;
+
+    println!("文件写入成功");
+    Ok(())
 }
 
-// 删除SFTP文件
 #[tauri::command]
 pub async fn delete_sftp_file(connection_id: String, path: String) -> Result<(), String> {
-    let session = {
-        let connections = SFTP_CONNECTIONS.lock();
-        let connection = match connections.get(&connection_id) {
-            Some(conn) => conn,
-            None => return Err("SFTP连接不存在".to_string()),
-        };
-        connection.session.clone()
-    }; // 锁在这里自动释放
-        
-        println!("删除文件: {}", path);
-        
-        match session.remove_file(&path).await {
-            Ok(_) => {
-                println!("文件删除成功");
-                Ok(())
-            },
-            Err(e) => Err(format!("删除文件失败: {}", e)),
+    let session = get_sftp_session(&connection_id).await?;
+
+    println!("删除文件: {}", path);
+
+    match session.remove_file(&path).await {
+        Ok(_) => {
+            println!("文件删除成功");
+            Ok(())
         }
+        Err(e) => Err(format!("删除文件失败: {}", e)),
+    }
 }
 
-// 创建SFTP目录
 #[tauri::command]
 pub async fn create_sftp_directory(connection_id: String, path: String) -> Result<(), String> {
-    let session = {
-        let connections = SFTP_CONNECTIONS.lock();
-        let connection = match connections.get(&connection_id) {
-            Some(conn) => conn,
-            None => return Err("SFTP连接不存在".to_string()),
-        };
-        connection.session.clone()
-    }; // 锁在这里自动释放
-        
-        println!("创建目录: {}", path);
-        
-        match session.create_dir(&path).await {
-            Ok(_) => {
-                println!("目录创建成功");
-                Ok(())
-            },
-            Err(e) => Err(format!("创建目录失败: {}", e)),
+    let session = get_sftp_session(&connection_id).await?;
+
+    println!("创建目录: {}", path);
+
+    match session.create_dir(&path).await {
+        Ok(_) => {
+            println!("目录创建成功");
+            Ok(())
         }
+        Err(e) => Err(format!("创建目录失败: {}", e)),
+    }
 }
 
-// 从SSH会话创建SFTP连接（新实现）
-#[tauri::command]
-pub fn create_sftp_from_ssh(_connection_id: String) -> Result<(), String> {
-    // TODO: 实现从russh会话创建SFTP连接
-    // 这需要在SSH终端模块中暴露会话，然后在这里复用
-    Err("从SSH会话创建SFTP连接功能正在开发中".to_string())
-}
-
-// 重命名SFTP文件或目录
 #[tauri::command]
 pub async fn rename_sftp_file(
-    connection_id: String, 
-    old_path: String, 
-    new_path: String
+    connection_id: String,
+    old_path: String,
+    new_path: String,
 ) -> Result<(), String> {
-    let session = {
-        let connections = SFTP_CONNECTIONS.lock();
-        let connection = match connections.get(&connection_id) {
-            Some(conn) => conn,
-            None => return Err("SFTP连接不存在".to_string()),
-        };
-        connection.session.clone()
-    };
-    
+    let session = get_sftp_session(&connection_id).await?;
+
     println!("重命名文件: {} -> {}", old_path, new_path);
-    
+
     match session.rename(&old_path, &new_path).await {
         Ok(_) => {
             println!("文件重命名成功");
             Ok(())
-        },
+        }
         Err(e) => Err(format!("重命名文件失败: {}", e)),
     }
 }
 
-// 删除SFTP目录（递归删除）
 #[tauri::command]
 pub async fn delete_sftp_directory(connection_id: String, path: String) -> Result<(), String> {
-    let session = {
-        let connections = SFTP_CONNECTIONS.lock();
-        let connection = match connections.get(&connection_id) {
-            Some(conn) => conn,
-            None => return Err("SFTP连接不存在".to_string()),
-        };
-        connection.session.clone()
-    };
-    
+    let session = get_sftp_session(&connection_id).await?;
+
     println!("删除目录: {}", path);
-    
-    match session.remove_dir(&path).await {
-        Ok(_) => {
-            println!("目录删除成功");
-            Ok(())
-        },
-        Err(e) => Err(format!("删除目录失败: {}", e)),
+
+    delete_remote_directory_recursive(&session, &path).await?;
+
+    println!("目录删除成功");
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{decode_remote_text, decode_utf16_chunk, decode_utf8_chunk};
+
+    #[test]
+    fn decodes_utf8_text() {
+        let content = decode_remote_text("hello\nworld".as_bytes().to_vec()).unwrap();
+        assert_eq!(content, "hello\nworld");
+    }
+
+    #[test]
+    fn decodes_utf16le_with_bom() {
+        let mut bytes = vec![0xFF, 0xFE];
+        for unit in "hello\nworld".encode_utf16() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+
+        let content = decode_remote_text(bytes).unwrap();
+        assert_eq!(content, "hello\nworld");
+    }
+
+    #[test]
+    fn decodes_utf16le_without_bom() {
+        let bytes = "nacos.config.log"
+            .encode_utf16()
+            .flat_map(|unit| unit.to_le_bytes())
+            .collect::<Vec<_>>();
+
+        let content = decode_remote_text(bytes).unwrap();
+        assert_eq!(content, "nacos.config.log");
+    }
+
+    #[test]
+    fn rejects_text_with_embedded_nul_bytes() {
+        let error = decode_remote_text(b"abc\0def".to_vec()).unwrap_err();
+        assert!(error.contains("空字节"));
+    }
+
+    #[test]
+    fn decodes_utf8_chunk_without_cutting_trailing_multibyte_char() {
+        let source = "日志🙂尾巴".as_bytes();
+        let (content, consumed) = decode_utf8_chunk(&source[..8]).unwrap();
+        assert_eq!(content, "日志");
+        assert_eq!(consumed, "日志".as_bytes().len());
+    }
+
+    #[test]
+    fn decodes_utf16_chunk_without_cutting_surrogate_pair() {
+        let bytes = "日志🙂尾巴"
+            .encode_utf16()
+            .flat_map(|unit| unit.to_le_bytes())
+            .collect::<Vec<_>>();
+        let (content, consumed) = decode_utf16_chunk(&bytes[..6], true).unwrap();
+        assert_eq!(content, "日志");
+        assert_eq!(consumed, "日志".encode_utf16().count() * 2);
     }
 }
 
-// 获取文件元数据
 #[tauri::command]
-pub async fn get_sftp_file_metadata(connection_id: String, path: String) -> Result<SftpFileInfo, String> {
-    let session = {
-        let connections = SFTP_CONNECTIONS.lock();
-        let connection = match connections.get(&connection_id) {
-            Some(conn) => conn,
-            None => return Err("SFTP连接不存在".to_string()),
-        };
-        connection.session.clone()
-    };
-    
+pub async fn get_sftp_file_metadata(
+    connection_id: String,
+    path: String,
+) -> Result<SftpFileInfo, String> {
+    let session = get_sftp_session(&connection_id).await?;
+
     println!("获取文件元数据: {}", path);
-    
+
     match session.metadata(&path).await {
         Ok(metadata) => {
             // 从路径中提取文件名
             let name = path.split('/').last().unwrap_or(&path).to_string();
-            
+
             let file_info = SftpFileInfo {
                 name,
                 is_dir: metadata.is_dir(),
                 size: metadata.len(),
-                modified: metadata.modified().ok().and_then(|t| 
-                    t.duration_since(std::time::UNIX_EPOCH).ok()
-                ).map(|d| d.as_secs()),
+                modified: metadata
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs()),
                 permissions: {
                     let perms = metadata.permissions();
                     let mut perm_str = String::new();
@@ -540,7 +1081,11 @@ pub async fn get_sftp_file_metadata(connection_id: String, path: String) -> Resu
                 },
             };
             Ok(file_info)
-        },
+        }
         Err(e) => Err(format!("获取文件元数据失败: {}", e)),
     }
+}
+
+async fn get_sftp_session(connection_id: &str) -> Result<Arc<SftpSession>, String> {
+    connection_manager::open_sftp(connection_id.to_string()).await
 }

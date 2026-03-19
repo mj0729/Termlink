@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-03-18T08:46:36+08:00",
+  "timestamp": "2026-03-18T13:10:51+08:00",
   "project": "Termlink",
   "version": "0.1.0",
   "description": "MobaXterm-style terminal tool built with Tauri 2.x + Vue 3 + Rust",
@@ -7,35 +7,40 @@
   "rootClaude": "CLAUDE.md",
   "modules": [
     {
-      "name": "Frontend (Vue 3)",
+      "name": "Frontend (Vue 3 + TypeScript)",
       "path": "src/",
       "claudeMd": "src/CLAUDE.md",
-      "language": "JavaScript (Vue 3 SFC)",
-      "entry": "src/main.js",
+      "language": "TypeScript (Vue 3 SFC)",
+      "entry": "src/main.ts",
       "interfaces": [
         "Tauri IPC invoke calls",
         "Tauri event listeners"
       ],
       "testDir": null,
       "configFiles": [
-        "vite.config.js",
-        "package.json"
+        "vite.config.ts",
+        "package.json",
+        "tsconfig.json"
       ],
       "keyPaths": [
         "src/App.vue",
-        "src/main.js",
+        "src/main.ts",
         "src/style.css",
+        "src/types/app.ts",
         "src/components/Terminal.vue",
         "src/components/Sidebar.vue",
         "src/components/RightPanel.vue",
         "src/components/FileEditor.vue",
-        "src/services/SshService.js",
-        "src/services/SftpService.js",
-        "src/services/ThemeService.js"
+        "src/components/ConnectionHub.vue",
+        "src/components/RemoteFileWorkbench.vue",
+        "src/components/SshWorkspace.vue",
+        "src/services/SshService.ts",
+        "src/services/SftpService.ts",
+        "src/services/ThemeService.ts"
       ],
       "coverage": {
-        "totalFiles": 18,
-        "scannedFiles": 18,
+        "totalFiles": 22,
+        "scannedFiles": 22,
         "percentage": 100,
         "gaps": []
       }
@@ -77,14 +82,15 @@
     }
   ],
   "scan": {
-    "totalFiles": 37,
-    "scannedFiles": 37,
+    "totalFiles": 41,
+    "scannedFiles": 41,
     "coveragePercentage": 100,
     "truncated": false,
     "ignoredPatterns": [
       "node_modules/**",
       ".git/**",
       "dist/**",
+      "dist-ssr/**",
       "*.lock",
       "*.log",
       "*.png",
@@ -93,19 +99,21 @@
       "*.icns",
       "*.svg",
       ".idea/**",
-      ".spec-workflow/**"
+      ".next/**",
+      "__pycache__/**",
+      "src-tauri/target/**"
     ],
     "ignoredStats": {
       "nodeModules": "excluded by .gitignore",
       "dist": "excluded by .gitignore",
       "icons": "14 image files skipped (binary)",
-      "lockFiles": "2 lock files skipped (package-lock.json, Cargo.lock)",
+      "lockFiles": "2 lock files skipped (pnpm-lock.yaml, Cargo.lock)",
       "ideConfig": ".idea/ excluded",
-      "specWorkflow": ".spec-workflow/ templates excluded (not source code)"
+      "buildArtifacts": "src-tauri/target/ excluded"
     },
     "fileBreakdown": {
-      "vue": 14,
-      "js": 5,
+      "vue": 17,
+      "ts": 5,
       "rs": 11,
       "css": 1,
       "html": 1,
@@ -115,16 +123,15 @@
       "md": 1
     },
     "languageDistribution": {
-      "Vue (SFC)": "37.8% (14 files)",
-      "Rust": "29.7% (11 files)",
-      "JavaScript": "13.5% (5 files)",
-      "Config/Meta": "16.2% (6 files: json, yml, toml)",
-      "CSS": "2.7% (1 file)"
+      "Vue (SFC)": "41.5% (17 files)",
+      "Rust": "26.8% (11 files)",
+      "TypeScript": "12.2% (5 files)",
+      "Config/Meta": "17.1% (7 files: json, yml, toml)",
+      "CSS": "2.4% (1 file)"
     }
   },
   "gaps": {
     "noTests": true,
-    "noTypeScript": true,
     "noLinter": true,
     "incompleteFeatures": [
       "create_sftp_from_ssh (unimplemented)",
@@ -133,5 +140,21 @@
       "SSH host key verification (accepts all)"
     ]
   },
-  "nextSteps": []
+  "changesSinceLastScan": [
+    "Frontend migrated from JavaScript to TypeScript",
+    "Package manager migrated from npm to pnpm 10.28.0",
+    "UI library updated from Ant Design Vue to antdv-next",
+    "Added Tailwind CSS 4.x support",
+    "Entry file changed from main.js to main.ts",
+    "Service files changed from .js to .ts",
+    "Added tsconfig.json and type definitions (src/types/app.ts)",
+    "Vite config changed from .js to .ts",
+    "Added 3 new components: ConnectionHub.vue, RemoteFileWorkbench.vue, SshWorkspace.vue"
+  ],
+  "nextSteps": [
+    "项目已完整扫描，覆盖率 100%",
+    "建议添加测试框架：前端 Vitest，后端 Rust tests",
+    "建议修复安全问题：SSH 主机密钥验证",
+    "建议实现缺失功能：私钥认证、SFTP 会话复用"
+  ]
 }

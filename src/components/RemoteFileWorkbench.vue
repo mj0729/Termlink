@@ -1864,12 +1864,13 @@ async function setupNativeDragDrop() {
   --rw-meta-size: 10px;
   --rw-context-size: 10px;
   --rw-eyebrow-size: 8px;
-  --rw-tag-bg: rgba(255, 255, 255, 0.56);
+  --rw-tag-bg: var(--surface-1);
   position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-0) 96%, transparent), color-mix(in srgb, var(--surface-1) 90%, transparent));
 }
 
 .remote-workbench--comfortable {
@@ -1923,7 +1924,7 @@ async function setupNativeDragDrop() {
   justify-content: space-between;
   gap: 8px;
   padding: var(--rw-header-padding);
-  border-bottom: 1px solid rgba(171, 188, 214, 0.18);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .remote-workbench__heading {
@@ -1996,14 +1997,14 @@ async function setupNativeDragDrop() {
 :deep(.remote-workbench__quick-actions .ant-btn) {
   min-width: 30px;
   height: 30px;
-  border-color: rgba(175, 194, 222, 0.4);
-  background: rgba(255, 255, 255, 0.64);
+  border-color: var(--border-color);
+  background: var(--surface-1);
 }
 
 :deep(.remote-workbench__quick-actions .ant-btn:hover),
 .remote-toolbar__toggle:hover {
-  border-color: rgba(45, 125, 255, 0.28) !important;
-  background: rgba(45, 125, 255, 0.08) !important;
+  border-color: var(--strong-border) !important;
+  background: var(--surface-2) !important;
 }
 
 .remote-workbench__tag {
@@ -2016,7 +2017,7 @@ async function setupNativeDragDrop() {
 }
 
 .remote-workbench__tag--active {
-  background: rgba(45, 125, 255, 0.12);
+  background: var(--primary-soft);
   color: var(--primary-color);
 }
 
@@ -2027,6 +2028,8 @@ async function setupNativeDragDrop() {
   gap: 4px;
   min-height: 0;
   padding: var(--rw-body-padding);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-0) 98%, transparent), color-mix(in srgb, var(--surface-1) 92%, transparent));
+  border-radius: var(--rw-panel-radius);
 }
 
 .remote-toolbar {
@@ -2035,8 +2038,8 @@ async function setupNativeDragDrop() {
   gap: 0;
   padding: var(--rw-toolbar-padding);
   border-radius: var(--rw-panel-radius);
-  background: rgba(255, 255, 255, 0.28);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  background: var(--surface-1);
+  box-shadow: inset 0 0 0 1px var(--border-color);
 }
 
 .remote-toolbar__path-row,
@@ -2067,7 +2070,7 @@ async function setupNativeDragDrop() {
 
 .remote-toolbar__crumb.is-current {
   color: var(--primary-color);
-  background: rgba(45, 125, 255, 0.08);
+  background: var(--primary-soft);
 }
 
 .remote-toolbar__search {
@@ -2140,10 +2143,10 @@ async function setupNativeDragDrop() {
 .remote-panel {
   min-height: 0;
   border-radius: var(--rw-panel-radius);
-  background: rgba(255, 255, 255, 0.26);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 94%, transparent), color-mix(in srgb, var(--surface-0) 90%, transparent));
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.18),
-    0 8px 18px rgba(41, 71, 116, 0.04);
+    inset 0 0 0 1px var(--border-color),
+    var(--shadow-card);
 }
 
 .remote-panel__head {
@@ -2152,13 +2155,18 @@ async function setupNativeDragDrop() {
   justify-content: space-between;
   gap: 8px;
   padding: var(--rw-panel-head-padding);
-  border-bottom: 1px solid rgba(171, 188, 214, 0.16);
+  border-bottom: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--surface-1) 88%, transparent);
 }
 
 .remote-panel__count {
   color: var(--muted-color);
   font-size: var(--rw-meta-size);
   font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-color);
 }
 
 .remote-tree {
@@ -2206,9 +2214,12 @@ async function setupNativeDragDrop() {
 }
 
 .remote-tree__empty {
-  padding: 6px;
+  padding: 10px;
   color: var(--muted-color);
   font-size: 10px;
+  background: var(--surface-1);
+  border: 1px dashed var(--border-color);
+  border-radius: 10px;
 }
 
 :deep(.remote-tree .ant-tree) {
@@ -2234,7 +2245,8 @@ async function setupNativeDragDrop() {
 
 :deep(.remote-tree .ant-tree-node-content-wrapper:hover),
 :deep(.remote-tree .ant-tree-node-selected) {
-  background: rgba(45, 125, 255, 0.08) !important;
+  background: var(--surface-1) !important;
+  box-shadow: inset 0 0 0 1px var(--border-color);
 }
 
 .remote-browser {
@@ -2257,6 +2269,7 @@ async function setupNativeDragDrop() {
   padding: 4px 8px 0;
   color: var(--muted-color);
   font-size: var(--rw-meta-size);
+  background: transparent;
 }
 
 .remote-browser__table-shell {
@@ -2264,6 +2277,7 @@ async function setupNativeDragDrop() {
   min-height: 0;
   overflow: auto;
   border-radius: 8px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-0) 98%, transparent), color-mix(in srgb, var(--surface-1) 86%, transparent));
 }
 
 :deep(.remote-file-table .ant-table) {
@@ -2281,15 +2295,23 @@ async function setupNativeDragDrop() {
 
 :deep(.remote-file-table .ant-table-container) {
   border-inline-start: 0 !important;
+  background: transparent !important;
 }
 
 :deep(.remote-file-table .ant-table-body) {
   max-height: none !important;
+  background: transparent !important;
+}
+
+:deep(.remote-file-table .ant-table-placeholder),
+:deep(.remote-file-table .ant-table-placeholder:hover > td),
+:deep(.remote-file-table .ant-table-tbody > .ant-table-placeholder > td) {
+  background: transparent !important;
 }
 
 :deep(.remote-file-table .ant-table-thead > tr > th) {
-  background: rgba(255, 255, 255, 0.28);
-  border-color: rgba(171, 188, 214, 0.14);
+  background: color-mix(in srgb, var(--surface-1) 88%, transparent);
+  border-color: var(--border-color);
   color: var(--muted-color);
   font-size: calc(var(--rw-meta-size) - 1px);
   font-weight: 800;
@@ -2300,7 +2322,7 @@ async function setupNativeDragDrop() {
 }
 
 :deep(.remote-file-table .ant-table-tbody > tr > td) {
-  border-color: rgba(171, 188, 214, 0.12);
+  border-color: var(--border-subtle);
   padding-top: var(--rw-table-cell-padding);
   padding-bottom: var(--rw-table-cell-padding);
   background: transparent;
@@ -2312,7 +2334,7 @@ async function setupNativeDragDrop() {
 
 :deep(.remote-file-table .ant-table-tbody > tr:hover > td),
 :deep(.remote-file-table .ant-table-tbody > tr.is-selected > td) {
-  background: rgba(45, 125, 255, 0.08) !important;
+  background: var(--surface-1) !important;
 }
 
 .remote-name-cell {
@@ -2353,12 +2375,12 @@ async function setupNativeDragDrop() {
 
 .remote-kind-tag {
   margin-inline-end: 0;
-  background: rgba(255, 255, 255, 0.58);
+  background: var(--surface-1);
   color: var(--muted-color);
 }
 
 .remote-kind-tag.is-directory {
-  background: rgba(45, 125, 255, 0.1);
+  background: var(--primary-soft);
   color: var(--primary-color);
 }
 
@@ -2375,6 +2397,21 @@ async function setupNativeDragDrop() {
   flex: 1;
   align-items: center;
   justify-content: center;
+  border-radius: var(--rw-panel-radius);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-0) 98%, transparent), color-mix(in srgb, var(--surface-1) 90%, transparent));
+  border: 1px solid var(--border-color);
+}
+
+:deep(.remote-file-table .ant-empty) {
+  color: var(--muted-color);
+}
+
+:deep(.remote-file-table .ant-empty-image) {
+  opacity: 0.82;
+}
+
+:deep(.remote-file-table .ant-empty-description) {
+  color: var(--muted-color) !important;
 }
 
 .remote-browser__drag-mask {
@@ -2386,7 +2423,7 @@ async function setupNativeDragDrop() {
   justify-content: center;
   gap: 10px;
   border-radius: 16px;
-  background: rgba(244, 249, 255, 0.88);
+  background: color-mix(in srgb, var(--surface-0) 96%, transparent);
   backdrop-filter: blur(6px);
   color: var(--primary-color);
   font-size: 13px;
@@ -2403,10 +2440,10 @@ async function setupNativeDragDrop() {
   z-index: 1200;
   min-width: 188px;
   padding: 4px;
-  border: 1px solid rgba(191, 208, 231, 0.8);
+  border: 1px solid var(--border-color);
   border-radius: 10px;
-  background: rgba(250, 252, 255, 0.96);
-  box-shadow: 0 14px 30px rgba(34, 59, 96, 0.14);
+  background: color-mix(in srgb, var(--surface-1) 96%, transparent);
+  box-shadow: var(--shadow-card);
   backdrop-filter: blur(10px);
 }
 
@@ -2428,7 +2465,7 @@ async function setupNativeDragDrop() {
 .permission-modal__path {
   padding: 8px 10px;
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.05);
+  background: var(--surface-1);
   color: var(--muted-color);
   font-family: "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
   font-size: 12px;
@@ -2487,7 +2524,7 @@ async function setupNativeDragDrop() {
 
 :deep(.remote-context-menu .ant-menu-item:hover),
 :deep(.remote-context-menu .ant-menu-item-selected) {
-  background: rgba(45, 125, 255, 0.08);
+  background: var(--primary-soft);
 }
 
 @media (max-width: 1240px) {

@@ -24,6 +24,8 @@ pub struct ConnectionProfile {
 #[derive(Debug, Serialize, Deserialize)]
 struct ConnectionStoreFile {
     version: u32,
+    #[serde(default)]
+    groups: Vec<String>,
     connections: Vec<ConnectionProfile>,
 }
 
@@ -31,6 +33,7 @@ impl Default for ConnectionStoreFile {
     fn default() -> Self {
         Self {
             version: 1,
+            groups: Vec::new(),
             connections: Vec::new(),
         }
     }
@@ -43,6 +46,11 @@ pub fn connections_path(app: &AppHandle) -> Result<PathBuf, String> {
 pub fn list_connections(app: &AppHandle) -> Result<Vec<ConnectionProfile>, String> {
     let store = load_store(app)?;
     Ok(store.connections)
+}
+
+pub fn list_groups(app: &AppHandle) -> Result<Vec<String>, String> {
+    let store = load_store(app)?;
+    Ok(store.groups)
 }
 
 pub fn upsert_connection(app: &AppHandle, profile: ConnectionProfile) -> Result<(), String> {
@@ -58,13 +66,88 @@ pub fn upsert_connection(app: &AppHandle, profile: ConnectionProfile) -> Result<
         store.connections.push(profile);
     }
 
+    sync_groups_from_connections(&mut store);
     save_store(app, &store)
 }
 
 pub fn delete_connection(app: &AppHandle, profile_id: &str) -> Result<(), String> {
     let mut store = load_store(app)?;
     store.connections.retain(|profile| profile.id != profile_id);
+    sync_groups_from_connections(&mut store);
     save_store(app, &store)
+}
+
+pub fn create_group(app: &AppHandle, group_name: &str) -> Result<Vec<String>, String> {
+    let mut store = load_store(app)?;
+    let normalized = normalize_group_name(group_name)?;
+
+    if store.groups.iter().any(|group| group == &normalized) {
+        return Err("分组已存在".to_string());
+    }
+
+    store.groups.push(normalized);
+    sync_groups_from_connections(&mut store);
+    save_store(app, &store)?;
+    Ok(store.groups)
+}
+
+pub fn rename_group(
+    app: &AppHandle,
+    old_name: &str,
+    new_name: &str,
+) -> Result<Vec<String>, String> {
+    let mut store = load_store(app)?;
+    let normalized_old = normalize_group_name(old_name)?;
+    let normalized_new = normalize_group_name(new_name)?;
+
+    if normalized_old == normalized_new {
+        return Ok(store.groups);
+    }
+
+    if !store.groups.iter().any(|group| group == &normalized_old) {
+        return Err("原分组不存在".to_string());
+    }
+
+    if store.groups.iter().any(|group| group == &normalized_new) {
+        return Err("目标分组已存在".to_string());
+    }
+
+    for group in &mut store.groups {
+        if group == &normalized_old {
+            *group = normalized_new.clone();
+        }
+    }
+
+    for profile in &mut store.connections {
+        if profile.group.as_deref() == Some(normalized_old.as_str()) {
+            profile.group = Some(normalized_new.clone());
+        }
+    }
+
+    sync_groups_from_connections(&mut store);
+    save_store(app, &store)?;
+    Ok(store.groups)
+}
+
+pub fn delete_group(app: &AppHandle, group_name: &str) -> Result<Vec<String>, String> {
+    let mut store = load_store(app)?;
+    let normalized = normalize_group_name(group_name)?;
+
+    if !store.groups.iter().any(|group| group == &normalized) {
+        return Err("分组不存在".to_string());
+    }
+
+    store.groups.retain(|group| group != &normalized);
+
+    for profile in &mut store.connections {
+        if profile.group.as_deref() == Some(normalized.as_str()) {
+            profile.group = None;
+        }
+    }
+
+    sync_groups_from_connections(&mut store);
+    save_store(app, &store)?;
+    Ok(store.groups)
 }
 
 fn load_store(app: &AppHandle) -> Result<ConnectionStoreFile, String> {
@@ -74,6 +157,7 @@ fn load_store(app: &AppHandle) -> Result<ConnectionStoreFile, String> {
         let legacy_connections = load_legacy_profiles(app)?;
         let store = ConnectionStoreFile {
             version: 1,
+            groups: collect_profile_groups(&legacy_connections),
             connections: legacy_connections,
         };
         save_store(app, &store)?;
@@ -81,8 +165,9 @@ fn load_store(app: &AppHandle) -> Result<ConnectionStoreFile, String> {
     }
 
     let content = fs::read_to_string(&path).map_err(|e| format!("读取连接配置失败: {}", e))?;
-    let store = serde_json::from_str::<ConnectionStoreFile>(&content)
+    let mut store = serde_json::from_str::<ConnectionStoreFile>(&content)
         .map_err(|e| format!("解析连接配置失败: {}", e))?;
+    sync_groups_from_connections(&mut store);
     Ok(store)
 }
 
@@ -118,4 +203,36 @@ fn load_legacy_profiles(app: &AppHandle) -> Result<Vec<ConnectionProfile>, Strin
     }
 
     Ok(profiles)
+}
+
+fn normalize_group_name(group_name: &str) -> Result<String, String> {
+    let normalized = group_name.trim();
+    if normalized.is_empty() {
+        return Err("分组名称不能为空".to_string());
+    }
+    Ok(normalized.to_string())
+}
+
+fn collect_profile_groups(profiles: &[ConnectionProfile]) -> Vec<String> {
+    let mut groups = profiles
+        .iter()
+        .filter_map(|profile| profile.group.as_ref())
+        .filter_map(|group| normalize_group_name(group).ok())
+        .collect::<Vec<_>>();
+    groups.sort();
+    groups.dedup();
+    groups
+}
+
+fn sync_groups_from_connections(store: &mut ConnectionStoreFile) {
+    let mut groups = store
+        .groups
+        .iter()
+        .filter_map(|group| normalize_group_name(group).ok())
+        .collect::<Vec<_>>();
+
+    groups.extend(collect_profile_groups(&store.connections));
+    groups.sort();
+    groups.dedup();
+    store.groups = groups;
 }

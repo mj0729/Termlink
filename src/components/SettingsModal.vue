@@ -3,7 +3,10 @@
     :open="visible"
     title="程序配置"
     width="640px"
-    @ok="handleSave"
+    wrap-class-name="settings-modal"
+    :classes="modalClasses"
+    :styles="modalStyles"
+    :close-icon="closeIconNode"
     @cancel="handleCancel"
   >
     <a-form layout="vertical">
@@ -55,6 +58,16 @@
           紧凑模式会优先给终端和文件区更多有效显示空间，适合 SSH、日志和文件巡检。
         </div>
       </a-form-item>
+      <a-form-item label="连接中心视图">
+        <a-segmented
+          block
+          :options="connectionHubViewOptions"
+          v-model:value="config.connectionHubViewMode"
+        />
+        <div style="margin-top: 6px; color: var(--muted-color); font-size: 12px;">
+          控制连接中心默认使用列表还是卡片视图。
+        </div>
+      </a-form-item>
       
       <a-divider>主题设置</a-divider>
       <a-form-item label="主题">
@@ -101,12 +114,22 @@
       style="display: none"
       @change="handleImportFile"
     />
+    <template #footer>
+      <div class="settings-modal__footer">
+        <a-button class="settings-modal__action settings-modal__action--ghost" @click="handleCancel">
+          Cancel
+        </a-button>
+        <a-button type="primary" class="settings-modal__action settings-modal__action--primary" @click="handleSave">
+          OK
+        </a-button>
+      </div>
+    </template>
   </a-modal>
 </template>
 
 <script setup lang="ts">
-import { h, onMounted, ref, watch } from 'vue'
-import { ReloadOutlined } from '@antdv-next/icons'
+import { computed, h, onMounted, ref, watch } from 'vue'
+import { CloseOutlined, ReloadOutlined } from '@antdv-next/icons'
 import { invoke } from '@tauri-apps/api/core'
 import ImportExportService from '../services/ImportExportService'
 import type { ImportPreview, SelectOption, SshProfile, TerminalConfig, ThemeName } from '../types/app'
@@ -124,6 +147,7 @@ const props = withDefaults(defineProps<{
     cursorBlink: true,
     cursorStyle: 'block',
     density: 'compact',
+    connectionHubViewMode: 'list',
   }),
   theme: 'dark',
   profiles: () => []
@@ -135,6 +159,45 @@ const config = ref<TerminalConfig>({ ...props.terminalConfig })
 const currentTheme = ref<ThemeName>(props.theme)
 const profilesDir = ref('')
 const importInputRef = ref<HTMLInputElement | null>(null)
+const closeIconNode = computed(() => h(CloseOutlined, { class: 'modal-close-icon' }))
+const modalClasses = {
+  container: 'settings-modal__container',
+}
+const modalStyles = {
+  mask: {
+    background: 'var(--overlay-mask-bg)',
+    backdropFilter: 'blur(12px)',
+  },
+  container: {
+    background: 'var(--overlay-panel-solid)',
+    border: '1px solid var(--border-color)',
+    boxShadow: 'var(--shadow-soft)',
+    padding: '0',
+    overflow: 'hidden',
+    borderRadius: '20px',
+  },
+  content: {
+    background: 'var(--overlay-panel-solid)',
+    padding: '0',
+    backdropFilter: 'blur(16px)',
+  },
+  header: {
+    background: 'var(--overlay-header-bg)',
+    borderBottom: '1px solid var(--overlay-divider-color)',
+    marginBottom: '0',
+    padding: '18px 24px 14px',
+  },
+  body: {
+    background: 'var(--overlay-panel-solid)',
+    color: 'var(--text-color)',
+    padding: '18px 24px 16px',
+  },
+  footer: {
+    background: 'color-mix(in srgb, var(--overlay-header-bg) 88%, transparent)',
+    borderTop: '1px solid var(--overlay-divider-color)',
+    padding: '14px 24px 18px',
+  },
+}
 const fontFamilyOptions: SelectOption[] = [
   { label: 'Consolas', value: 'Consolas' },
   { label: 'Monaco', value: 'Monaco' },
@@ -150,6 +213,10 @@ const densityOptions: SelectOption[] = [
   { label: '舒适', value: 'comfortable' },
   { label: '平衡', value: 'balanced' },
   { label: '紧凑', value: 'compact' },
+]
+const connectionHubViewOptions: SelectOption[] = [
+  { label: '列表视图', value: 'list' },
+  { label: '卡片视图', value: 'grid' },
 ]
 
 // 监听 props 变化，创建本地副本
@@ -361,13 +428,63 @@ onMounted(() => {
 </script>
 
 <style scoped>
-:deep(.ant-form-item-label > label) {
+:deep(.settings-modal .ant-modal-content) {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  overflow: hidden;
+  border-radius: 20px;
+}
+
+:deep(.settings-modal__container) {
+  background: var(--overlay-panel-solid) !important;
+  border-radius: 20px;
+}
+
+:deep(.settings-modal .ant-modal-body) {
+  background: var(--overlay-panel-solid);
+  padding: 18px 24px 16px !important;
+}
+
+:deep(.settings-modal .ant-modal-header) {
+  border-bottom: 1px solid var(--overlay-divider-color);
+  margin-bottom: 0 !important;
+  padding: 18px 24px 14px !important;
+}
+
+:deep(.settings-modal .ant-modal-footer) {
+  border-top: 1px solid var(--overlay-divider-color);
+  padding: 14px 24px 18px !important;
+  background: var(--overlay-panel-solid) !important;
+}
+
+:deep(.settings-modal .ant-modal-close) {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+:deep(.settings-modal .modal-close-icon),
+:deep(.settings-modal .modal-close-icon svg) {
+  color: rgba(255, 255, 255, 0.88) !important;
+}
+
+:deep(.settings-modal .ant-modal-close:hover) {
   color: var(--text-color);
+  background: var(--hover-bg);
+}
+
+:deep(.ant-form-item) {
+  margin-bottom: 18px;
+}
+
+:deep(.ant-form-item-label > label) {
+  color: var(--text-color) !important;
+  font-weight: 600;
 }
 
 :deep(.ant-input-number),
 :deep(.ant-select) {
-  background: var(--panel-bg);
+  background: var(--surface-1);
   border-color: var(--border-color);
   color: var(--text-color);
 }
@@ -377,14 +494,18 @@ onMounted(() => {
   color: var(--muted-color) !important;
 }
 
-:deep(.ant-input-number:focus),
-:deep(.ant-select:focus) {
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+:deep(.ant-input-number .ant-input-number-input) {
+  color: var(--text-color) !important;
+}
+
+:deep(.ant-input-number-focused),
+:deep(.ant-select-focused .ant-select-selector) {
+  border-color: var(--primary-color) !important;
+  box-shadow: 0 0 0 4px var(--primary-soft) !important;
 }
 
 :deep(.ant-switch) {
-  background: var(--border-color);
+  background: color-mix(in srgb, var(--muted-color) 30%, transparent);
 }
 
 :deep(.ant-switch-checked) {
@@ -392,21 +513,61 @@ onMounted(() => {
 }
 
 :deep(.ant-segmented) {
-  background: var(--panel-bg);
+  background: var(--surface-2);
+  border: 1px solid var(--border-color);
 }
 
 :deep(.ant-segmented-item) {
-  color: var(--text-color);
+  color: var(--muted-color);
 }
 
 :deep(.ant-segmented-item-selected) {
-  background: var(--primary-color);
-  color: white;
+  background: var(--surface-1);
+  color: var(--text-color);
+  box-shadow: var(--shadow-card);
+}
+
+:deep(.ant-divider) {
+  margin-block: 24px 18px;
+}
+
+:deep(.ant-divider-inner-text) {
+  color: var(--text-color) !important;
+  font-weight: 700;
 }
 
 .storage-actions {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.settings-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+:deep(.settings-modal__action) {
+  min-width: 78px;
+  border-radius: 12px !important;
+  font-weight: 700;
+}
+
+:deep(.settings-modal__action--ghost) {
+  background: var(--surface-2) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-color) !important;
+}
+
+:deep(.settings-modal__action--ghost:hover) {
+  background: var(--hover-bg) !important;
+  border-color: var(--strong-border) !important;
+}
+
+:deep(.settings-modal__action--primary) {
+  background: linear-gradient(135deg, var(--primary-color), #7db7ff) !important;
+  border-color: transparent !important;
+  color: #fff !important;
 }
 </style>

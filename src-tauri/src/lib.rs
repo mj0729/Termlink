@@ -43,6 +43,10 @@ pub fn run() {
             // SSH profile commands
             ssh::save_ssh_profile,
             ssh::list_ssh_profiles,
+            ssh::list_ssh_groups,
+            ssh::create_ssh_group,
+            ssh::rename_ssh_group,
+            ssh::delete_ssh_group,
             ssh::get_ssh_password,
             ssh::restart_ssh_connection,
             ssh::delete_ssh_profile,

@@ -1,4 +1,11 @@
-import type { TerminalConfig, TerminalCursorStyle, ThemeConfig, ThemeName, WorkspaceDensity } from '../types/app'
+import type {
+  ConnectionHubViewMode,
+  TerminalConfig,
+  TerminalCursorStyle,
+  ThemeConfig,
+  ThemeName,
+  WorkspaceDensity
+} from '../types/app'
 
 /**
  * 主题服务 - 处理主题相关功能
@@ -17,6 +24,7 @@ class ThemeService {
       cursorBlink: localStorage.getItem('termlink_cursorBlink') !== 'false',
       cursorStyle: (localStorage.getItem('termlink_cursorStyle') as TerminalCursorStyle | null) || 'block',
       density: (localStorage.getItem('termlink_density') as WorkspaceDensity | null) || 'compact',
+      connectionHubViewMode: (localStorage.getItem('termlink_connectionHubViewMode') as ConnectionHubViewMode | null) || 'list',
     }
     
     // 主题配置
@@ -111,6 +119,13 @@ class ThemeService {
    * @param {string} themeName 主题名称
    */
   applyTheme(themeName: ThemeName): void {
+    const html = document.documentElement
+
+    html.setAttribute('data-theme', themeName)
+    html.classList.toggle('dark', themeName === 'dark')
+    html.classList.toggle('light', themeName === 'light')
+    html.style.colorScheme = themeName
+
     // 设置 body 主题属性
     document.body.setAttribute('data-theme', themeName)
     localStorage.setItem('termlink_theme', themeName)
@@ -134,6 +149,7 @@ class ThemeService {
     localStorage.setItem('termlink_cursorBlink', String(this.terminalConfig.cursorBlink))
     localStorage.setItem('termlink_cursorStyle', this.terminalConfig.cursorStyle)
     localStorage.setItem('termlink_density', this.terminalConfig.density)
+    localStorage.setItem('termlink_connectionHubViewMode', this.terminalConfig.connectionHubViewMode)
     
     return { ...this.terminalConfig }
   }

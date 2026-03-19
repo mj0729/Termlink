@@ -1078,8 +1078,8 @@ defineExpose({
   flex-direction: column;
   width: 282px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.08)),
-    rgba(244, 248, 254, 0.42);
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 92%, transparent), color-mix(in srgb, var(--surface-0) 88%, transparent)),
+    var(--surface-0);
   transition:
     width 0.28s ease,
     opacity 0.28s ease;
@@ -1088,8 +1088,8 @@ defineExpose({
   border-radius: 14px 0 0 14px;
   backdrop-filter: blur(14px);
   box-shadow:
-    inset 1px 0 0 rgba(255, 255, 255, 0.12),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+    inset 1px 0 0 var(--border-subtle),
+    inset 0 0 0 1px var(--border-color);
 }
 
 .panel-content-wrapper.collapsed {
@@ -1105,7 +1105,7 @@ defineExpose({
   gap: 8px;
   padding: 10px 10px 8px;
   background: transparent;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .panel-header__copy {
@@ -1132,7 +1132,8 @@ defineExpose({
 .panel-header__meta {
   padding: 3px 8px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.54);
+  background: var(--surface-1);
+  border: 1px solid var(--border-color);
   color: var(--muted-color);
   font-size: 9px;
   font-weight: 800;
@@ -1146,7 +1147,14 @@ defineExpose({
   width: 28px !important;
   height: 28px !important;
   border-radius: 10px;
-  color: var(--muted-color);
+  color: var(--text-color);
+  background: var(--surface-1) !important;
+  border: 1px solid var(--border-color) !important;
+}
+
+.collapse-btn:hover {
+  background: var(--surface-2) !important;
+  border-color: var(--strong-border) !important;
 }
 
 .panel-content {
@@ -1189,8 +1197,8 @@ defineExpose({
   border-radius: 12px;
   background: var(--monitor-card-bg);
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
-    0 8px 18px rgba(41, 71, 116, 0.04);
+    inset 0 0 0 1px var(--border-subtle),
+    var(--shadow-card);
 }
 
 .info-item {
@@ -1416,7 +1424,8 @@ defineExpose({
 
 .transfer-filter {
   max-width: 100%;
-  background: rgba(255, 255, 255, 0.52);
+  background: var(--surface-2);
+  border: 1px solid var(--border-color);
 }
 
 .transfer-filter:deep(.ant-segmented-group) {
@@ -1432,8 +1441,8 @@ defineExpose({
 
 .transfer-filter:deep(.ant-segmented-item-selected) {
   color: var(--primary-color);
-  background: rgba(45, 125, 255, 0.14);
-  border-color: rgba(45, 125, 255, 0.18);
+  background: var(--surface-1);
+  border-color: var(--primary-ring);
 }
 
 .download-list {
@@ -1451,6 +1460,7 @@ defineExpose({
   padding: 10px;
   border-radius: 12px;
   background: var(--monitor-card-bg);
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
   transition:
     transform 0.2s ease,
     background-color 0.2s ease;
@@ -1499,7 +1509,8 @@ defineExpose({
 .direction-badge {
   padding: 2px 7px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.48);
+  background: var(--surface-1);
+  border: 1px solid var(--border-color);
   color: var(--muted-color);
   font-size: 9px;
   font-weight: 700;
@@ -1548,6 +1559,29 @@ defineExpose({
   display: flex;
   gap: 6px;
   flex-shrink: 0;
+}
+
+.download-actions :deep(.ant-btn) {
+  background: var(--surface-1) !important;
+  border: 1px solid var(--border-color) !important;
+  color: var(--text-color) !important;
+}
+
+.download-actions :deep(.ant-btn:hover) {
+  background: var(--surface-2) !important;
+  border-color: var(--strong-border) !important;
+}
+
+.empty-state :deep(.ant-empty) {
+  color: var(--muted-color);
+}
+
+.empty-state :deep(.ant-empty-image) {
+  opacity: 0.82;
+}
+
+.empty-state :deep(.ant-empty-description) {
+  color: var(--muted-color) !important;
 }
 
 .download-footer {

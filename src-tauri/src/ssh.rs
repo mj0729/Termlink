@@ -32,6 +32,30 @@ pub fn list_ssh_profiles(app: AppHandle) -> Result<Vec<SshProfileMeta>, String> 
 }
 
 #[tauri::command]
+pub fn list_ssh_groups(app: AppHandle) -> Result<Vec<String>, String> {
+    connection_store::list_groups(&app)
+}
+
+#[tauri::command]
+pub fn create_ssh_group(app: AppHandle, group_name: String) -> Result<Vec<String>, String> {
+    connection_store::create_group(&app, &group_name)
+}
+
+#[tauri::command]
+pub fn rename_ssh_group(
+    app: AppHandle,
+    old_name: String,
+    new_name: String,
+) -> Result<Vec<String>, String> {
+    connection_store::rename_group(&app, &old_name, &new_name)
+}
+
+#[tauri::command]
+pub fn delete_ssh_group(app: AppHandle, group_name: String) -> Result<Vec<String>, String> {
+    connection_store::delete_group(&app, &group_name)
+}
+
+#[tauri::command]
 pub fn get_ssh_password(app: AppHandle, id: String) -> Result<Option<String>, String> {
     if let Some(password) = credential_store::load_password(&app, &id)? {
         return Ok(Some(password));

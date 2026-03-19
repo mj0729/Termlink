@@ -49,6 +49,14 @@
   --terminal-shell-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 251, 255, 0.9));
   --terminal-shell-border: rgba(214, 225, 239, 0.92);
   --terminal-toolbar-bg: rgba(246, 249, 255, 0.9);
+  --workspace-view-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(246, 250, 255, 0.66)), rgba(255, 255, 255, 0.72);
+  --workspace-view-border: rgba(214, 225, 239, 0.72);
+  --workspace-view-shadow: 0 8px 18px rgba(41, 71, 116, 0.05);
+  --overlay-mask-bg: rgba(232, 239, 248, 0.48);
+  --overlay-panel-bg: rgba(248, 251, 255, 0.94);
+  --overlay-panel-solid: #f8fbff;
+  --overlay-header-bg: rgba(248, 251, 255, 0.88);
+  --overlay-divider-color: rgba(214, 225, 239, 0.92);
 }
 
 html,
@@ -118,6 +126,14 @@ body[data-theme="dark"] {
   --terminal-shell-bg: linear-gradient(180deg, rgba(12, 20, 33, 0.97), rgba(8, 14, 24, 0.98));
   --terminal-shell-border: rgba(37, 53, 77, 0.96);
   --terminal-toolbar-bg: rgba(19, 30, 47, 0.96);
+  --workspace-view-bg: linear-gradient(180deg, rgba(14, 22, 35, 0.92), rgba(10, 17, 28, 0.88)), rgba(11, 18, 29, 0.86);
+  --workspace-view-border: rgba(37, 53, 77, 0.96);
+  --workspace-view-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
+  --overlay-mask-bg: rgba(4, 10, 18, 0.68);
+  --overlay-panel-bg: rgba(15, 24, 40, 0.96);
+  --overlay-panel-solid: #101a2b;
+  --overlay-header-bg: rgba(17, 28, 45, 0.96);
+  --overlay-divider-color: rgba(37, 53, 77, 0.96);
 }
 
 a {
@@ -306,8 +322,30 @@ body[data-theme="dark"] .ant-btn-primary {
 .ant-drawer-content,
 .ant-drawer-header,
 .ant-drawer-footer {
-  background: var(--panel-bg) !important;
+  background: var(--overlay-panel-bg) !important;
   border-color: var(--border-color) !important;
+}
+
+.ant-modal-mask,
+.ant-drawer-mask {
+  background: var(--overlay-mask-bg) !important;
+  backdrop-filter: blur(12px);
+}
+
+.ant-modal-content,
+.ant-drawer-content {
+  box-shadow: var(--shadow-soft) !important;
+  backdrop-filter: blur(16px);
+}
+
+.ant-modal-header,
+.ant-drawer-header {
+  background: var(--overlay-header-bg) !important;
+}
+
+.ant-modal-footer,
+.ant-drawer-footer {
+  background: color-mix(in srgb, var(--overlay-header-bg) 88%, transparent) !important;
 }
 
 .ant-modal-title,
@@ -324,10 +362,66 @@ body[data-theme="dark"] .ant-btn-primary {
 .ant-form-item-explain,
 .ant-typography-secondary,
 .ant-select-arrow,
+.ant-select-clear,
 .ant-input-clear-icon,
 .ant-radio-wrapper span:last-child,
 .ant-checkbox-wrapper span:last-child {
   color: var(--muted-color) !important;
+}
+
+.ant-divider {
+  border-color: var(--overlay-divider-color) !important;
+  color: var(--text-color) !important;
+}
+
+.ant-divider::before,
+.ant-divider::after {
+  border-block-start-color: var(--overlay-divider-color) !important;
+}
+
+.ant-input-number,
+.ant-input-number-input,
+.ant-input-number-group-addon {
+  color: var(--text-color) !important;
+}
+
+.ant-input-number {
+  width: 100%;
+  background: var(--surface-1) !important;
+  border-color: var(--border-color) !important;
+}
+
+.ant-input-number-input {
+  background: transparent !important;
+}
+
+.ant-input-number-handler-wrap {
+  background: color-mix(in srgb, var(--surface-2) 86%, transparent) !important;
+  border-inline-start: 1px solid var(--border-color) !important;
+}
+
+.ant-input-number-handler {
+  border-block-end-color: var(--border-color) !important;
+}
+
+.ant-input-number-handler-up-inner,
+.ant-input-number-handler-down-inner,
+.ant-switch .ant-switch-handle::before {
+  color: var(--text-color) !important;
+}
+
+.ant-switch {
+  background: color-mix(in srgb, var(--muted-color) 30%, transparent) !important;
+}
+
+.ant-switch-checked {
+  background: var(--primary-color) !important;
+}
+
+.ant-select-selector,
+.ant-select-single .ant-select-selector,
+.ant-select-multiple .ant-select-selector {
+  background: var(--surface-1) !important;
 }
 
 .ant-segmented {

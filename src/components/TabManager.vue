@@ -85,11 +85,22 @@ function onEditTab(targetKeyOrEvent: string | MouseEvent, action: 'add' | 'remov
 .tabs-container__add {
   width: 28px;
   height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
   border-radius: 9px !important;
   color: var(--primary-color) !important;
-  background: rgba(255, 255, 255, 0.52) !important;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  background: var(--surface-1) !important;
+  box-shadow: inset 0 0 0 1px var(--border-color);
+}
+
+.tabs-container__add:hover {
+  background: var(--surface-2) !important;
+}
+
+.tabs-container__add :deep(.anticon) {
+  font-size: 14px;
 }
 
 .tab-content {
@@ -173,18 +184,18 @@ function onEditTab(targetKeyOrEvent: string | MouseEvent, action: 'add' | 'remov
   height: 30px;
   margin-right: 4px !important;
   padding: 0 9px !important;
-  background: rgba(255, 255, 255, 0.32) !important;
+  background: var(--surface-1) !important;
   border: none !important;
   border-radius: 9px !important;
   color: var(--muted-color) !important;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 0 0 1px var(--border-color);
 }
 
 :deep(.ant-tabs-tab-active) {
-  background: rgba(255, 255, 255, 0.72) !important;
+  background: var(--surface-2) !important;
   box-shadow:
-    0 8px 20px rgba(41, 70, 116, 0.08),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+    var(--shadow-card),
+    inset 0 0 0 1px var(--strong-border);
 }
 
 :deep(.ant-tabs-tab-btn) {

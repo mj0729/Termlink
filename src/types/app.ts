@@ -2,6 +2,7 @@ export type ThemeName = 'light' | 'dark'
 export type TabType = 'ssh' | 'local' | 'file' | 'connections'
 export type TerminalCursorStyle = 'block' | 'underline' | 'bar'
 export type WorkspaceDensity = 'comfortable' | 'balanced' | 'compact'
+export type ConnectionHubViewMode = 'list' | 'grid'
 
 export interface ThemeConfig {
   background: string
@@ -32,6 +33,7 @@ export interface TerminalConfig {
   cursorBlink: boolean
   cursorStyle: TerminalCursorStyle
   density: WorkspaceDensity
+  connectionHubViewMode: ConnectionHubViewMode
 }
 
 export interface SshProfile {

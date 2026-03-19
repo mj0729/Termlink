@@ -5,7 +5,7 @@
         <a-button class="nav-item nav-item--active" type="text">会话</a-button>
         <a-button class="nav-item" type="text">视图</a-button>
         <a-button class="nav-item nav-item--ghost" type="text" @click="$emit('showSettings')">
-          <EllipsisOutlined />
+          <SettingOutlined />
         </a-button>
       </div>
     </div>
@@ -19,7 +19,7 @@
 </template>
 
 <script setup lang="ts">
-import { EllipsisOutlined, PlusOutlined } from '@antdv-next/icons'
+import { PlusOutlined, SettingOutlined } from '@antdv-next/icons'
 
 defineProps({
   tabCount: {

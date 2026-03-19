@@ -404,6 +404,27 @@ class SshService {
     }
   }
 
+  async getGroups(): Promise<string[]> {
+    try {
+      return await invoke<string[]>('list_ssh_groups')
+    } catch (e) {
+      console.error('获取SSH分组列表失败:', e)
+      return []
+    }
+  }
+
+  async createGroup(groupName: string): Promise<string[]> {
+    return invoke<string[]>('create_ssh_group', { groupName })
+  }
+
+  async renameGroup(oldName: string, newName: string): Promise<string[]> {
+    return invoke<string[]>('rename_ssh_group', { oldName, newName })
+  }
+
+  async deleteGroup(groupName: string): Promise<string[]> {
+    return invoke<string[]>('delete_ssh_group', { groupName })
+  }
+
   async updateProfile(profileData: SshConnectionPayload & { id: string }): Promise<void> {
     try {
       const profile: SshProfile = {

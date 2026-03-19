@@ -11,13 +11,13 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
-    AAutoComplete: typeof import('antdv-next')['AutoComplete']
+    AApp: typeof import('antdv-next')['App']
     ABreadcrumb: typeof import('antdv-next')['Breadcrumb']
     ABreadcrumbItem: typeof import('antdv-next')['BreadcrumbItem']
     AButton: typeof import('antdv-next')['Button']
-    ACard: typeof import('antdv-next')['Card']
     ACheckbox: typeof import('antdv-next')['Checkbox']
     ACol: typeof import('antdv-next')['Col']
+    AConfigProvider: typeof import('antdv-next')['ConfigProvider']
     ADivider: typeof import('antdv-next')['Divider']
     ADropdown: typeof import('antdv-next')['Dropdown']
     AEmpty: typeof import('antdv-next')['Empty']

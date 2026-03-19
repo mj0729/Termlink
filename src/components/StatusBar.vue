@@ -15,7 +15,7 @@
         type="text"
         size="small"
       >
-        <EllipsisOutlined />
+        <SettingOutlined />
       </a-button>
       <a-button
         class="status-panel-btn"
@@ -45,7 +45,7 @@
 </template>
 
 <script setup lang="ts">
-import { DesktopOutlined, DownloadOutlined, EllipsisOutlined } from '@antdv-next/icons'
+import { DesktopOutlined, DownloadOutlined, SettingOutlined } from '@antdv-next/icons'
 import type { PropType } from 'vue'
 import type { MonitorTab } from '../types/app'
 

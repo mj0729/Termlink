@@ -1,124 +1,137 @@
 <template>
-  <div class="app-shell min-h-screen bg-[var(--bg-color)] text-[var(--text-color)]">
-    <section class="workspace-shell flex h-full w-full">
-      <div class="workspace-frame flex h-full w-full flex-col overflow-hidden">
-    <div class="main-container flex min-h-0 flex-1 overflow-hidden">
-      <div class="content-container flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--workspace-center-bg)]">
-        <TabManager 
-          :tabs="tabs" 
-          :active-id="activeId" 
-          @change="activeId = $event"
-          @close="closeTab"
-          @open-connection-center="openConnectionCenter"
+  <a-config-provider :theme="antdvThemeConfig">
+    <a-app>
+      <div class="app-shell min-h-screen bg-[var(--bg-color)] text-[var(--text-color)]">
+        <section class="workspace-shell flex h-full w-full">
+          <div class="workspace-frame flex h-full w-full flex-col overflow-hidden">
+        <div class="main-container flex min-h-0 flex-1 overflow-hidden">
+          <div class="content-container flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--workspace-center-bg)]">
+            <TabManager 
+              :tabs="tabs" 
+              :active-id="activeId" 
+              @change="activeId = $event"
+              @close="closeTab"
+              @open-connection-center="openConnectionCenter"
+            />
+            
+            <div
+              class="terminals-container relative flex-1 overflow-hidden bg-[var(--workspace-terminal-bg)]"
+              :class="{
+                'terminals-container--ssh': isSshWorkspaceLayout
+              }"
+            >
+              <template v-for="tab in tabs" :key="tab.id">
+                <div
+                  class="workspace-view"
+                  :class="`workspace-view--${tab.type}`"
+                  v-show="activeId === tab.id"
+                >
+                  <SshWorkspace
+                    v-if="tab.type === 'ssh'" 
+                    :id="tab.id" 
+                    :active="activeId === tab.id" 
+                    :theme="theme"
+                    :config="terminalConfig"
+                    :auto-password="tab.autoPassword"
+                    :connection-id="tab.id"
+                    :profile="tab.profile"
+                    @close="closeTab(tab.id)"
+                    @reconnect="reconnectSsh(tab)"
+                    @open-file-preview="openFilePreview"
+                    @start-download="handleStartDownload"
+                    @start-upload="handleStartUpload"
+                  />
+                  
+                  <Terminal 
+                    v-else-if="tab.type === 'local'" 
+                    :id="tab.id" 
+                    :active="activeId === tab.id" 
+                    :theme="theme"
+                    :config="terminalConfig"
+                    :type="'local'"
+                    @close="closeTab(tab.id)"
+                  />
+                  
+                  <FileEditor
+                    v-else-if="tab.type === 'file'"
+                    :id="tab.id"
+                    :active="activeId === tab.id"
+                    :file-info="tab.fileInfo"
+                    :connection-id="tab.connectionId"
+                    :theme="theme"
+                    @close="closeTab(tab.id)"
+                  />
+
+                  <ConnectionHub
+                    v-else-if="tab.type === 'connections'"
+                    :profiles="profiles"
+                    :groups="groups"
+                    :active-profile-id="getActiveProfileId()"
+                    :theme="theme"
+                    :view-mode="terminalConfig.connectionHubViewMode"
+                    @launch-profile="launchSavedProfile"
+                    @edit-profile="editProfile"
+                    @delete-profile="deleteProfile"
+                    @create-group="createGroup"
+                    @rename-group="renameGroup"
+                    @delete-group="deleteGroup"
+                    @new-ssh="newSsh"
+                  />
+                </div>
+              </template>
+
+            </div>
+          </div>
+          
+          <RightPanel 
+            ref="rightPanelRef"
+            :collapsed="rightPanelCollapsed" 
+            @toggle="rightPanelCollapsed = !rightPanelCollapsed"
+            @tab-change="rightPanelTab = $event"
+            :connection-id="getActiveTab()?.type === 'ssh' ? getActiveTab()?.id : ''"
+            :ssh-profile="getActiveTab()?.type === 'ssh' ? getActiveTab()?.profile : null"
+            :active-tab="rightPanelTab"
+          />
+        </div>
+        
+            <StatusBar
+              :active-connection="getActiveConnection()"
+              :tab-count="tabs.length"
+              :right-panel-tab="rightPanelTab"
+              :right-panel-collapsed="rightPanelCollapsed"
+              @select-right-panel-tab="handleRightPanelTabSelect"
+              @show-settings="showSettings = true"
+            />
+          </div>
+        </section>
+        
+        <SshModal 
+          v-model:visible="showSshModal" 
+          :edit-mode="sshEditMode"
+          :edit-profile="editingProfile"
+          :groups="groups"
+          @submit="submitSsh" 
         />
         
-        <div
-          class="terminals-container relative flex-1 overflow-hidden bg-[var(--workspace-terminal-bg)]"
-          :class="{
-            'terminals-container--ssh': isSshWorkspaceLayout
-          }"
-        >
-          <template v-for="tab in tabs" :key="tab.id">
-            <div
-              class="workspace-view"
-              :class="`workspace-view--${tab.type}`"
-              v-show="activeId === tab.id"
-            >
-              <SshWorkspace
-                v-if="tab.type === 'ssh'" 
-                :id="tab.id" 
-                :active="activeId === tab.id" 
-                :theme="theme"
-                :config="terminalConfig"
-                :auto-password="tab.autoPassword"
-                :connection-id="tab.id"
-                :profile="tab.profile"
-                @close="closeTab(tab.id)"
-                @reconnect="reconnectSsh(tab)"
-                @open-file-preview="openFilePreview"
-                @start-download="handleStartDownload"
-                @start-upload="handleStartUpload"
-              />
-              
-              <Terminal 
-                v-else-if="tab.type === 'local'" 
-                :id="tab.id" 
-                :active="activeId === tab.id" 
-                :theme="theme"
-                :config="terminalConfig"
-                :type="'local'"
-                @close="closeTab(tab.id)"
-              />
-              
-              <FileEditor
-                v-else-if="tab.type === 'file'"
-                :id="tab.id"
-                :active="activeId === tab.id"
-                :file-info="tab.fileInfo"
-                :connection-id="tab.connectionId"
-                :theme="theme"
-                @close="closeTab(tab.id)"
-              />
-
-              <ConnectionHub
-                v-else-if="tab.type === 'connections'"
-                :profiles="profiles"
-                :active-profile-id="getActiveProfileId()"
-                @launch-profile="launchSavedProfile"
-                @new-ssh="newSsh"
-                @new-local="newLocal"
-              />
-            </div>
-          </template>
-
-        </div>
-      </div>
-      
-      <RightPanel 
-        ref="rightPanelRef"
-        :collapsed="rightPanelCollapsed" 
-        @toggle="rightPanelCollapsed = !rightPanelCollapsed"
-        @tab-change="rightPanelTab = $event"
-        :connection-id="getActiveTab()?.type === 'ssh' ? getActiveTab()?.id : ''"
-        :ssh-profile="getActiveTab()?.type === 'ssh' ? getActiveTab()?.profile : null"
-        :active-tab="rightPanelTab"
-      />
-    </div>
-    
-        <StatusBar
-          :active-connection="getActiveConnection()"
-          :tab-count="tabs.length"
-          :right-panel-tab="rightPanelTab"
-          :right-panel-collapsed="rightPanelCollapsed"
-          @select-right-panel-tab="handleRightPanelTabSelect"
-          @show-settings="showSettings = true"
+        <!-- 设置模态框 -->
+        <SettingsModal 
+          v-model:visible="showSettings" 
+          :terminal-config="terminalConfig"
+          :theme="theme"
+          :profiles="profiles"
+          @save-config="updateTerminalConfig"
+          @change-theme="toggleTheme"
+          @refresh-profiles="refreshProfiles"
         />
       </div>
-    </section>
-    
-    <SshModal 
-      v-model:visible="showSshModal" 
-      :edit-mode="sshEditMode"
-      :edit-profile="editingProfile"
-      @submit="submitSsh" 
-    />
-    
-    <!-- 设置模态框 -->
-    <SettingsModal 
-      v-model:visible="showSettings" 
-      :terminal-config="terminalConfig"
-      :theme="theme"
-      :profiles="profiles"
-      @save-config="updateTerminalConfig"
-      @change-theme="toggleTheme"
-      @refresh-profiles="refreshProfiles"
-    />
-  </div>
+    </a-app>
+  </a-config-provider>
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, onBeforeUnmount, ref } from 'vue'
+import { computed, defineAsyncComponent, h, onMounted, onBeforeUnmount, ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { theme as antdTheme } from 'antdv-next'
 import type {
   ConnectionTab,
   DownloadRequest,
@@ -163,9 +176,47 @@ const editingProfile = ref<SshProfile | null>(null)
 // 主题和设置
 const theme = ref<ThemeName>(ThemeService.getTheme())
 const terminalConfig = ref<TerminalConfig>(ThemeService.getTerminalConfig())
+const antdThemeConfig = computed(() => ({
+  algorithm: theme.value === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
+  token: {
+    colorPrimary: theme.value === 'dark' ? '#71a7ff' : '#2f7cff',
+    borderRadius: 12,
+    colorBgBase: theme.value === 'dark' ? '#0b1220' : '#edf4fd',
+    colorBgLayout: theme.value === 'dark' ? '#0b1220' : '#edf4fd',
+    colorBgContainer: theme.value === 'dark' ? '#121b29' : '#f8fbff',
+    colorBgElevated: theme.value === 'dark' ? '#101a2b' : '#f8fbff',
+    colorText: theme.value === 'dark' ? '#e7eefb' : '#192435',
+    colorTextSecondary: theme.value === 'dark' ? '#94a4bb' : '#6f7f95',
+    colorBorder: theme.value === 'dark' ? '#24344d' : '#d6e2f1',
+  },
+  components: {
+    Button: {
+      algorithm: true,
+    },
+    Input: {
+      algorithm: true,
+    },
+    Select: {
+      algorithm: true,
+    },
+    Modal: {
+      algorithm: true,
+    },
+    Segmented: {
+      algorithm: true,
+    },
+    Tabs: {
+      algorithm: true,
+    },
+    Tag: {
+      algorithm: true,
+    },
+  },
+}))
 
 // 已保存的连接配置
 const profiles = ref<SshProfile[]>([])
+const groups = ref<string[]>([])
 const isSshWorkspaceLayout = computed(() => getActiveTab()?.type === 'ssh')
 
 function isUserCancelledConnection(error: unknown) {
@@ -193,6 +244,14 @@ function updateTerminalConfig(config: Partial<TerminalConfig>) {
 // 刷新连接配置
 async function refreshProfiles() {
   profiles.value = await SshService.getProfiles()
+}
+
+async function refreshGroups() {
+  groups.value = await SshService.getGroups()
+}
+
+async function refreshConnectionData() {
+  await Promise.all([refreshProfiles(), refreshGroups()])
 }
 
 // 获取活动连接信息
@@ -273,7 +332,7 @@ async function submitSsh(sshData: SshConnectionPayload) {
     if (sshData.isEdit) {
       // 编辑模式：更新现有配置
       await SshService.updateProfile(sshData as SshConnectionPayload & { id: string })
-      await refreshProfiles()
+      await refreshConnectionData()
       showSshModal.value = false
     } else {
       // 新建模式：创建新连接
@@ -283,7 +342,7 @@ async function submitSsh(sshData: SshConnectionPayload) {
       
       // 刷新配置列表
       if (sshData.savePassword) {
-        await refreshProfiles()
+        await refreshConnectionData()
       }
       
       showSshModal.value = false
@@ -338,6 +397,109 @@ function editProfile(profile: SshProfile) {
   sshEditMode.value = true
   editingProfile.value = profile
   showSshModal.value = true
+}
+
+async function deleteProfile(profile: SshProfile) {
+  Modal.confirm({
+    title: '确认删除',
+    content: `确定要删除连接 "${profile.username ? `${profile.username}@${profile.host}` : profile.host}" 吗？此操作无法撤销。`,
+    okText: '删除',
+    okType: 'danger',
+    cancelText: '取消',
+    async onOk() {
+      try {
+        await invoke('delete_ssh_profile', { profileId: profile.id })
+        await refreshConnectionData()
+        message.success('连接已删除')
+      } catch (error) {
+        console.error('删除连接失败:', error)
+        message.error('删除连接失败')
+      }
+    }
+  })
+}
+
+function promptGroupName(title: string, initialValue = '', placeholder = '请输入分组名称') {
+  let nextValue = initialValue
+
+  return new Promise<string | null>((resolve) => {
+    Modal.confirm({
+      title,
+      content: h('input', {
+        autofocus: true,
+        value: initialValue,
+        placeholder,
+        style: 'width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 8px;',
+        onInput: (event: Event) => {
+          nextValue = (event.target as HTMLInputElement).value
+        },
+      }),
+      okText: '确定',
+      cancelText: '取消',
+      async onOk() {
+        const value = nextValue.trim()
+        if (!value) {
+          message.warning('请输入分组名称')
+          return Promise.reject()
+        }
+        resolve(value)
+      },
+      onCancel() {
+        resolve(null)
+      }
+    })
+  })
+}
+
+async function createGroup() {
+  const groupName = await promptGroupName('新增分组')
+  if (!groupName) {
+    return
+  }
+
+  try {
+    groups.value = await SshService.createGroup(groupName)
+    message.success('分组已创建')
+  } catch (error) {
+    console.error('创建分组失败:', error)
+    message.error(String(error))
+  }
+}
+
+async function renameGroup(groupName: string) {
+  const nextName = await promptGroupName('编辑分组', groupName, '请输入新的分组名称')
+  if (!nextName) {
+    return
+  }
+
+  try {
+    groups.value = await SshService.renameGroup(groupName, nextName)
+    await refreshProfiles()
+    message.success('分组已更新')
+  } catch (error) {
+    console.error('编辑分组失败:', error)
+    message.error(String(error))
+  }
+}
+
+async function deleteGroup(groupName: string) {
+  Modal.confirm({
+    title: '确认删除分组',
+    content: `删除分组 "${groupName}" 后，原有连接会被移出该分组。`,
+    okText: '删除',
+    okType: 'danger',
+    cancelText: '取消',
+    async onOk() {
+      try {
+        groups.value = await SshService.deleteGroup(groupName)
+        await refreshProfiles()
+        message.success('分组已删除')
+      } catch (error) {
+        console.error('删除分组失败:', error)
+        message.error(String(error))
+      }
+    }
+  })
 }
 
 // 打开文件预览
@@ -399,7 +561,7 @@ async function reconnectSsh(tab: ConnectionTab | null) {
 // 生命周期钩子
 onMounted(async () => {
   // 加载已保存的SSH配置
-  await refreshProfiles()
+  await refreshConnectionData()
 })
 
 onBeforeUnmount(() => {
@@ -484,12 +646,10 @@ onBeforeUnmount(() => {
   min-height: 0;
   overflow: hidden;
   border-radius: 0;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(246, 250, 255, 0.66)),
-    rgba(255, 255, 255, 0.72);
+  background: var(--workspace-view-bg);
   box-shadow:
-    inset 0 0 0 1px rgba(214, 225, 239, 0.72),
-    0 8px 18px rgba(41, 71, 116, 0.05);
+    inset 0 0 0 1px var(--workspace-view-border),
+    var(--workspace-view-shadow);
 }
 
 .workspace-view--ssh,

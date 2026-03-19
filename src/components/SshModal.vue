@@ -1,9 +1,12 @@
 <template>
   <a-modal
     :open="visible"
-    :title="editMode ? '编辑 SSH 连接' : '新建 SSH 连接'"
+    :title="editMode ? '编辑连接' : '新建连接'"
     width="500px"
-    @ok="handleSubmit"
+    wrap-class-name="ssh-modal"
+    :classes="modalClasses"
+    :styles="modalStyles"
+    :close-icon="closeIconNode"
     @cancel="handleCancel"
     :confirmLoading="loading"
   >
@@ -15,11 +18,12 @@
       <a-row :gutter="16">
         <a-col :span="12">
           <a-form-item label="分组" name="group">
-            <a-auto-complete 
-              v-model:value="form.group" 
+            <a-select
+              v-model:value="form.group"
               :options="groupOptions"
-              placeholder="选择或创建分组"
-              :filter-option="filterOption"
+              placeholder="选择分组"
+              show-search
+              option-filter-prop="label"
               allow-clear
             />
           </a-form-item>
@@ -28,11 +32,44 @@
           <a-form-item label="标签" name="tags">
             <a-select
               v-model:value="form.tags"
-              mode="tags"
-              placeholder="添加标签"
-              :token-separators="[',', ' ']"
+              mode="multiple"
+              :options="tagOptions"
+              placeholder="选择标签颜色"
+              option-filter-prop="label"
+              max-tag-count="responsive"
               allow-clear
-            />
+            >
+              <template #optionRender="{ option }">
+                <span class="ssh-tag-option">
+                  <span
+                    class="ssh-tag-option__dot"
+                    :style="{ backgroundColor: option.data.color }"
+                  ></span>
+                  <span>{{ option.data.label }}</span>
+                </span>
+              </template>
+              <template #tagRender="{ label, value, closable, onClose }">
+                <span
+                  class="ssh-tag-chip"
+                  :style="getTagChipStyle(String(value))"
+                  @mousedown.stop
+                >
+                  <span
+                    class="ssh-tag-chip__dot"
+                    :style="{ backgroundColor: getTagColor(String(value)) }"
+                  ></span>
+                  <span>{{ label }}</span>
+                  <button
+                    v-if="closable"
+                    type="button"
+                    class="ssh-tag-chip__close"
+                    @click="onClose"
+                  >
+                    ×
+                  </button>
+                </span>
+              </template>
+            </a-select>
           </a-form-item>
         </a-col>
       </a-row>
@@ -81,7 +118,7 @@
         </a-space-compact>
       </a-form-item>
       
-      <a-form-item>
+    <a-form-item>
         <a-checkbox v-model:checked="form.savePassword">
           保存连接配置
         </a-checkbox>
@@ -90,28 +127,85 @@
         </div>
       </a-form-item>
     </a-form>
+    <template #footer>
+      <div class="ssh-modal__footer">
+        <a-button class="ssh-modal__action ssh-modal__action--ghost" @click="handleCancel">
+          取消
+        </a-button>
+        <a-button
+          type="primary"
+          class="ssh-modal__action ssh-modal__action--primary"
+          :loading="loading"
+          @click="handleSubmit"
+        >
+          确定
+        </a-button>
+      </div>
+    </template>
   </a-modal>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
+import { computed, h, ref, watch } from 'vue'
+import { CloseOutlined } from '@antdv-next/icons'
 import type { SelectOption, SshModalForm, SshProfile } from '../types/app'
+import { PROFILE_TAG_PRESETS } from '../constants/profileTags'
 
 const props = withDefaults(defineProps<{
   visible?: boolean
   editMode?: boolean
   editProfile?: SshProfile | null
+  groups?: string[]
 }>(), {
   visible: false,
   editMode: false,
-  editProfile: null
+  editProfile: null,
+  groups: () => []
 })
 
 const emit = defineEmits(['update:visible', 'submit'])
 
 const formRef = ref()
 const loading = ref(false)
+const closeIconNode = computed(() => h(CloseOutlined, { class: 'modal-close-icon' }))
+const modalClasses = {
+  container: 'ssh-modal__container',
+}
+const modalStyles = {
+  mask: {
+    background: 'var(--overlay-mask-bg)',
+    backdropFilter: 'blur(12px)',
+  },
+  container: {
+    background: 'var(--overlay-panel-solid)',
+    border: '1px solid var(--border-color)',
+    boxShadow: 'var(--shadow-soft)',
+    padding: '0',
+    overflow: 'hidden',
+    borderRadius: '20px',
+  },
+  content: {
+    background: 'var(--overlay-panel-solid)',
+    padding: '0',
+    backdropFilter: 'blur(16px)',
+  },
+  header: {
+    background: 'var(--overlay-header-bg)',
+    borderBottom: '1px solid var(--overlay-divider-color)',
+    marginBottom: '0',
+    padding: '18px 24px 14px',
+  },
+  body: {
+    background: 'var(--overlay-panel-solid)',
+    color: 'var(--text-color)',
+    padding: '18px 24px 16px',
+  },
+  footer: {
+    background: 'color-mix(in srgb, var(--overlay-header-bg) 88%, transparent)',
+    borderTop: '1px solid var(--overlay-divider-color)',
+    padding: '14px 24px 18px',
+  },
+}
 
 const createInitialForm = (): SshModalForm => ({
   name: '',
@@ -128,12 +222,36 @@ const createInitialForm = (): SshModalForm => ({
 
 const form = ref<SshModalForm>(createInitialForm())
 
-const groupOptions = ref<SelectOption[]>([])
+const groupOptions = computed<SelectOption[]>(() => {
+  const values = new Set(props.groups)
+  if (form.value.group?.trim()) {
+    values.add(form.value.group.trim())
+  }
 
-// 过滤分组选项
-function filterOption(inputValue: string, option?: SelectOption) {
-  return option?.value.toLowerCase().includes(inputValue.toLowerCase()) ?? false
-}
+  return Array.from(values).map((group) => ({
+    value: group,
+    label: group
+  }))
+})
+
+const tagOptions = computed(() => {
+  const values = new Map(PROFILE_TAG_PRESETS.map((preset) => [preset.value, preset]))
+
+  form.value.tags.forEach((tag) => {
+    if (!values.has(tag)) {
+      values.set(tag, {
+        value: tag,
+        label: tag,
+        color: '#94a3b8',
+        background: 'rgba(148, 163, 184, 0.16)',
+        border: 'rgba(148, 163, 184, 0.26)',
+        text: '#475569'
+      })
+    }
+  })
+
+  return Array.from(values.values())
+})
 
 // 重置表单
 function resetForm() {
@@ -157,6 +275,23 @@ function resetForm() {
     form.value = createInitialForm()
   }
   formRef.value?.resetFields()
+}
+
+function getTagColor(tag: string) {
+  return tagOptions.value.find((option) => option.value === tag)?.color || '#94a3b8'
+}
+
+function getTagChipStyle(tag: string) {
+  const option = tagOptions.value.find((item) => item.value === tag)
+  if (!option) {
+    return {}
+  }
+
+  return {
+    backgroundColor: option.background,
+    borderColor: option.border,
+    color: option.text,
+  }
 }
 
 // 提交表单
@@ -210,24 +345,9 @@ async function selectPrivateKey() {
   }
 }
 
-// 获取已有分组
-async function loadGroups() {
-  try {
-    const profiles = await invoke<SshProfile[]>('list_ssh_profiles')
-    const groups = [...new Set(profiles
-      .map(p => p.group)
-      .filter(g => g && g.trim() !== '')
-    )]
-    groupOptions.value = groups.map(g => ({ value: g, label: g }))
-  } catch (error) {
-    console.error('获取分组失败:', error)
-  }
-}
-
 // 监听 visible 变化，重置表单
 watch(() => props.visible, (visible) => {
   if (visible) {
-    loadGroups() // 打开时加载分组
     resetForm() // 重置表单（包括编辑模式的数据填充）
   } else {
     resetForm()
@@ -243,29 +363,85 @@ watch(() => props.editProfile, () => {
 </script>
 
 <style scoped>
-:deep(.ant-form-item-label > label) {
+:deep(.ssh-modal .ant-modal-content) {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  overflow: hidden;
+  border-radius: 20px;
+}
+
+:deep(.ssh-modal__container) {
+  background: var(--overlay-panel-solid) !important;
+  border-radius: 20px;
+}
+
+:deep(.ssh-modal .ant-modal-header) {
+  border-bottom: 1px solid var(--overlay-divider-color);
+  margin-bottom: 0 !important;
+  padding: 18px 24px 14px !important;
+}
+
+:deep(.ssh-modal .ant-modal-body) {
+  background: var(--overlay-panel-solid);
+  padding: 18px 24px 16px !important;
+}
+
+:deep(.ssh-modal .ant-modal-footer) {
+  border-top: 1px solid var(--overlay-divider-color);
+  padding: 14px 24px 18px !important;
+  background: var(--overlay-panel-solid) !important;
+}
+
+:deep(.ssh-modal .ant-modal-close) {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+:deep(.ssh-modal .modal-close-icon),
+:deep(.ssh-modal .modal-close-icon svg) {
+  color: rgba(255, 255, 255, 0.88) !important;
+}
+
+:deep(.ssh-modal .ant-modal-close:hover) {
   color: var(--text-color);
+  background: var(--hover-bg);
+}
+
+:deep(.ant-form-item-label > label) {
+  color: var(--text-color) !important;
+  font-weight: 600;
 }
 
 :deep(.ant-input),
 :deep(.ant-input-number),
-:deep(.ant-input-password) {
-  background: var(--panel-bg);
+:deep(.ant-input-password),
+:deep(.ant-select),
+:deep(.ant-select-selector) {
+  background: var(--surface-1);
   border-color: var(--border-color);
   color: var(--text-color);
 }
 
 :deep(.ant-input::placeholder),
 :deep(.ant-input-number::placeholder),
-:deep(.ant-input-password::placeholder) {
+:deep(.ant-input-password::placeholder),
+:deep(.ant-select-selection-placeholder) {
   color: var(--muted-color) !important;
 }
 
+:deep(.ant-input-number .ant-input-number-input),
+:deep(.ant-select-selection-item),
+:deep(.ant-input-password input) {
+  color: var(--text-color) !important;
+}
+
 :deep(.ant-input:focus),
-:deep(.ant-input-number:focus),
-:deep(.ant-input-password:focus) {
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+:deep(.ant-input-affix-wrapper-focused),
+:deep(.ant-input-number-focused),
+:deep(.ant-select-focused .ant-select-selector) {
+  border-color: var(--primary-color) !important;
+  box-shadow: 0 0 0 4px var(--primary-soft) !important;
 }
 
 :deep(.ant-radio-wrapper) {
@@ -274,5 +450,115 @@ watch(() => props.editProfile, () => {
 
 :deep(.ant-checkbox-wrapper) {
   color: var(--text-color);
+}
+
+:deep(.ant-radio-inner) {
+  background: transparent;
+  border-color: var(--border-color);
+}
+
+:deep(.ant-radio-checked .ant-radio-inner) {
+  border-color: var(--primary-color);
+  background: var(--primary-color);
+}
+
+:deep(.ant-checkbox-inner) {
+  background: transparent;
+  border-color: var(--border-color);
+}
+
+:deep(.ant-checkbox-checked .ant-checkbox-inner) {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+.ssh-tag-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ssh-tag-option__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+:deep(.ant-select-selection-overflow) {
+  gap: 4px;
+}
+
+:deep(.ant-select-selection-item) {
+  background: transparent !important;
+  border: none !important;
+  padding-inline: 0 !important;
+}
+
+.ssh-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ssh-tag-chip__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ssh-tag-chip__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
+:deep(.ant-select-selection-item) {
+  font-weight: 600;
+}
+
+.ssh-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+:deep(.ssh-modal__action) {
+  min-width: 78px;
+  border-radius: 12px !important;
+  font-weight: 700;
+}
+
+:deep(.ssh-modal__action--ghost) {
+  background: var(--surface-2) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-color) !important;
+}
+
+:deep(.ssh-modal__action--ghost:hover) {
+  background: var(--hover-bg) !important;
+  border-color: var(--strong-border) !important;
+}
+
+:deep(.ssh-modal__action--primary) {
+  background: linear-gradient(135deg, var(--primary-color), #7db7ff) !important;
+  border-color: transparent !important;
+  color: #fff !important;
 }
 </style>

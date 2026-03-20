@@ -4,7 +4,7 @@
       class="ssh-workspace__monitor"
       :class="{ 'is-hidden': !showEmbeddedMonitor }"
       :collapsed="embeddedMonitorCollapsed"
-      :connection-id="connectionId || ''"
+      :connection-id="monitorConnectionId"
       :ssh-profile="profile"
       active-tab="monitor"
       placement="left"
@@ -26,6 +26,7 @@
           :config="config"
           :auto-password="autoPassword"
           :ssh-user="profile?.username || ''"
+          :ssh-state="sshState"
           type="ssh"
           @close="$emit('close')"
           @current-directory-change="handleTerminalDirectoryChange"
@@ -47,10 +48,12 @@
           :sync-path="terminalPath"
           :density="workspaceDensity"
           :font-family="config.fontFamily"
+          :ssh-state="sshState"
           :title="workspaceTitle"
           @open-file-preview="$emit('openFilePreview', $event)"
           @start-download="$emit('startDownload', $event)"
           @start-upload="$emit('startUpload', $event)"
+          @reconnect="$emit('reconnect')"
         />
       </section>
     </div>
@@ -63,6 +66,7 @@ import Terminal from './Terminal.vue'
 import RemoteFileWorkbench from './RemoteFileWorkbench.vue'
 import RightPanel from './RightPanel.vue'
 import type {
+  ConnectionTab,
   DownloadRequest,
   SftpFileEntry,
   SshProfile,
@@ -82,6 +86,7 @@ const props = withDefaults(defineProps<{
   profile?: SshProfile | null
   embeddedMonitorVisible?: boolean
   embeddedMonitorCollapsed?: boolean
+  sshState?: ConnectionTab['sshState']
 }>(), {
   connectionId: '',
   active: false,
@@ -97,6 +102,7 @@ const props = withDefaults(defineProps<{
   profile: null,
   embeddedMonitorVisible: false,
   embeddedMonitorCollapsed: false,
+  sshState: 'connected',
 })
 
 defineEmits<{
@@ -115,7 +121,9 @@ const terminalPath = ref('')
 const splitterHeight = 8
 const terminalRatio = ref(0.4)
 const showEmbeddedMonitor = computed(() => props.embeddedMonitorVisible && !props.embeddedMonitorCollapsed)
+const monitorConnectionId = computed(() => props.sshState === 'disconnected' ? '' : (props.connectionId || ''))
 let resizeFrame = 0
+let activateSyncFrame = 0
 let resizeObserver: ResizeObserver | null = null
 const workspaceDensity = computed<WorkspaceDensity>(() => props.config.density || 'balanced')
 
@@ -183,11 +191,31 @@ function emitWindowResize() {
 
 function syncSplitFromRatio(forceDefault = false) {
   if (!workspaceRef.value) return
+  const workspaceHeight = workspaceRef.value.clientHeight
+  if (workspaceHeight <= splitterHeight) return
   const ratio = forceDefault ? getDefaultTerminalRatio(workspaceDensity.value) : terminalRatio.value
-  const nextHeight = Math.round((workspaceRef.value.clientHeight - splitterHeight) * ratio)
+  const nextHeight = Math.round((workspaceHeight - splitterHeight) * ratio)
   const clampedHeight = getClampedTerminalHeight(nextHeight)
   terminalHeight.value = clampedHeight
   updateTerminalRatio(clampedHeight)
+}
+
+function scheduleLayoutRecovery(forceDefault = false) {
+  if (activateSyncFrame) cancelAnimationFrame(activateSyncFrame)
+
+  nextTick(() => {
+    activateSyncFrame = requestAnimationFrame(() => {
+      if (!props.active) return
+      syncSplitFromRatio(forceDefault)
+      emitWindowResize()
+
+      activateSyncFrame = requestAnimationFrame(() => {
+        if (!props.active) return
+        syncSplitFromRatio()
+        emitWindowResize()
+      })
+    })
+  })
 }
 
 function startResize(event: PointerEvent) {
@@ -232,6 +260,9 @@ onMounted(async () => {
   await nextTick()
   terminalRatio.value = getDefaultTerminalRatio(workspaceDensity.value)
   syncSplitFromRatio(true)
+  if (props.active) {
+    scheduleLayoutRecovery(true)
+  }
 
   if (workspaceRef.value) {
     resizeObserver = new ResizeObserver(() => {
@@ -245,11 +276,18 @@ onMounted(async () => {
 
 watch(workspaceDensity, (nextDensity) => {
   terminalRatio.value = getDefaultTerminalRatio(nextDensity)
-  syncSplitFromRatio(true)
+  scheduleLayoutRecovery(true)
+})
+
+watch(() => props.active, (isActive) => {
+  if (isActive) {
+    scheduleLayoutRecovery()
+  }
 })
 
 onBeforeUnmount(() => {
   if (resizeFrame) cancelAnimationFrame(resizeFrame)
+  if (activateSyncFrame) cancelAnimationFrame(activateSyncFrame)
   resizeObserver?.disconnect()
   document.body.style.cursor = ''
   document.body.style.userSelect = ''

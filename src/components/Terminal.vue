@@ -31,6 +31,7 @@ const props = withDefaults(defineProps<{
   config?: TerminalConfig
   autoPassword?: string
   sshUser?: string
+  sshState?: 'connected' | 'disconnected'
   type?: string
 }>(), {
   active: false,
@@ -44,6 +45,7 @@ const props = withDefaults(defineProps<{
   }),
   autoPassword: '',
   sshUser: '',
+  sshState: 'connected',
   type: 'local'
 })
 
@@ -60,6 +62,7 @@ let previousShellCwd = ''
 let homeCwd = ''
 let sshOutputBuffer = ''
 let promptBuffer = ''
+let pendingReconnectEnter = false
 const hasScrollContent = computed(() => {
   if (!terminal.value) return false
   return terminal.value.buffer.active.viewportY > 0
@@ -343,6 +346,14 @@ async function createTerminal() {
   term.onData(data => {
     // 只有当这个终端实例是激活状态时才发送数据
     if (props.active) {
+      if (props.id.startsWith('ssh-') && props.sshState === 'disconnected') {
+        if (data === '\r') {
+          pendingReconnectEnter = true
+          terminal.value?.writeln('\r\n正在尝试重连...')
+          emit('reconnect')
+        }
+        return
+      }
       if (props.id.startsWith('ssh-')) {
         trackTerminalInput(data)
       }
@@ -690,6 +701,17 @@ watch(() => props.active, (isActive) => {
   }
 })
 
+watch(() => props.sshState, (nextState, prevState) => {
+  if (nextState === 'connected' && prevState === 'disconnected' && pendingReconnectEnter) {
+    pendingReconnectEnter = false
+    setTimeout(() => {
+      if (props.id.startsWith('ssh-')) {
+        SshService.writeTerminal(props.id, '\r').catch(() => {})
+      }
+    }, 120)
+  }
+})
+
 // 生命周期钩子
 let unbindSession = null
 
@@ -700,6 +722,7 @@ onMounted(async () => {
   previousShellCwd = ''
   homeCwd = ''
   sshOutputBuffer = ''
+  pendingReconnectEnter = false
 
   // 创建终端
   await createTerminal()

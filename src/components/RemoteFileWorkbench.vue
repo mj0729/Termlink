@@ -156,6 +156,7 @@ const props = withDefaults(defineProps<{
   syncPath?: string
   density?: WorkspaceDensity
   fontFamily?: string
+  sshState?: 'connected' | 'disconnected'
 }>(), {
   connectionId: '',
   title: '远程工作区',
@@ -163,12 +164,14 @@ const props = withDefaults(defineProps<{
   syncPath: '',
   density: 'compact',
   fontFamily: 'SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+  sshState: 'connected',
 })
 
 const emit = defineEmits<{
   openFilePreview: [file: SftpFileEntry]
   startDownload: [download: DownloadRequest]
   startUpload: [upload: UploadRequest]
+  reconnect: []
 }>()
 
 // --- State ---
@@ -185,6 +188,7 @@ const auditLogs = ref<any[]>([])
 const diskInfo = ref<any>(null)
 const treeVersion = ref(0)
 let latestLoadRequestId = 0
+const pendingReconnectAction = ref<null | { kind: 'navigate', path: string } | { kind: 'open', entry: SftpFileEntry }>(null)
 
 const sortKey = ref('name')
 const sortOrder = ref('ascend')
@@ -290,6 +294,11 @@ function normalizeSyncPath(path: string) {
 }
 
 async function loadFiles(path: string, fromHistory = false, options?: { silentError?: boolean }) {
+  if (props.sshState === 'disconnected') {
+    pendingReconnectAction.value = { kind: 'navigate', path: path || '/' }
+    emit('reconnect')
+    return
+  }
   if (!props.connectionId) return
   const normalizedPath = path || '/'
   const requestId = ++latestLoadRequestId
@@ -690,6 +699,11 @@ async function applyChown(user: string, group: string, recursive: boolean) {
 }
 
 function openEntry(file: SftpFileEntry) {
+  if (props.sshState === 'disconnected') {
+    pendingReconnectAction.value = { kind: 'open', entry: file }
+    emit('reconnect')
+    return
+  }
   if (file.is_dir || file.is_directory) {
     loadFiles(file.path)
   } else {
@@ -775,6 +789,20 @@ watch(() => props.connectionId, (newId) => {
 watch(() => props.syncPath, (nextPath) => {
   if (!nextPath) return
   syncWorkbenchToTerminalPath(nextPath)
+})
+
+watch(() => props.sshState, (nextState, prevState) => {
+  if (nextState !== 'connected' || prevState !== 'disconnected' || !pendingReconnectAction.value) return
+
+  const action = pendingReconnectAction.value
+  pendingReconnectAction.value = null
+
+  if (action.kind === 'navigate') {
+    loadFiles(action.path)
+    return
+  }
+
+  openEntry(action.entry)
 })
 
 provide('connectionId', props.connectionId)

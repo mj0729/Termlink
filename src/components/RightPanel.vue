@@ -19,7 +19,7 @@
 
               <div class="dashboard-hero__toolbar">
                 <div class="dashboard-hero__toolbar-actions">
-                  <a-button type="primary" size="small" title="手动刷新" @click="refreshData">
+                  <a-button type="primary" size="small" title="手动刷新" :disabled="!canRefreshMonitor" @click="refreshData">
                     <ReloadOutlined />
                   </a-button>
                   <a-button
@@ -599,9 +599,16 @@ const monitorHealthValue = computed(() => Math.max(
   primaryDisk.value?.usage || 0,
 ))
 
-const monitorHealthTone = computed(() => getUsageTone(monitorHealthValue.value))
+const monitorDisconnected = computed(() => Boolean(props.sshProfile) && !props.connectionId)
+const canRefreshMonitor = computed(() => !monitorDisconnected.value && Boolean(props.connectionId))
+
+const monitorHealthTone = computed(() => {
+  if (monitorDisconnected.value) return 'offline'
+  return getUsageTone(monitorHealthValue.value)
+})
 
 const monitorHealthLabel = computed(() => {
+  if (monitorDisconnected.value) return '已断开'
   if (monitorHealthTone.value === 'danger') return '高风险'
   if (monitorHealthTone.value === 'warning') return '需关注'
   return '运行稳定'
@@ -615,6 +622,10 @@ const monitorHostTitle = computed(() => (
 ))
 
 const monitorSummaryText = computed(() => {
+  if (monitorDisconnected.value && props.sshProfile?.host) {
+    return `与 ${props.sshProfile.host} 的 SSH 连接已断开，监控已停止刷新`
+  }
+
   const summary = [
     systemInfo.value.os,
     systemInfo.value.arch,
@@ -633,9 +644,11 @@ const monitorSummaryText = computed(() => {
 })
 
 const lastUpdateText = computed(() => (
-  lastUpdate.value
-    ? `最近刷新 ${new Date(lastUpdate.value).toLocaleTimeString('zh-CN', { hour12: false })}`
-    : '等待首帧数据'
+  monitorDisconnected.value
+    ? '连接已断开'
+    : lastUpdate.value
+      ? `最近刷新 ${new Date(lastUpdate.value).toLocaleTimeString('zh-CN', { hour12: false })}`
+      : '等待首帧数据'
 ))
 
 const heroStatistics = computed(() => ([
@@ -645,7 +658,7 @@ const heroStatistics = computed(() => ([
     value: formatUptime(systemInfo.value.uptime),
     precision: undefined,
     suffix: undefined,
-    meta: `刷新间隔 ${Math.round(refreshInterval / 1000)}s`,
+    meta: monitorDisconnected.value ? '连接已断开' : `刷新间隔 ${Math.round(refreshInterval / 1000)}s`,
     valueStyle: { color: '#1890ff', fontSize: '24px', fontWeight: 700 },
   },
   {
@@ -683,7 +696,7 @@ const resourceHighlights = computed(() => {
       value: cpuInfo.value.usage || 0,
       suffix: '%',
       precision: 1,
-      meta: cpuInfo.value.cores?.length ? `${cpuInfo.value.cores.length} 核` : 'CPU',
+      meta: monitorDisconnected.value ? '监控已停止' : (cpuInfo.value.cores?.length ? `${cpuInfo.value.cores.length} 核` : 'CPU'),
     },
     {
       key: 'memory',
@@ -696,7 +709,7 @@ const resourceHighlights = computed(() => {
       value: memoryInfo.value.usage || 0,
       suffix: '%',
       precision: 1,
-      meta: `${formatSize(memoryInfo.value.used)} / ${formatSize(memoryInfo.value.total)}`,
+      meta: monitorDisconnected.value ? '监控已停止' : `${formatSize(memoryInfo.value.used)} / ${formatSize(memoryInfo.value.total)}`,
     },
     {
       key: 'disk',
@@ -709,7 +722,7 @@ const resourceHighlights = computed(() => {
       value: diskPercent,
       suffix: '%',
       precision: 1,
-      meta: primaryDisk.value ? `可用 ${formatSize(primaryDisk.value.available)}` : '等待磁盘遥测',
+      meta: monitorDisconnected.value ? '监控已停止' : (primaryDisk.value ? `可用 ${formatSize(primaryDisk.value.available)}` : '等待磁盘遥测'),
     },
   ]
 })
@@ -739,6 +752,15 @@ const processColumns = [
 ]
 
 const dashboardAlerts = computed<MonitorAlert[]>(() => {
+  if (monitorDisconnected.value) {
+    return [{
+      key: 'monitor-disconnected',
+      type: 'warning',
+      message: 'SSH 连接已断开',
+      description: '系统监控已停止刷新。重新连接当前标签后将恢复实时数据。',
+    }]
+  }
+
   const alerts: MonitorAlert[] = []
 
   if ((cpuInfo.value.usage || 0) > 85) {
@@ -920,6 +942,14 @@ async function refreshData() {
   } catch (error) {
     console.error('获取系统信息失败:', error)
     errorCount++
+    const errorText = String(error)
+    const connectionMissing = !props.connectionId || errorText.includes('SSH连接不存在') || errorText.includes('未找到')
+
+    if (connectionMissing) {
+      stopAutoRefresh()
+      return
+    }
+
     message.error('获取系统信息失败: ' + error)
     
     // 错误时增加刷新间隔（降低频率）
@@ -1676,6 +1706,11 @@ defineExpose({
 .dashboard-health-pill.is-danger {
   background: rgba(245, 34, 45, 0.12);
   color: #cf1322;
+}
+
+.dashboard-health-pill.is-offline {
+  background: rgba(128, 148, 177, 0.16);
+  color: #5f7188;
 }
 
 .dashboard-hero__toolbar {

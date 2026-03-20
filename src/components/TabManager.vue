@@ -20,13 +20,23 @@
         <PlusOutlined />
       </a-button>
     </div>
+
+    <FileContextMenu
+      :open="contextMenu.open"
+      :x="contextMenu.x"
+      :y="contextMenu.y"
+      :items="contextMenuItems"
+      @click="handleContextMenuClick"
+      @close="closeContextMenu"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, h } from 'vue'
+import { computed, h, ref } from 'vue'
 import { PlusOutlined } from '@antdv-next/icons'
-import type { ConnectionTab } from '../types/app'
+import FileContextMenu from './remote-file/FileContextMenu.vue'
+import type { ConnectionTab, TabContextMenuAction } from '../types/app'
 
 const props = defineProps({
   tabs: {
@@ -39,22 +49,92 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['change', 'close', 'openConnectionCenter'])
+const emit = defineEmits<{
+  change: [id: string]
+  close: [id: string]
+  openConnectionCenter: []
+  menuAction: [payload: { action: TabContextMenuAction, tabId: string }]
+}>()
+
+const contextMenu = ref({
+  open: false,
+  x: 0,
+  y: 0,
+  tabId: ''
+})
+
+const contextTab = computed(() => (
+  (props.tabs as ConnectionTab[]).find((tab) => tab.id === contextMenu.value.tabId) || null
+))
+
+const contextMenuItems = computed(() => {
+  const tab = contextTab.value
+  if (!tab) return []
+
+  const isSsh = tab.type === 'ssh'
+  const isConnected = isSsh && tab.sshState !== 'disconnected'
+  const hasDisconnectedSsh = (props.tabs as ConnectionTab[]).some((item) => (
+    item.type === 'ssh' && item.sshState === 'disconnected' && item.profile
+  ))
+
+  return [
+    { key: 'connect', label: '连接', disabled: !isSsh || isConnected || !tab.profile },
+    { key: 'connectAll', label: '连接全部', disabled: !isSsh || !hasDisconnectedSsh },
+    { key: 'disconnect', label: '断开', disabled: !isSsh || !isConnected },
+    { key: 'close', label: '关闭' },
+    { key: 'closeOthers', label: '关闭其他', disabled: (props.tabs as ConnectionTab[]).length <= 1 },
+    { key: 'closeAll', label: '关闭全部' },
+  ]
+})
+
 const tabItems = computed(() => (props.tabs as ConnectionTab[]).map((tab) => ({
   key: tab.id,
   closable: true,
-  label: h('span', { class: 'tab-content flex items-center gap-2' }, [
+  label: h('span', {
+    class: 'tab-content flex items-center gap-2',
+    onContextmenu: (event: MouseEvent) => openContextMenu(event, tab),
+  }, [
     h('span', { class: ['tab-kind', `tab-kind--${tab.type}`] }, tab.type === 'ssh' ? 'SSH' : tab.type === 'file' ? 'FILE' : tab.type === 'connections' ? 'HUB' : 'LOCAL'),
     ((tab.type === 'ssh') || (tab.type === 'file' && tab.connectionId))
       ? h('span', {
-          class: ['tab-status', tab.type === 'ssh' ? 'is-live' : 'is-linked'],
-          'aria-label': tab.type === 'ssh' ? '连接中' : '关联连接'
+          class: [
+            'tab-status',
+            tab.type === 'ssh'
+              ? (tab.sshState === 'disconnected' ? 'is-offline' : 'is-live')
+              : 'is-linked'
+          ],
+          'aria-label': tab.type === 'ssh'
+            ? (tab.sshState === 'disconnected' ? '已断开' : '连接中')
+            : '关联连接'
         })
       : null,
     h('span', { class: 'tab-title' }, tab.title),
   ]),
   content: null,
 })))
+
+function openContextMenu(event: MouseEvent, tab: ConnectionTab) {
+  event.preventDefault()
+  event.stopPropagation()
+  contextMenu.value = {
+    open: true,
+    x: event.clientX,
+    y: event.clientY,
+    tabId: tab.id,
+  }
+}
+
+function closeContextMenu() {
+  contextMenu.value.open = false
+}
+
+function handleContextMenuClick(action: string) {
+  if (!contextTab.value) return
+  emit('menuAction', {
+    action: action as TabContextMenuAction,
+    tabId: contextTab.value.id,
+  })
+}
 
 function onEditTab(targetKeyOrEvent: string | MouseEvent, action: 'add' | 'remove') {
   if (action === 'remove' && typeof targetKeyOrEvent === 'string') {
@@ -165,6 +245,11 @@ function onEditTab(targetKeyOrEvent: string | MouseEvent, action: 'add' | 'remov
 .tab-status.is-live {
   background: var(--success-color);
   box-shadow: 0 0 0 3px rgba(74, 169, 107, 0.14);
+}
+
+.tab-status.is-offline {
+  background: rgba(128, 148, 177, 0.58);
+  box-shadow: 0 0 0 3px rgba(128, 148, 177, 0.12);
 }
 
 .tab-status.is-linked {

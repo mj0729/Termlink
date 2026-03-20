@@ -11,6 +11,7 @@
               :active-id="activeId" 
               @change="activeId = $event"
               @close="closeTab"
+              @menu-action="handleTabMenuAction"
               @open-connection-center="openConnectionCenter"
             />
             
@@ -35,9 +36,10 @@
                     :auto-password="tab.autoPassword"
                     :connection-id="tab.id"
                     :profile="tab.profile"
+                    :ssh-state="tab.sshState"
                     :embedded-monitor-visible="activeId === tab.id && shouldEmbedMonitorInSsh"
                     :embedded-monitor-collapsed="embeddedMonitorCollapsed"
-                    @close="closeTab(tab.id)"
+                    @close="handleSshTabExit(tab.id)"
                     @reconnect="reconnectSsh(tab)"
                     @open-file-preview="openFilePreview"
                     @start-download="handleStartDownload"
@@ -91,7 +93,7 @@
             :collapsed="effectiveRightPanelCollapsed" 
             @toggle="rightPanelCollapsed = !rightPanelCollapsed"
             @tab-change="rightPanelTab = $event"
-            :connection-id="currentTab?.type === 'ssh' ? currentTab?.id : ''"
+            :connection-id="currentTab?.type === 'ssh' && currentTab?.sshState !== 'disconnected' ? currentTab?.id : ''"
             :ssh-profile="currentTab?.type === 'ssh' ? currentTab?.profile : null"
             :active-tab="rightPanelTab"
           />
@@ -143,6 +145,7 @@ import type {
   SftpFileEntry,
   SshConnectionPayload,
   SshProfile,
+  TabContextMenuAction,
   TerminalConfig,
   ThemeName,
   UploadRequest,
@@ -177,6 +180,8 @@ const embeddedMonitorCollapsed = ref(false)
 const rightPanelTab = ref<MonitorTab>('monitor')
 const sshEditMode = ref(false)
 const editingProfile = ref<SshProfile | null>(null)
+const manualDisconnectingIds = new Set<string>()
+const closingTabIds = new Set<string>()
 
 // 主题和设置
 const theme = ref<ThemeName>(ThemeService.getTheme())
@@ -426,6 +431,13 @@ async function newLocal() {
   await invoke('start_pty', { id, cols: 120, rows: 30 })
 }
 
+function updateSshTabState(id: string, state: 'connected' | 'disconnected') {
+  const tab = tabs.value.find((item) => item.id === id)
+  if (tab?.type === 'ssh') {
+    tab.sshState = state
+  }
+}
+
 // 新建 SSH 会话
 async function newSsh() {
   sshEditMode.value = false
@@ -575,21 +587,24 @@ async function openFilePreview(fileInfo: SftpFileEntry) {
 }
 
 // 关闭标签页
-async function closeTab(id) {
+async function closeTab(id: string, options: { skipDisconnect?: boolean } = {}) {
   const index = tabs.value.findIndex(t => t.id === id)
   if (index === -1) return
   
   const tab = tabs.value[index]
   
   // 清理资源
-  if (tab.type === 'ssh') {
-    await SshService.closeConnection(id);
+  if (tab.type === 'ssh' && !options.skipDisconnect && tab.sshState !== 'disconnected') {
+    closingTabIds.add(id)
+    await SshService.closeConnection(id)
   } else if (tab.type === 'local') {
-    await invoke('close_pty', { id });
+    await invoke('close_pty', { id })
   }
   
   // 移除标签页
   tabs.value.splice(index, 1)
+  manualDisconnectingIds.delete(id)
+  closingTabIds.delete(id)
 
   if (tabs.value.length === 0) {
     const tab = createConnectionCenterTab()
@@ -605,16 +620,150 @@ async function closeTab(id) {
 }
 
 // 重新连接SSH
-async function reconnectSsh(tab: ConnectionTab | null) {
-  if (tab && tab.profile) {
-    await SshService.reconnect(tab.id, tab.profile)
+async function reconnectSsh(tab: ConnectionTab | null, options: { silent?: boolean } = {}) {
+  if (tab?.type === 'ssh' && tab.profile) {
+    if (tab.sshState === 'connected') {
+      return true
+    }
+    try {
+      await SshService.reconnect(tab.id, tab.profile)
+      updateSshTabState(tab.id, 'connected')
+      return true
+    } catch (error) {
+      if (isUserCancelledConnection(error)) {
+        return false
+      }
+
+      if (!options.silent) {
+        message.error({
+          content: String(error),
+          duration: 8,
+          style: {
+            marginTop: '50px',
+            maxWidth: '400px'
+          }
+        })
+      }
+      return false
+    }
+  }
+
+  return false
+}
+
+function handleSshTabExit(id: string) {
+  if (closingTabIds.has(id)) return
+
+  if (manualDisconnectingIds.has(id)) {
+    updateSshTabState(id, 'disconnected')
+    manualDisconnectingIds.delete(id)
+    return
+  }
+
+  closeTab(id, { skipDisconnect: true })
+}
+
+async function disconnectSshTab(id: string) {
+  const tab = tabs.value.find((item) => item.id === id)
+  if (tab?.type !== 'ssh' || tab.sshState === 'disconnected') return
+
+  manualDisconnectingIds.add(id)
+  try {
+    await SshService.closeConnection(id)
+    updateSshTabState(id, 'disconnected')
+  } finally {
+    manualDisconnectingIds.delete(id)
+  }
+}
+
+async function reconnectAllSshTabs() {
+  const candidates = tabs.value.filter((tab) => (
+    tab.type === 'ssh' && tab.sshState === 'disconnected' && tab.profile
+  ))
+
+  if (!candidates.length) return
+
+  let successCount = 0
+  let failedCount = 0
+
+  for (const tab of candidates) {
+    const success = await reconnectSsh(tab, { silent: true })
+    if (success) {
+      successCount += 1
+    } else {
+      failedCount += 1
+    }
+  }
+
+  if (successCount && !failedCount) {
+    message.success(`已连接 ${successCount} 个 SSH 标签`)
+    return
+  }
+
+  if (successCount || failedCount) {
+    message.warning(`批量连接完成：成功 ${successCount} 个，失败 ${failedCount} 个`)
+  }
+}
+
+async function closeOtherTabs(id: string) {
+  const ids = tabs.value
+    .filter((tab) => tab.id !== id)
+    .map((tab) => tab.id)
+
+  for (const tabId of ids) {
+    await closeTab(tabId)
+  }
+}
+
+async function closeAllTabs() {
+  const ids = tabs.value.map((tab) => tab.id)
+  for (const tabId of ids) {
+    await closeTab(tabId)
+  }
+}
+
+async function handleTabMenuAction(payload: { action: TabContextMenuAction, tabId: string }) {
+  const tab = tabs.value.find((item) => item.id === payload.tabId)
+  if (!tab) return
+
+  switch (payload.action) {
+    case 'connect':
+      await reconnectSsh(tab)
+      break
+    case 'connectAll':
+      await reconnectAllSshTabs()
+      break
+    case 'disconnect':
+      await disconnectSshTab(payload.tabId)
+      break
+    case 'close':
+      await closeTab(payload.tabId)
+      break
+    case 'closeOthers':
+      await closeOtherTabs(payload.tabId)
+      break
+    case 'closeAll':
+      await closeAllTabs()
+      break
   }
 }
 
 // 生命周期钩子
 onMounted(async () => {
   // 加载已保存的SSH配置
-  await refreshConnectionData()
+  try {
+    await refreshConnectionData()
+  } catch (error) {
+    console.error('初始化连接数据失败:', error)
+    message.error({
+      content: `初始化连接数据失败：${String(error)}`,
+      duration: 8,
+      style: {
+        marginTop: '50px',
+        maxWidth: '460px'
+      }
+    })
+  }
 })
 
 onBeforeUnmount(() => {

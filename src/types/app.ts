@@ -109,11 +109,20 @@ export interface ConnectionTab {
   title: string
   type: TabType
   profile?: SshProfile | null
+  sshState?: 'connected' | 'disconnected'
   autoPassword?: string | null
   fileInfo?: SftpFileEntry
   connectionId?: string
   off?: () => void
 }
+
+export type TabContextMenuAction =
+  | 'connect'
+  | 'connectAll'
+  | 'disconnect'
+  | 'close'
+  | 'closeOthers'
+  | 'closeAll'
 
 export type DownloadStatus = 'downloading' | 'completed' | 'error' | 'cancelled'
 export type MonitorTab = 'monitor' | 'download'

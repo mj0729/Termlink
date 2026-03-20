@@ -1,5 +1,37 @@
 # 变更记录
 
+## [0.0.20] - 2026-03-20
+
+### 变更
+
+- **[workspace-ui]**: 为 SSH 断线场景补上更接近 FinalShell 的自动恢复交互；标签断开后，用户在终端按回车会先触发重连并在连接恢复后自动补发这次回车，文件管理里点击目录也会先触发重连并在恢复后自动继续进入原目录，已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603201708_ssh-disconnect-auto-reconnect-actions](plan/202603201708_ssh-disconnect-auto-reconnect-actions/)
+  - 决策: ssh-disconnect-auto-reconnect-actions#D001(在子组件内部挂起原操作，待 SSH 状态恢复后自动续执行)
+
+## [0.0.19] - 2026-03-20
+
+### 变更
+
+- **[workspace-ui]**: 修复 SSH 标签手动断开后嵌入式系统监控仍继续拉取数据并报“SSH连接不存在”的问题；监控现在只在连接有效时持有 `connectionId`，断开后会立即停止轮询、禁用手动刷新，并切换为“已断开 / 监控已停止刷新”的静态状态，已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603201659_ssh-disconnect-monitor-quiet-state](plan/202603201659_ssh-disconnect-monitor-quiet-state/)
+  - 决策: ssh-disconnect-monitor-quiet-state#D001(监控连接状态跟随 SSH 标签状态失效)
+
+## [0.0.18] - 2026-03-20
+
+### 变更
+
+- **[workspace-ui]**: 为顶部标签栏增加了与远程文件工作台一致风格的右键菜单，支持“连接、连接全部、断开、关闭、关闭其他、关闭全部”；所有标签都可右键，非 SSH 标签的连接类动作自动置灰，SSH 标签会根据已连接/已断开状态切换“连接 / 断开”的可用性，且手动断开后会保留标签方便再次连接；已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603201654_tab-context-menu-ssh-actions](plan/202603201654_tab-context-menu-ssh-actions/)
+  - 决策: tab-context-menu-ssh-actions#D001(复用文件管理右键菜单并在 App 层维护 SSH 标签状态)
+
+## [0.0.17] - 2026-03-20
+
+### 变更
+
+- **[workspace-ui]**: 修复 SSH 工作区切换到其他标签再返回后终端区域被错误压缩到近似最小高度的问题；`SshWorkspace` 现在会在隐藏态跳过无效尺寸同步，并在标签重新激活后补做分栏恢复与终端 `resize` 刷新，已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603201644_ssh-tab-terminal-fit-recovery](plan/202603201644_ssh-tab-terminal-fit-recovery/)
+  - 决策: ssh-tab-terminal-fit-recovery#D001(在 SshWorkspace 中修复标签恢复尺寸同步)
+
 ## [0.0.16] - 2026-03-20
 
 ### 快速修改

@@ -14,6 +14,7 @@ class ThemeService {
   private theme: ThemeName
   private terminalConfig: TerminalConfig
   private themes: Record<ThemeName, ThemeConfig>
+  private pendingBodyTheme: ThemeName | null = null
 
   constructor() {
     // 初始化主题
@@ -126,14 +127,39 @@ class ThemeService {
     html.classList.toggle('light', themeName === 'light')
     html.style.colorScheme = themeName
 
-    // 设置 body 主题属性
-    document.body.setAttribute('data-theme', themeName)
     localStorage.setItem('termlink_theme', themeName)
-    
-    // 强制更新 Ant Design 主题
+
+    this.applyBodyTheme(themeName)
+  }
+
+  private applyBodyTheme(themeName: ThemeName): void {
+    const body = document.body
+    if (!body) {
+      this.pendingBodyTheme = themeName
+
+      if (document.readyState === 'loading') {
+        window.addEventListener('DOMContentLoaded', this.flushPendingBodyTheme, { once: true })
+      }
+      return
+    }
+
+    body.setAttribute('data-theme', themeName)
+
     const isDark = themeName === 'dark'
-    document.body.classList.toggle('ant-dark', isDark)
-    document.body.classList.toggle('ant-light', !isDark)
+    body.classList.toggle('ant-dark', isDark)
+    body.classList.toggle('ant-light', !isDark)
+
+    if (this.pendingBodyTheme === themeName) {
+      this.pendingBodyTheme = null
+    }
+  }
+
+  private flushPendingBodyTheme = (): void => {
+    if (!this.pendingBodyTheme) {
+      return
+    }
+
+    this.applyBodyTheme(this.pendingBodyTheme)
   }
   
   /**

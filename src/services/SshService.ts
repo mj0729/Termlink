@@ -285,6 +285,7 @@ class SshService {
       title,
       type: 'ssh',
       profile,
+      sshState: 'connected',
       autoPassword,
     }
   }
@@ -498,9 +499,10 @@ class SshService {
       await this.connectProfile(id, profile, password, profile.id)
     } catch (e) {
       if (this.isUserCancelledError(e)) {
-        return
+        throw e
       }
       console.error('重新连接SSH失败:', e)
+      throw new Error(this.formatSshError(e, profile))
     }
   }
 

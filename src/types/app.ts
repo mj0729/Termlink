@@ -194,6 +194,7 @@ export interface DiskInfo {
   device: string
   filesystem?: string
   used?: number
+  available?: number
   total?: number
   usage?: number
   mountpoint?: string
@@ -213,6 +214,13 @@ export interface ProcessInfo {
   total?: number
   running?: number
   sleeping?: number
+  top?: ProcessEntry[]
+}
+
+export interface ProcessEntry {
+  memory_kb?: number
+  cpu_percent?: number
+  command?: string
 }
 
 export interface SystemInfoBatch {

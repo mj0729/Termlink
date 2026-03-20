@@ -35,11 +35,14 @@
                     :auto-password="tab.autoPassword"
                     :connection-id="tab.id"
                     :profile="tab.profile"
+                    :embedded-monitor-visible="activeId === tab.id && shouldEmbedMonitorInSsh"
+                    :embedded-monitor-collapsed="rightPanelCollapsed"
                     @close="closeTab(tab.id)"
                     @reconnect="reconnectSsh(tab)"
                     @open-file-preview="openFilePreview"
                     @start-download="handleStartDownload"
                     @start-upload="handleStartUpload"
+                    @toggle-monitor="rightPanelCollapsed = !rightPanelCollapsed"
                   />
                   
                   <Terminal 
@@ -85,7 +88,7 @@
           
           <RightPanel 
             ref="rightPanelRef"
-            :collapsed="rightPanelCollapsed" 
+            :collapsed="effectiveRightPanelCollapsed" 
             @toggle="rightPanelCollapsed = !rightPanelCollapsed"
             @tab-change="rightPanelTab = $event"
             :connection-id="getActiveTab()?.type === 'ssh' ? getActiveTab()?.id : ''"
@@ -98,7 +101,7 @@
               :active-connection="getActiveConnection()"
               :tab-count="tabs.length"
               :right-panel-tab="rightPanelTab"
-              :right-panel-collapsed="rightPanelCollapsed"
+              :right-panel-collapsed="effectiveRightPanelCollapsed"
               @select-right-panel-tab="handleRightPanelTabSelect"
               @show-settings="showSettings = true"
             />
@@ -129,7 +132,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, h, onMounted, onBeforeUnmount, ref } from 'vue'
+import { computed, defineAsyncComponent, h, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { theme as antdTheme } from 'antdv-next'
 import type {
@@ -217,7 +220,23 @@ const antdThemeConfig = computed(() => ({
 // 已保存的连接配置
 const profiles = ref<SshProfile[]>([])
 const groups = ref<string[]>([])
+const isConnectionCenterLayout = computed(() => getActiveTab()?.type === 'connections')
 const isSshWorkspaceLayout = computed(() => getActiveTab()?.type === 'ssh')
+const shouldEmbedMonitorInSsh = computed(() => (
+  isSshWorkspaceLayout.value
+  && rightPanelTab.value === 'monitor'
+))
+const effectiveRightPanelCollapsed = computed(() => (
+  shouldEmbedMonitorInSsh.value || isConnectionCenterLayout.value
+    ? true
+    : rightPanelCollapsed.value
+))
+
+watch(isSshWorkspaceLayout, (nextIsSsh, previousIsSsh) => {
+  if (nextIsSsh && !previousIsSsh && rightPanelTab.value === 'monitor') {
+    rightPanelCollapsed.value = false
+  }
+})
 
 function isUserCancelledConnection(error: unknown) {
   return String(error).includes('已取消连接')

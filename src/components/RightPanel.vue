@@ -1,5 +1,5 @@
 <template>
-  <div class="right-panel" :class="`right-panel--${activeTab}`">
+  <div class="right-panel" :class="[`right-panel--${activeTab}`, `right-panel--${placement}`, { 'right-panel--embedded': embedded }]">
     <!-- 内容区 - 可折叠，在左侧 -->
     <div class="panel-content-wrapper" :class="{ collapsed: collapsed }">
     
@@ -18,188 +18,210 @@
           class="collapse-btn"
           @click="$emit('toggle')"
         >
-          <RightOutlined />
+          <LeftOutlined v-if="placement === 'left'" />
+          <RightOutlined v-else />
         </a-button>
       </div>
       
       <!-- 系统监控内容 -->
       <div class="panel-content monitor-content" v-if="activeTab === 'monitor'">
-        <!-- 系统基本信息 -->
-        <div class="info-section">
-          <div class="section-header">
+        <div class="info-section info-section--dense">
+          <div class="section-header section-header--dense">
             <DesktopOutlined class="section-icon" />
             <h4>系统信息</h4>
           </div>
-          <div class="info-card">
-            <div class="info-item">
-              <div class="info-label">
-                <LaptopOutlined class="item-icon" />
-                主机名
+          <div class="info-card info-card--dense">
+            <div class="compact-kv-list">
+              <div class="compact-kv-row">
+                <span class="compact-kv-label"><LaptopOutlined class="item-icon" />主机名</span>
+                <span class="compact-kv-value">{{ systemInfo.hostname || '-' }}</span>
               </div>
-              <div class="info-value">{{ systemInfo.hostname || '-' }}</div>
-            </div>
-            <div class="info-item">
-              <div class="info-label">
-                <WindowsOutlined class="item-icon" />
-                操作系统
+              <div class="compact-kv-row">
+                <span class="compact-kv-label"><WindowsOutlined class="item-icon" />操作系统</span>
+                <span class="compact-kv-value">{{ systemInfo.os || '-' }}</span>
               </div>
-              <div class="info-value">{{ systemInfo.os || '-' }}</div>
-            </div>
-            <div class="info-item">
-              <div class="info-label">
-                <ControlOutlined class="item-icon" />
-                架构
+              <div class="compact-kv-row">
+                <span class="compact-kv-label"><ControlOutlined class="item-icon" />架构</span>
+                <span class="compact-kv-value">{{ systemInfo.arch || '-' }}</span>
               </div>
-              <div class="info-value">{{ systemInfo.arch || '-' }}</div>
-            </div>
-            <div class="info-item">
-              <div class="info-label">
-                <CodeOutlined class="item-icon" />
-                内核
+              <div class="compact-kv-row">
+                <span class="compact-kv-label"><CodeOutlined class="item-icon" />内核</span>
+                <span class="compact-kv-value">{{ systemInfo.kernel || '-' }}</span>
               </div>
-              <div class="info-value">{{ systemInfo.kernel || '-' }}</div>
-            </div>
-            <div class="info-item">
-              <div class="info-label">
-                <ClockCircleOutlined class="item-icon" />
-                运行时间
+              <div class="compact-kv-row">
+                <span class="compact-kv-label"><ClockCircleOutlined class="item-icon" />运行时间</span>
+                <span class="compact-kv-value">{{ formatUptime(systemInfo.uptime) }}</span>
               </div>
-              <div class="info-value">{{ formatUptime(systemInfo.uptime) }}</div>
             </div>
           </div>
         </div>
-        
-        <!-- CPU信息 -->
-        <div class="info-section">
-          <div class="section-header">
+
+        <div class="info-section info-section--dense">
+          <div class="section-header section-header--dense">
             <ThunderboltOutlined class="section-icon" />
-            <h4>CPU使用率</h4>
+            <h4>资源使用</h4>
           </div>
-          <div class="info-card">
-            <div class="cpu-info">
-              <div class="cpu-model">{{ cpuInfo.model || 'CPU' }}</div>
-              <div class="cpu-usage">{{ cpuInfo.usage?.toFixed(1) || 0 }}%</div>
-            </div>
-            <div class="progress-container">
-              <a-progress 
-                :percent="cpuInfo.usage || 0" 
-                :show-info="false"
-                :stroke-color="getProgressColor(cpuInfo.usage || 0)"
-                :stroke-width="8"
-              />
-            </div>
-          </div>
-        </div>
-        
-        <!-- 内存信息 -->
-        <div class="info-section">
-          <div class="section-header">
-            <DatabaseOutlined class="section-icon" />
-            <h4>内存使用</h4>
-          </div>
-          <div class="info-card">
-            <div class="memory-info">
-              <div class="memory-stats">
-                <span class="memory-label">物理内存</span>
-                <span class="memory-usage">{{ formatSize(memoryInfo.used) }} / {{ formatSize(memoryInfo.total) }}</span>
-              </div>
-              <div class="usage-percent">{{ memoryInfo.usage?.toFixed(1) || 0 }}%</div>
-            </div>
-            <div class="progress-container">
-              <a-progress 
-                :percent="memoryInfo.usage || 0" 
-                :show-info="false"
-                :stroke-color="getProgressColor(memoryInfo.usage || 0)"
-                :stroke-width="8"
-              />
-            </div>
-            <div class="memory-details">
-              <div class="detail-item">
-                <span class="detail-label">可用:</span>
-                <span class="detail-value">{{ formatSize(memoryInfo.available) }}</span>
-              </div>
-              <div class="detail-item">
-                <span class="detail-label">缓存:</span>
-                <span class="detail-value">{{ formatSize(memoryInfo.cached) }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        <!-- 磁盘信息 -->
-        <div class="info-section">
-          <div class="section-header">
-            <HddOutlined class="section-icon" />
-            <h4>磁盘使用</h4>
-          </div>
-          <div class="info-card">
-            <div 
-              v-for="disk in diskInfo.slice(0, 2)" 
-              :key="disk.device"
-              class="disk-item"
-            >
-              <div class="disk-header">
-                <div class="disk-info">
-                  <span class="disk-device">{{ disk.device }}</span>
-                  <span class="disk-mount">{{ disk.mountpoint }}</span>
+          <div class="info-card info-card--dense">
+            <div class="resource-rows">
+              <div class="resource-row">
+                <div class="resource-row__label">CPU</div>
+                <div class="resource-row__bar">
+                  <a-progress 
+                    :percent="cpuInfo.usage || 0" 
+                    :show-info="false"
+                    :stroke-color="getProgressColor(cpuInfo.usage || 0)"
+                    :stroke-width="5"
+                  />
                 </div>
-                <span class="disk-usage">{{ disk.usage?.toFixed(1) || 0 }}%</span>
+                <div class="resource-row__value">{{ cpuInfo.usage?.toFixed(1) || 0 }}%</div>
+                <div class="resource-row__meta">{{ cpuInfo.cores?.length ? `${cpuInfo.cores.length} 核` : (cpuInfo.model || 'CPU') }}</div>
               </div>
-              <div class="progress-container">
-                <a-progress 
-                  :percent="disk.usage || 0" 
-                  :show-info="false"
-                  :stroke-color="getProgressColor(disk.usage || 0)"
-                  :stroke-width="6"
-                />
-              </div>
-              <div class="disk-stats">
-                <span class="disk-stat">{{ formatSize(disk.used) }} / {{ formatSize(disk.total) }}</span>
-                <span class="disk-type">{{ disk.filesystem }}</span>
+
+              <div class="resource-row">
+                <div class="resource-row__label">内存</div>
+                <div class="resource-row__bar">
+                  <a-progress 
+                    :percent="memoryInfo.usage || 0" 
+                    :show-info="false"
+                    :stroke-color="getProgressColor(memoryInfo.usage || 0)"
+                    :stroke-width="5"
+                  />
+                </div>
+                <div class="resource-row__value">{{ memoryInfo.usage?.toFixed(1) || 0 }}%</div>
+                <div class="resource-row__meta">{{ formatSize(memoryInfo.used) }} / {{ formatSize(memoryInfo.total) }}</div>
               </div>
             </div>
           </div>
         </div>
-        
-        <!-- 网络信息 -->
-        <div class="info-section">
-          <div class="section-header">
+
+        <div class="info-section info-section--dense">
+          <div class="section-header section-header--dense">
+            <ControlOutlined class="section-icon" />
+            <h4>活跃进程</h4>
+          </div>
+          <div class="info-card info-card--dense">
+            <div class="process-mini-table">
+              <div class="process-mini-table__head">
+                <span>内存</span>
+                <span>CPU</span>
+                <span>命令</span>
+              </div>
+              <div
+                v-for="process in processInfo.top || []"
+                :key="`${process.command}-${process.memory_kb}-${process.cpu_percent}`"
+                class="process-mini-table__row"
+              >
+                <span class="process-mini-table__memory">{{ formatProcessMemory(process.memory_kb) }}</span>
+                <span class="process-mini-table__cpu">{{ formatProcessCpu(process.cpu_percent) }}</span>
+                <span class="process-mini-table__command">{{ process.command || '-' }}</span>
+              </div>
+            </div>
+            <div class="process-mini-summary">
+              <span>总 {{ processInfo.total || 0 }}</span>
+              <span>运行 {{ processInfo.running || 0 }}</span>
+              <span>休眠 {{ processInfo.sleeping || 0 }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="info-section info-section--dense">
+          <div class="section-header section-header--dense">
+            <DatabaseOutlined class="section-icon" />
+            <h4>内存细节</h4>
+          </div>
+          <div class="info-card info-card--dense">
+            <div class="dense-detail-grid">
+              <div class="dense-detail-card">
+                <span class="dense-detail-label">可用</span>
+                <span class="dense-detail-value">{{ formatSize(memoryInfo.available) }}</span>
+              </div>
+              <div class="dense-detail-card">
+                <span class="dense-detail-label">缓存</span>
+                <span class="dense-detail-value">{{ formatSize(memoryInfo.cached) }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="info-section info-section--dense">
+          <div class="section-header section-header--dense section-header--spread">
+            <HddOutlined class="section-icon" />
+            <div class="section-header__title-wrap">
+              <h4>磁盘使用</h4>
+            </div>
+            <a-button
+              v-if="hasExtraDiskInfo"
+              type="text"
+              size="small"
+              class="section-action-btn"
+              @click="showAllDisks = !showAllDisks"
+            >
+              {{ showAllDisks ? '收起' : `更多 ${sortedDiskInfo.length - 2}` }}
+            </a-button>
+          </div>
+          <div class="dense-list-card">
+            <div 
+              v-for="disk in visibleDiskInfo" 
+              :key="`${disk.device}-${disk.mountpoint}`"
+              class="dense-list-row"
+            >
+              <div class="metric-head metric-head--row">
+                <div class="metric-copy">
+                  <div class="metric-title">{{ disk.device }}</div>
+                  <div class="metric-sub">{{ disk.mountpoint || '-' }}</div>
+                </div>
+                <div class="metric-value">{{ disk.usage?.toFixed(1) || 0 }}%</div>
+              </div>
+              <div class="dense-meter-row">
+                <div class="dense-meter-track">
+                  <a-progress 
+                    :percent="disk.usage || 0" 
+                    :show-info="false"
+                    :stroke-color="getProgressColor(disk.usage || 0)"
+                    :stroke-width="5"
+                  />
+                </div>
+                <span class="dense-meter-text">{{ formatSize(disk.available) }} / {{ formatSize(disk.total) }}</span>
+                <span class="dense-inline-pill">{{ disk.filesystem || '-' }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="info-section info-section--dense">
+          <div class="section-header section-header--dense">
             <WifiOutlined class="section-icon" />
             <h4>网络接口</h4>
           </div>
-          <div class="info-card">
+          <div class="dense-list-card">
             <div 
               v-for="interface_ in networkInfo.slice(0, 2)" 
               :key="interface_.name"
-              class="network-item"
+              class="dense-list-row"
             >
-              <div class="network-header">
-                <div class="interface-info">
-                  <span class="interface-name">{{ interface_.name }}</span>
-                  <span class="interface-ip" v-if="interface_.ip">{{ interface_.ip }}</span>
+              <div class="metric-head metric-head--row">
+                <div class="metric-copy">
+                  <div class="metric-title">{{ interface_.name }}</div>
+                  <div class="metric-sub">{{ interface_.ip || '未分配 IP' }}</div>
                 </div>
-                <span class="interface-status" :class="{ active: interface_.status === 'up' }">
-                  {{ interface_.status }}
+                <span class="dense-inline-pill" :class="{ 'is-active': interface_.status === 'up' }">
+                  {{ interface_.status || 'unknown' }}
                 </span>
               </div>
-              <div class="network-stats">
-                <div class="network-stat">
-                  <div class="stat-item">
-                    <span class="stat-icon">↓</span>
-                    <span class="stat-label">接收</span>
-                    <span class="stat-value">{{ formatSize(interface_.rx_bytes) }}</span>
-                  </div>
-                  <div class="stat-item">
-                    <span class="stat-icon">↑</span>
-                    <span class="stat-label">发送</span>
-                    <span class="stat-value">{{ formatSize(interface_.tx_bytes) }}</span>
-                  </div>
+              <div class="dense-network-grid">
+                <div class="dense-network-item">
+                  <span class="dense-network-label">↓ 接收</span>
+                  <span class="dense-network-value">{{ formatSize(interface_.rx_bytes) }}</span>
+                </div>
+                <div class="dense-network-item">
+                  <span class="dense-network-label">↑ 发送</span>
+                  <span class="dense-network-value">{{ formatSize(interface_.tx_bytes) }}</span>
                 </div>
               </div>
             </div>
           </div>
         </div>
-    </div>
+      </div>
     
     <!-- 传输管理内容 -->
       <div class="panel-content download-content" v-if="activeTab === 'download'">
@@ -350,6 +372,7 @@ import {
   FolderOpenOutlined,
   DeleteOutlined,
   ReloadOutlined,
+  LeftOutlined,
   RightOutlined
 } from '@antdv-next/icons'
 import { invoke } from '@tauri-apps/api/core'
@@ -358,6 +381,8 @@ import type {
   DownloadRequest,
   DownloadProgressPayload,
   MonitorTab,
+  ProcessEntry,
+  ProcessInfo,
   SshProfile,
   SystemInfoBatch,
   SystemStaticInfo,
@@ -403,11 +428,15 @@ const props = withDefaults(defineProps<{
   connectionId?: string
   sshProfile?: SshProfile | null
   activeTab?: MonitorTab
+  placement?: 'right' | 'left'
+  embedded?: boolean
 }>(), {
   collapsed: false,
   connectionId: '',
   sshProfile: null,
-  activeTab: 'monitor'
+  activeTab: 'monitor',
+  placement: 'right',
+  embedded: false,
 })
 
 const emit = defineEmits(['toggle', 'tab-change'])
@@ -418,6 +447,8 @@ const cpuInfo = ref<CpuInfo>({})
 const memoryInfo = ref<MemoryInfo>({})
 const diskInfo = ref<DiskInfo[]>([])
 const networkInfo = ref<NetworkInfo[]>([])
+const processInfo = ref<ProcessInfo>({})
+const showAllDisks = ref(false)
 
 // 下载管理状态
 const activeTab = ref<MonitorTab>(props.activeTab)
@@ -447,6 +478,30 @@ const transferStats = computed(() => ({
   completed: transfers.value.filter((item) => item.status === 'completed').length,
   error: transfers.value.filter((item) => item.status === 'error').length,
 }))
+
+function rankDisk(disk: DiskInfo) {
+  const mountpoint = disk.mountpoint || ''
+  if (mountpoint === '/') return 0
+  if (mountpoint === '/boot/efi') return 1
+  if (mountpoint === '/boot') return 2
+  if (mountpoint === '/home') return 3
+  if (mountpoint === '/var') return 4
+  if ((disk.device || '').startsWith('/dev/')) return 10
+  return 20
+}
+
+const sortedDiskInfo = computed(() => (
+  [...diskInfo.value].sort((left, right) => {
+    const rankDiff = rankDisk(left) - rankDisk(right)
+    if (rankDiff !== 0) return rankDiff
+    return (left.mountpoint || left.device || '').localeCompare(right.mountpoint || right.device || '')
+  })
+))
+
+const hasExtraDiskInfo = computed(() => sortedDiskInfo.value.length > 2)
+const visibleDiskInfo = computed(() => (
+  showAllDisks.value ? sortedDiskInfo.value : sortedDiskInfo.value.slice(0, 2)
+))
 
 const transferGroups = computed<TransferGroup[]>(() => {
   const map = new Map<string, TransferTask[]>()
@@ -507,6 +562,7 @@ async function refreshData() {
     if (batchInfo.memory.total) memoryInfo.value = batchInfo.memory
     if (batchInfo.disk.length > 0) diskInfo.value = batchInfo.disk
     if (batchInfo.network.length > 0) networkInfo.value = batchInfo.network
+    processInfo.value = batchInfo.process
     
     errorCount = 0 // 重置错误计数
     
@@ -529,6 +585,10 @@ async function refreshData() {
 // 自动刷新
 function startAutoRefresh() {
   stopAutoRefresh()
+
+  if (!props.connectionId || props.collapsed) {
+    return
+  }
   
   function scheduleNext() {
     refreshTimer = setTimeout(async () => {
@@ -541,8 +601,14 @@ function startAutoRefresh() {
       }
     }, refreshInterval)
   }
-  
-  scheduleNext()
+
+  refreshData()
+    .catch(() => {})
+    .finally(() => {
+      if (!props.collapsed && props.connectionId) {
+        scheduleNext()
+      }
+    })
 }
 
 function stopAutoRefresh() {
@@ -586,6 +652,14 @@ function getProgressColor(percentage: number) {
 
 function formatSpeed(bytesPerSecond: number) {
   return `${formatSize(bytesPerSecond)}/s`
+}
+
+function formatProcessMemory(memoryKb?: number) {
+  return formatSize((memoryKb || 0) * 1024)
+}
+
+function formatProcessCpu(cpuPercent?: number) {
+  return `${(cpuPercent || 0).toFixed(1)}`
 }
 
 function updateTransferMetrics(transfer: TransferTask, transferred: number, total: number, progress: number) {
@@ -764,8 +838,6 @@ function promptUploadConflictAction(request: UploadRequest): Promise<UploadConfl
 
 // 生命周期
 onMounted(async () => {
-  // 不自动刷新，等待用户手动展开
-  
   downloadProgressUnlisten = await listen<DownloadProgressPayload>('download-progress', (event) => {
     const { downloadId, downloaded, total, progress } = event.payload
     const transfer = transfers.value.find(item => item.id === downloadId && item.direction === 'download')
@@ -787,6 +859,10 @@ onMounted(async () => {
       }
     }
   })
+
+  if (!props.collapsed && props.connectionId) {
+    startAutoRefresh()
+  }
 })
 
 onUnmounted(() => {
@@ -1092,6 +1168,13 @@ defineExpose({
     inset 0 0 0 1px var(--border-color);
 }
 
+.right-panel--left .panel-content-wrapper {
+  border-radius: 0 14px 14px 0;
+  box-shadow:
+    inset -1px 0 0 var(--border-subtle),
+    inset 0 0 0 1px var(--border-color);
+}
+
 .panel-content-wrapper.collapsed {
   width: 0;
   opacity: 0;
@@ -1165,10 +1248,15 @@ defineExpose({
 .monitor-content {
   flex: 1;
   min-height: 0;
+  padding: 6px 6px 8px;
 }
 
 .info-section {
-  margin-bottom: 10px;
+  margin-bottom: 8px;
+}
+
+.info-section--dense {
+  margin-bottom: 8px;
 }
 
 .section-header {
@@ -1179,6 +1267,35 @@ defineExpose({
   padding: 0 2px;
 }
 
+.section-header--dense {
+  gap: 6px;
+  margin-bottom: 5px;
+  padding: 0 1px;
+}
+
+.section-header--spread {
+  justify-content: space-between;
+}
+
+.section-header__title-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-right: auto;
+}
+
+.section-action-btn {
+  min-height: 20px !important;
+  padding-inline: 7px !important;
+  border-radius: 999px !important;
+  color: var(--muted-color) !important;
+  background: var(--surface-1) !important;
+  border: 1px solid var(--border-color) !important;
+  font-size: 9px !important;
+  font-weight: 700 !important;
+}
+
 .section-icon {
   color: var(--primary-color);
   font-size: 14px;
@@ -1187,9 +1304,9 @@ defineExpose({
 .section-header h4 {
   margin: 0;
   color: var(--text-color);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
 }
 
 .info-card {
@@ -1199,6 +1316,149 @@ defineExpose({
   box-shadow:
     inset 0 0 0 1px var(--border-subtle),
     var(--shadow-card);
+}
+
+.info-card--dense {
+  padding: 7px 8px;
+  border-radius: 10px;
+}
+
+.compact-kv-list {
+  display: grid;
+  gap: 0;
+}
+
+.compact-kv-row {
+  display: grid;
+  grid-template-columns: minmax(70px, 82px) minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.compact-kv-row:last-child {
+  border-bottom: none;
+  padding-bottom: 2px;
+}
+
+.compact-kv-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-color);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.compact-kv-value {
+  color: var(--text-color);
+  font-family: "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.45;
+  word-break: break-word;
+  text-align: right;
+}
+
+.resource-rows {
+  display: grid;
+  gap: 6px;
+}
+
+.resource-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 42px;
+  gap: 6px 8px;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.resource-row__label {
+  color: var(--text-color);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.resource-row__bar {
+  min-width: 0;
+}
+
+.resource-row__bar :deep(.ant-progress) {
+  margin: 0;
+}
+
+.resource-row__value {
+  color: var(--primary-color);
+  font-family: "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.resource-row__meta {
+  grid-column: 2 / 4;
+  color: var(--muted-color);
+  font-family: "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.process-mini-table {
+  display: grid;
+  gap: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+}
+
+.process-mini-table__head,
+.process-mini-table__row {
+  display: grid;
+  grid-template-columns: 52px 40px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.process-mini-table__head {
+  padding: 5px 7px;
+  background: color-mix(in srgb, var(--primary-color) 12%, var(--surface-1));
+  color: var(--muted-color);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.process-mini-table__row {
+  padding: 6px 7px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--monitor-card-strong);
+}
+
+.process-mini-table__memory,
+.process-mini-table__cpu,
+.process-mini-table__command {
+  min-width: 0;
+  color: var(--text-color);
+  font-family: "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.process-mini-table__command {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.process-mini-summary {
+  display: flex;
+  gap: 8px;
+  margin-top: 7px;
+  color: var(--muted-color);
+  font-size: 9px;
+  font-weight: 700;
 }
 
 .info-item {
@@ -1261,6 +1521,48 @@ defineExpose({
   margin-bottom: 10px;
 }
 
+.metric-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.metric-head--row {
+  align-items: center;
+}
+
+.metric-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.metric-title {
+  color: var(--text-color);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.metric-sub {
+  margin-top: 2px;
+  color: var(--muted-color);
+  font-size: 9px;
+  line-height: 1.35;
+  font-family: "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
+  word-break: break-word;
+}
+
+.metric-value {
+  flex-shrink: 0;
+  color: var(--primary-color);
+  font-family: "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .cpu-model,
 .memory-label {
   color: var(--text-color);
@@ -1304,6 +1606,140 @@ defineExpose({
 
 .progress-container {
   margin: 6px 0 0;
+}
+
+.progress-container--dense {
+  margin-top: 6px;
+}
+
+.dense-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.dense-detail-card {
+  display: grid;
+  gap: 2px;
+  padding: 7px 8px;
+  border-radius: 10px;
+  background: var(--surface-1);
+}
+
+.dense-detail-label {
+  color: var(--muted-color);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.dense-detail-value {
+  color: var(--text-color);
+  font-family: "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.dense-list-card {
+  display: grid;
+  gap: 6px;
+}
+
+.dense-list-row {
+  padding: 7px 8px;
+  border-radius: 10px;
+  background: var(--monitor-card-bg);
+  box-shadow:
+    inset 0 0 0 1px var(--border-subtle),
+    var(--shadow-card);
+}
+
+.dense-inline-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.dense-meter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.dense-meter-track {
+  min-width: 0;
+}
+
+.dense-meter-track :deep(.ant-progress) {
+  margin: 0;
+}
+
+.dense-meter-text {
+  color: var(--text-color);
+  font-family: "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dense-inline-text {
+  color: var(--text-color);
+  font-family: "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.dense-inline-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-color);
+  color: var(--muted-color);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.dense-inline-pill.is-active {
+  color: var(--success-color);
+  background: rgba(74, 169, 107, 0.12);
+  border-color: rgba(74, 169, 107, 0.16);
+}
+
+.dense-network-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.dense-network-item {
+  display: grid;
+  gap: 2px;
+  padding: 7px 8px;
+  border-radius: 10px;
+  background: var(--surface-1);
+}
+
+.dense-network-label {
+  color: var(--muted-color);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.dense-network-value {
+  color: var(--text-color);
+  font-family: "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .memory-details,
@@ -1591,6 +2027,30 @@ defineExpose({
 @media (max-width: 768px) {
   .panel-content-wrapper {
     width: 236px;
+  }
+
+  .compact-kv-row,
+  .metric-head,
+  .dense-inline-meta {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .compact-kv-value {
+    text-align: left;
+  }
+
+  .dense-network-grid,
+  .dense-detail-grid,
+  .network-stat,
+  .memory-details {
+    grid-template-columns: 1fr;
+  }
+
+  .dense-meter-row {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
   }
 }
 </style>

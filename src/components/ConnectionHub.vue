@@ -1,25 +1,5 @@
 <template>
   <div class="connection-hub">
-    <header class="hub-toolbar">
-      <label class="hub-search" :for="searchInputId">
-        <SearchOutlined class="hub-search__icon" aria-hidden="true" />
-        <a-input
-          :id="searchInputId"
-          v-model:value="searchText"
-          aria-label="搜索连接"
-          autocomplete="off"
-          name="connection-search"
-          placeholder="搜索主机 / 用户 / 分组 / 标签…"
-          :spellcheck="false"
-          allow-clear
-        />
-      </label>
-
-      <div class="hub-toolbar__actions">
-        <a-button type="primary" class="hub-action" @click="$emit('newSsh')">新增连接</a-button>
-      </div>
-    </header>
-
     <section class="hub-workbench">
       <aside class="hub-sidebar" aria-label="连接目录">
         <section class="hub-sidebar__section">
@@ -108,6 +88,24 @@
 
       <section class="hub-main">
         <div class="hub-main__bar">
+          <label class="hub-search" :for="searchInputId">
+            <SearchOutlined class="hub-search__icon" aria-hidden="true" />
+            <a-input
+              :id="searchInputId"
+              v-model:value="searchText"
+              aria-label="搜索连接"
+              autocomplete="off"
+              name="connection-search"
+              placeholder="搜索主机 / 用户 / 分组 / 标签…"
+              :spellcheck="false"
+              allow-clear
+            />
+          </label>
+
+          <div class="hub-toolbar__actions">
+            <a-button type="primary" class="hub-action" @click="$emit('newSsh')">新增连接</a-button>
+          </div>
+
           <div class="hub-main__summary">
             <span class="hub-badge">{{ filteredProfiles.length }} 项结果</span>
           </div>
@@ -464,7 +462,6 @@ watch(tagItems, (nextTags) => {
   background-size: auto, 20px 20px;
 }
 
-.hub-toolbar,
 .hub-sidebar__section,
 .hub-main__bar,
 .hub-content,
@@ -472,15 +469,6 @@ watch(tagItems, (nextTags) => {
 .hub-row {
   border: 1px solid var(--border-color);
   background: var(--surface-1);
-}
-
-.hub-toolbar {
-  display: grid;
-  grid-template-columns: minmax(260px, 1fr) auto;
-  gap: 8px;
-  align-items: center;
-  padding: 8px 10px;
-  border-radius: 12px;
 }
 
 .hub-toolbar__eyebrow,
@@ -513,6 +501,8 @@ watch(tagItems, (nextTags) => {
   display: flex;
   align-items: center;
   gap: 9px;
+  flex: 1 1 340px;
+  min-width: 0;
   min-height: 38px;
   padding: 0 12px;
   border: 1px solid var(--border-color);
@@ -693,7 +683,7 @@ watch(tagItems, (nextTags) => {
 .hub-main__bar {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 8px 10px;
 }
@@ -702,6 +692,7 @@ watch(tagItems, (nextTags) => {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  margin-left: auto;
 }
 
 .hub-content {
@@ -998,7 +989,6 @@ watch(tagItems, (nextTags) => {
 }
 
 @media (max-width: 1120px) {
-  .hub-toolbar,
   .hub-workbench {
     grid-template-columns: 1fr;
   }
@@ -1047,6 +1037,10 @@ watch(tagItems, (nextTags) => {
     width: 100%;
   }
 
+  .hub-main__summary {
+    margin-left: 0;
+  }
+
   .hub-toolbar__actions :deep(.ant-btn) {
     flex: 1;
   }
@@ -1090,7 +1084,6 @@ watch(tagItems, (nextTags) => {
   background-size: auto, 20px 20px;
 }
 
-:global(body[data-theme="dark"] .hub-toolbar),
 :global(body[data-theme="dark"] .hub-sidebar__section),
 :global(body[data-theme="dark"] .hub-main__bar),
 :global(body[data-theme="dark"] .hub-content),

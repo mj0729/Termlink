@@ -1,44 +1,58 @@
 <template>
-  <div
-    ref="workspaceRef"
-    class="ssh-workspace"
-    :class="[{ 'is-resizing': isResizing }, `ssh-workspace--${workspaceDensity}`]"
-    :style="workspaceStyle"
-  >
-    <section class="ssh-workspace__terminal">
-      <Terminal
-        :id="id"
-        :active="active"
-        :theme="theme"
-        :config="config"
-        :auto-password="autoPassword"
-        :ssh-user="profile?.username || ''"
-        type="ssh"
-        @close="$emit('close')"
-        @current-directory-change="handleTerminalDirectoryChange"
-        @reconnect="$emit('reconnect')"
-      />
-    </section>
+  <div class="ssh-workspace-shell" :class="{ 'has-monitor': embeddedMonitorVisible }">
+    <RightPanel
+      class="ssh-workspace__monitor"
+      :class="{ 'is-hidden': !embeddedMonitorVisible }"
+      :collapsed="embeddedMonitorCollapsed"
+      :connection-id="connectionId || ''"
+      :ssh-profile="profile"
+      active-tab="monitor"
+      placement="left"
+      embedded
+      @toggle="$emit('toggleMonitor')"
+    />
 
     <div
-      class="ssh-workspace__splitter"
-      @pointerdown="startResize"
+      ref="workspaceRef"
+      class="ssh-workspace"
+      :class="[{ 'is-resizing': isResizing }, `ssh-workspace--${workspaceDensity}`]"
+      :style="workspaceStyle"
     >
-      <span class="ssh-workspace__splitter-handle"></span>
-    </div>
+      <section class="ssh-workspace__terminal">
+        <Terminal
+          :id="id"
+          :active="active"
+          :theme="theme"
+          :config="config"
+          :auto-password="autoPassword"
+          :ssh-user="profile?.username || ''"
+          type="ssh"
+          @close="$emit('close')"
+          @current-directory-change="handleTerminalDirectoryChange"
+          @reconnect="$emit('reconnect')"
+        />
+      </section>
 
-    <section class="ssh-workspace__files">
-      <RemoteFileWorkbench
-        :connection-id="connectionId"
-        :active="active"
-        :sync-path="terminalPath"
-        :density="workspaceDensity"
-        :title="workspaceTitle"
-        @open-file-preview="$emit('openFilePreview', $event)"
-        @start-download="$emit('startDownload', $event)"
-        @start-upload="$emit('startUpload', $event)"
-      />
-    </section>
+      <div
+        class="ssh-workspace__splitter"
+        @pointerdown="startResize"
+      >
+        <span class="ssh-workspace__splitter-handle"></span>
+      </div>
+
+      <section class="ssh-workspace__files">
+        <RemoteFileWorkbench
+          :connection-id="connectionId"
+          :active="active"
+          :sync-path="terminalPath"
+          :density="workspaceDensity"
+          :title="workspaceTitle"
+          @open-file-preview="$emit('openFilePreview', $event)"
+          @start-download="$emit('startDownload', $event)"
+          @start-upload="$emit('startUpload', $event)"
+        />
+      </section>
+    </div>
   </div>
 </template>
 
@@ -46,6 +60,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Terminal from './Terminal.vue'
 import RemoteFileWorkbench from './RemoteFileWorkbench.vue'
+import RightPanel from './RightPanel.vue'
 import type {
   DownloadRequest,
   SftpFileEntry,
@@ -64,6 +79,8 @@ const props = withDefaults(defineProps<{
   config?: TerminalConfig
   autoPassword?: string | null
   profile?: SshProfile | null
+  embeddedMonitorVisible?: boolean
+  embeddedMonitorCollapsed?: boolean
 }>(), {
   connectionId: '',
   active: false,
@@ -76,7 +93,9 @@ const props = withDefaults(defineProps<{
     density: 'compact',
   }),
   autoPassword: '',
-  profile: null
+  profile: null,
+  embeddedMonitorVisible: false,
+  embeddedMonitorCollapsed: false,
 })
 
 defineEmits<{
@@ -85,6 +104,7 @@ defineEmits<{
   openFilePreview: [file: SftpFileEntry]
   startDownload: [download: DownloadRequest]
   startUpload: [upload: UploadRequest]
+  toggleMonitor: []
 }>()
 
 const workspaceRef = ref<HTMLElement | null>(null)
@@ -92,15 +112,15 @@ const terminalHeight = ref(0)
 const isResizing = ref(false)
 const terminalPath = ref('')
 const splitterHeight = 8
-const terminalRatio = ref(0.58)
+const terminalRatio = ref(0.4)
 let resizeFrame = 0
 let resizeObserver: ResizeObserver | null = null
 const workspaceDensity = computed<WorkspaceDensity>(() => props.config.density || 'balanced')
 
 function getDefaultTerminalRatio(density: WorkspaceDensity) {
-  if (density === 'comfortable') return 0.5
-  if (density === 'balanced') return 0.54
-  return 0.58
+  if (density === 'comfortable') return 0.4
+  if (density === 'balanced') return 0.4
+  return 0.4
 }
 
 function getMinTerminalHeight(density: WorkspaceDensity) {
@@ -235,11 +255,34 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.ssh-workspace-shell {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ssh-workspace__monitor {
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ssh-workspace__monitor.is-hidden {
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 .ssh-workspace {
   display: grid;
-  grid-template-rows: minmax(180px, 1.06fr) 8px minmax(180px, 0.94fr);
+  grid-template-rows: minmax(180px, 0.8fr) 8px minmax(180px, 1.2fr);
   gap: 0;
+  flex: 1;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
   padding: 0;
 }
 
@@ -306,8 +349,16 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 1080px) {
+  .ssh-workspace-shell {
+    flex-direction: column;
+  }
+
+  .ssh-workspace__monitor {
+    max-height: 320px;
+  }
+
   .ssh-workspace {
-    grid-template-rows: minmax(170px, 0.96fr) 8px minmax(200px, 1.04fr);
+    grid-template-rows: minmax(170px, 0.8fr) 8px minmax(200px, 1.2fr);
     padding: 4px;
   }
 }

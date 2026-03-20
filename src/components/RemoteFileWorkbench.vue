@@ -1,131 +1,57 @@
 <template>
   <div class="remote-workbench" :class="`remote-workbench--${density}`">
-    <div class="remote-workbench__header">
-      <div class="remote-workbench__heading">
-        <span class="remote-workbench__eyebrow">Explorer</span>
-        <div class="remote-workbench__title-row">
-          <h3>文件</h3>
-          <span class="remote-workbench__context">{{ title }}</span>
-        </div>
-      </div>
-
-      <a-space-compact class="remote-workbench__quick-actions">
-        <a-tooltip title="返回">
-          <a-button size="small" @click="goBack" :disabled="!canGoBack">
-            <ArrowLeftOutlined />
-          </a-button>
-        </a-tooltip>
-        <a-tooltip title="上级目录">
-          <a-button size="small" @click="goUp" :disabled="isAtRoot">
-            <ArrowUpOutlined />
-          </a-button>
-        </a-tooltip>
-        <a-tooltip title="刷新">
-          <a-button size="small" @click="refreshCurrentPath">
-            <ReloadOutlined />
-          </a-button>
-        </a-tooltip>
-        <a-tooltip title="新建文件夹">
-          <a-button size="small" @click="createFolder">
-            <FolderAddOutlined />
-          </a-button>
-        </a-tooltip>
-        <a-upload
-          :show-upload-list="false"
-          :before-upload="beforeUpload"
-          multiple
-        >
-          <a-tooltip title="上传文件">
-            <a-button size="small">
-              <CloudUploadOutlined />
-            </a-button>
-          </a-tooltip>
-        </a-upload>
-      </a-space-compact>
-
-      <div class="remote-workbench__filters">
-        <a-input
-          v-model:value="searchText"
-          size="small"
-          class="remote-toolbar__search"
-          placeholder="筛选当前目录"
-          allow-clear
-        >
-          <template #prefix>
-            <SearchOutlined />
-          </template>
-        </a-input>
-
-        <a-tooltip :title="showHiddenFiles ? '隐藏隐藏文件' : '显示隐藏文件'">
-          <a-button
-            type="text"
-            size="small"
-            class="remote-toolbar__toggle"
-            :class="{ 'is-active': showHiddenFiles }"
-            @click="toggleShowHidden"
-          >
-            <EyeOutlined v-if="showHiddenFiles" />
-            <EyeInvisibleOutlined v-else />
-          </a-button>
-        </a-tooltip>
-      </div>
-
-      <div class="remote-workbench__meta-group">
-        <a-tag class="remote-workbench__tag" bordered="false">{{ fileSummary }}</a-tag>
-        <a-tag class="remote-workbench__tag" bordered="false">{{ filterSummary }}</a-tag>
-        <a-tag
-          v-if="selectedEntry"
-          class="remote-workbench__tag remote-workbench__tag--active"
-          bordered="false"
-        >
-          {{ isDirectory(selectedEntry) ? '目录已选中' : '文件已选中' }}
-        </a-tag>
-      </div>
-    </div>
-
     <div v-if="connectionId" class="remote-workbench__body">
-      <div class="remote-toolbar">
-        <div class="remote-toolbar__path-row">
-          <a-breadcrumb class="remote-toolbar__breadcrumb">
-            <a-breadcrumb-item v-for="node in breadcrumbNodes" :key="node.path">
-              <a-button
-                type="text"
-                size="small"
-                class="remote-toolbar__crumb"
-                :class="{ 'is-current': node.path === currentPath }"
-                @click="loadFiles(node.path)"
-            >
-              {{ node.label }}
-            </a-button>
-          </a-breadcrumb-item>
-        </a-breadcrumb>
-      </div>
-      </div>
-
-      <div class="remote-selection">
-        <template v-if="selectedEntry">
-          <div class="remote-selection__main">
-            <component :is="getFileIcon(selectedEntry)" class="remote-selection__icon" />
-            <span class="remote-selection__name">{{ selectedEntry.name }}</span>
-          </div>
-          <div class="remote-selection__stats">
-            <span>{{ isDirectory(selectedEntry) ? '文件夹' : fileKindLabel(selectedEntry.name) }}</span>
-            <span>{{ isDirectory(selectedEntry) ? '-' : formatFileSize(selectedEntry.size) }}</span>
-            <span>{{ formatModified(selectedEntry.modified) }}</span>
-            <span>{{ selectedEntry.permissions || '-' }}</span>
-          </div>
-        </template>
-        <span v-else class="remote-selection__hint">
-          支持右键菜单、拖拽上传、双击进入目录或打开文本文件。
-        </span>
+      <div v-if="selectedEntry" class="remote-selection">
+        <div class="remote-selection__main">
+          <component :is="getFileIcon(selectedEntry)" class="remote-selection__icon" />
+          <span class="remote-selection__name">{{ selectedEntry.name }}</span>
+        </div>
+        <div class="remote-selection__stats">
+          <span>{{ isDirectory(selectedEntry) ? '文件夹' : fileKindLabel(selectedEntry.name) }}</span>
+          <span>{{ isDirectory(selectedEntry) ? '-' : formatFileSize(selectedEntry.size) }}</span>
+          <span>{{ formatModified(selectedEntry.modified) }}</span>
+          <span>{{ selectedEntry.permissions || '-' }}</span>
+        </div>
       </div>
 
       <div class="remote-workbench__content">
         <aside class="remote-panel remote-tree">
           <div class="remote-panel__head">
-            <div>
-              <span class="remote-panel__eyebrow">Tree</span>
+            <div class="remote-panel__head-main">
               <h4>目录</h4>
+              <a-space-compact class="remote-tree__actions">
+                <a-tooltip title="返回">
+                  <a-button size="small" @click="goBack" :disabled="!canGoBack">
+                    <ArrowLeftOutlined />
+                  </a-button>
+                </a-tooltip>
+                <a-tooltip title="上级目录">
+                  <a-button size="small" @click="goUp" :disabled="isAtRoot">
+                    <ArrowUpOutlined />
+                  </a-button>
+                </a-tooltip>
+                <a-tooltip title="刷新">
+                  <a-button size="small" @click="refreshCurrentPath">
+                    <ReloadOutlined />
+                  </a-button>
+                </a-tooltip>
+                <a-tooltip title="新建文件夹">
+                  <a-button size="small" @click="createFolder">
+                    <FolderAddOutlined />
+                  </a-button>
+                </a-tooltip>
+                <a-upload
+                  :show-upload-list="false"
+                  :before-upload="beforeUpload"
+                  multiple
+                >
+                  <a-tooltip title="上传文件">
+                    <a-button size="small">
+                      <CloudUploadOutlined />
+                    </a-button>
+                  </a-tooltip>
+                </a-upload>
+              </a-space-compact>
             </div>
             <span class="remote-panel__count">{{ treeNodeCount }}</span>
           </div>
@@ -175,17 +101,55 @@
           @drop.prevent="handleDrop"
         >
           <div class="remote-panel__head remote-panel__head--table">
-            <div>
-              <span class="remote-panel__eyebrow">Listing</span>
-              <h4>当前目录</h4>
-            </div>
-            <span class="remote-panel__count">{{ sortedFiles.length }}</span>
-          </div>
+            <div class="remote-panel__head-main remote-panel__head-main--table">
+              <div class="remote-panel__title-group">
+                <h4>当前目录</h4>
+                <a-breadcrumb class="remote-toolbar__breadcrumb remote-toolbar__breadcrumb--inline">
+                  <a-breadcrumb-item v-for="node in breadcrumbNodes" :key="node.path">
+                    <a-button
+                      type="text"
+                      size="small"
+                      class="remote-toolbar__crumb remote-toolbar__crumb--inline"
+                      :class="{ 'is-current': node.path === currentPath }"
+                      @click="loadFiles(node.path)"
+                    >
+                      {{ node.label }}
+                    </a-button>
+                  </a-breadcrumb-item>
+                </a-breadcrumb>
+              </div>
+              <div class="remote-panel__inline-filters">
+                <a-input
+                  v-model:value="searchText"
+                  size="small"
+                  class="remote-toolbar__search"
+                  placeholder="筛选当前目录"
+                  allow-clear
+                >
+                  <template #prefix>
+                    <SearchOutlined />
+                  </template>
+                </a-input>
 
-          <div class="remote-browser__hint-bar">
-            <span>双击进入目录或打开文本文件</span>
-            <span>右键查看操作</span>
-            <span>可直接拖拽文件到此区域上传</span>
+                <a-tooltip :title="showHiddenFiles ? '隐藏隐藏文件' : '显示隐藏文件'">
+                  <a-button
+                    type="text"
+                    size="small"
+                    class="remote-toolbar__toggle"
+                    :class="{ 'is-active': showHiddenFiles }"
+                    @click="toggleShowHidden"
+                  >
+                    <EyeOutlined v-if="showHiddenFiles" />
+                    <EyeInvisibleOutlined v-else />
+                  </a-button>
+                </a-tooltip>
+
+                <div class="remote-panel__meta-group">
+                  <a-tag class="remote-workbench__tag" bordered="false">{{ fileSummary }}</a-tag>
+                  <a-tag class="remote-workbench__tag" bordered="false">{{ filterSummary }}</a-tag>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="remote-browser__table-shell" @contextmenu.prevent="openSurfaceContextMenu">
@@ -1918,107 +1882,35 @@ async function setupNativeDragDrop() {
   --rw-context-size: 10px;
 }
 
-.remote-workbench__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: var(--rw-header-padding);
-  border-bottom: 1px solid var(--border-color);
-}
-
-.remote-workbench__heading {
-  flex-shrink: 0;
-  flex-basis: auto;
-  min-width: 0;
-}
-
-.remote-workbench__eyebrow,
-.remote-panel__eyebrow {
-  display: block;
-  color: var(--muted-color);
-  font-size: var(--rw-eyebrow-size);
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.remote-workbench__title-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  margin-top: 1px;
-}
-
-.remote-workbench__title-row h3,
 .remote-panel__head h4 {
   margin: 0;
   font-size: 13px;
   line-height: 1;
 }
 
-.remote-workbench__context {
-  color: var(--muted-color);
-  font-size: var(--rw-context-size);
-  font-weight: 700;
-}
-
-.remote-workbench__meta-group {
-  display: flex;
-  gap: 6px;
-  flex-wrap: nowrap;
-  justify-content: flex-end;
-  align-items: center;
-  flex: 0 0 auto;
-  margin-left: auto;
-}
-
-.remote-workbench__filters {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 220px;
-  flex: 1;
-  justify-content: flex-end;
-}
-
-.remote-workbench__quick-actions {
+.remote-tree__actions {
   flex-shrink: 0;
-  margin-left: 6px;
+  margin-left: 2px;
 }
 
-:deep(.remote-workbench__quick-actions .ant-btn),
+:deep(.remote-tree__actions .ant-btn),
 .remote-toolbar__toggle {
   border-radius: 10px !important;
   box-shadow: none !important;
 }
 
-:deep(.remote-workbench__quick-actions .ant-btn) {
-  min-width: 30px;
-  height: 30px;
+:deep(.remote-tree__actions .ant-btn) {
+  min-width: 22px;
+  height: 22px;
+  padding-inline: 4px !important;
   border-color: var(--border-color);
   background: var(--surface-1);
 }
 
-:deep(.remote-workbench__quick-actions .ant-btn:hover),
+:deep(.remote-tree__actions .ant-btn:hover),
 .remote-toolbar__toggle:hover {
   border-color: var(--strong-border) !important;
   background: var(--surface-2) !important;
-}
-
-.remote-workbench__tag {
-  margin-inline-end: 0;
-  background: var(--rw-tag-bg);
-  color: var(--muted-color);
-  border-radius: 999px;
-  font-size: var(--rw-meta-size);
-  line-height: 1.6;
-}
-
-.remote-workbench__tag--active {
-  background: var(--primary-soft);
-  color: var(--primary-color);
 }
 
 .remote-workbench__body {
@@ -2032,25 +1924,10 @@ async function setupNativeDragDrop() {
   border-radius: var(--rw-panel-radius);
 }
 
-.remote-toolbar {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  padding: var(--rw-toolbar-padding);
-  border-radius: var(--rw-panel-radius);
-  background: var(--surface-1);
-  box-shadow: inset 0 0 0 1px var(--border-color);
-}
-
-.remote-toolbar__path-row,
 .remote-toolbar__breadcrumb {
   display: flex;
   align-items: center;
   min-width: 0;
-}
-
-.remote-toolbar__path-row {
-  min-height: var(--rw-toolbar-height);
 }
 
 .remote-toolbar__breadcrumb {
@@ -2066,6 +1943,12 @@ async function setupNativeDragDrop() {
 .remote-toolbar__crumb {
   border-radius: 999px;
   color: var(--muted-color);
+}
+
+.remote-toolbar__crumb--inline {
+  min-height: 22px !important;
+  padding-inline: 7px !important;
+  font-size: 11px !important;
 }
 
 .remote-toolbar__crumb.is-current {
@@ -2084,14 +1967,14 @@ async function setupNativeDragDrop() {
   color: var(--primary-color);
 }
 
-:deep(.remote-toolbar .ant-btn) {
+:deep(.remote-panel__inline-filters .ant-btn) {
   height: var(--rw-toolbar-height) !important;
   padding-inline: 8px !important;
   border-radius: 10px !important;
 }
 
-:deep(.remote-toolbar .ant-input),
-:deep(.remote-toolbar .ant-input-affix-wrapper) {
+:deep(.remote-panel__inline-filters .ant-input),
+:deep(.remote-panel__inline-filters .ant-input-affix-wrapper) {
   min-height: calc(var(--rw-toolbar-height) + 2px) !important;
 }
 
@@ -2120,8 +2003,7 @@ async function setupNativeDragDrop() {
   font-weight: 700;
 }
 
-.remote-selection__stats,
-.remote-selection__hint {
+.remote-selection__stats {
   color: var(--muted-color);
   font-size: var(--rw-meta-size);
 }
@@ -2151,12 +2033,55 @@ async function setupNativeDragDrop() {
 
 .remote-panel__head {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
   padding: var(--rw-panel-head-padding);
   border-bottom: 1px solid var(--border-color);
   background: color-mix(in srgb, var(--surface-1) 88%, transparent);
+}
+
+.remote-panel__head-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.remote-panel__title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.remote-panel__head-main--table {
+  flex: 1;
+  justify-content: space-between;
+}
+
+.remote-panel__inline-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 220px;
+  margin-left: auto;
+}
+
+.remote-panel__meta-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.remote-workbench__tag {
+  margin-inline-end: 0;
+  background: var(--rw-tag-bg);
+  color: var(--muted-color);
+  border-radius: 999px;
+  font-size: var(--rw-meta-size);
+  line-height: 1.6;
 }
 
 .remote-panel__count {
@@ -2260,16 +2185,6 @@ async function setupNativeDragDrop() {
   box-shadow:
     inset 0 0 0 2px rgba(45, 125, 255, 0.32),
     0 12px 28px rgba(41, 71, 116, 0.06);
-}
-
-.remote-browser__hint-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 4px 8px 0;
-  color: var(--muted-color);
-  font-size: var(--rw-meta-size);
-  background: transparent;
 }
 
 .remote-browser__table-shell {
@@ -2528,25 +2443,19 @@ async function setupNativeDragDrop() {
 }
 
 @media (max-width: 1240px) {
-  .remote-workbench__header,
-  .remote-toolbar__path-row,
-  .remote-selection {
+  .remote-selection,
+  .remote-panel__head-main--table,
+  .remote-panel__title-group {
     align-items: flex-start;
     flex-direction: column;
   }
 
-  .remote-workbench__filters {
+  .remote-panel__inline-filters {
     width: 100%;
+    min-width: 0;
     align-items: flex-start;
     justify-content: flex-start;
-    flex: none;
-  }
-
-  .remote-workbench__meta-group {
-    width: 100%;
     flex-wrap: wrap;
-    justify-content: flex-start;
-    margin-left: 0;
   }
 
   .remote-toolbar__search {

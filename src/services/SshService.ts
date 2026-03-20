@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { Button } from 'antdv-next'
 import { h } from 'vue'
 import type {
   ConnectionTab,
@@ -216,45 +217,59 @@ class SshService {
       details.push(`已存储指纹：${verification.stored.fingerprint_sha256}`)
     }
 
-    const content = h(
-      'div',
-      { style: 'white-space: pre-line; line-height: 1.6;' },
-      [
-        verification.state === 'changed'
-          ? '检测到主机密钥与已保存记录不一致。'
-          : '这是该主机的首次连接。',
-        '',
-        ...details,
-      ].join('\n'),
-    )
+    return new Promise<'trust-and-save' | 'trust-once' | 'reject'>((resolve) => {
+      let settled = false
+      let modal: { destroy: () => void } | null = null
 
-    const firstChoice = await new Promise<'trust-and-save' | 'more'>((resolve) => {
-      Modal.confirm({
+      const finish = (decision: 'trust-and-save' | 'trust-once' | 'reject') => {
+        if (settled) {
+          return
+        }
+        settled = true
+        modal?.destroy()
+        resolve(decision)
+      }
+
+      modal = Modal.confirm({
         title: verification.state === 'changed' ? '主机密钥已变化' : '确认主机密钥',
-        content,
-        okText: '信任并保存',
-        cancelText: '更多选项',
-        onOk: async () => resolve('trust-and-save'),
-        onCancel: async () => resolve('more'),
-      })
-    })
-
-    if (firstChoice === 'trust-and-save') {
-      return 'trust-and-save'
-    }
-
-    return new Promise<'trust-once' | 'reject'>((resolve) => {
-      Modal.confirm({
-        title: '仅本次信任？',
         content: h(
           'div',
           { style: 'white-space: pre-line; line-height: 1.6;' },
-          [...details, '', '选择“仅本次信任”会继续连接，但不会保存到本地主机密钥记录。'].join('\n'),
+          [
+            verification.state === 'changed'
+              ? '检测到主机密钥与已保存记录不一致。'
+              : '这是该主机的首次连接。',
+            '',
+            ...details,
+            '',
+            '选择“仅本次信任”会继续连接，但不会保存到本地主机密钥记录。',
+            '选择“信任并保存”会继续连接，并将当前主机密钥保存到本地记录。',
+          ].join('\n'),
         ),
-        okText: '仅本次信任',
-        cancelText: '拒绝连接',
-        onOk: async () => resolve('trust-once'),
-        onCancel: async () => resolve('reject'),
+        okText: null,
+        cancelText: null,
+        footer: () => h(
+          'div',
+          { style: 'display: flex; justify-content: flex-end; gap: 8px; width: 100%;' },
+          [
+            h(
+              Button,
+              { onClick: () => finish('reject') },
+              { default: () => '拒绝连接' },
+            ),
+            h(
+              Button,
+              { onClick: () => finish('trust-once') },
+              { default: () => '仅本次信任' },
+            ),
+            h(
+              Button,
+              { type: 'primary', onClick: () => finish('trust-and-save') },
+              { default: () => '信任并保存' },
+            ),
+          ],
+        ),
+        onCancel: async () => finish('reject'),
       })
     })
   }

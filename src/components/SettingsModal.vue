@@ -147,7 +147,7 @@ const props = withDefaults(defineProps<{
     cursorBlink: true,
     cursorStyle: 'block',
     density: 'compact',
-    connectionHubViewMode: 'list',
+    connectionHubViewMode: 'grid',
   }),
   theme: 'dark',
   profiles: () => []

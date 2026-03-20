@@ -13,3 +13,5 @@
 | 202603191402 | bundle-chunk-optimization | - | - | - | ✅完成 |
 
 | 202603191414 | antdv-auto-import | - | - | - | ✅完成 |
+
+| 202603201507 | monitor-collapse-button-edge | - | - | - | ✅完成 |

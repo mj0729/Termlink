@@ -24,7 +24,7 @@ class ThemeService {
       cursorBlink: localStorage.getItem('termlink_cursorBlink') !== 'false',
       cursorStyle: (localStorage.getItem('termlink_cursorStyle') as TerminalCursorStyle | null) || 'block',
       density: (localStorage.getItem('termlink_density') as WorkspaceDensity | null) || 'compact',
-      connectionHubViewMode: (localStorage.getItem('termlink_connectionHubViewMode') as ConnectionHubViewMode | null) || 'list',
+      connectionHubViewMode: (localStorage.getItem('termlink_connectionHubViewMode') as ConnectionHubViewMode | null) || 'grid',
     }
     
     // 主题配置

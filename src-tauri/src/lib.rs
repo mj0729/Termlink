@@ -75,6 +75,12 @@ pub fn run() {
             sftp_russh::create_sftp_directory,
             sftp_russh::rename_sftp_file,
             sftp_russh::get_sftp_file_metadata,
+            sftp_russh::sftp_list_detailed,
+            sftp_russh::sftp_stat,
+            sftp_russh::sftp_chmod,
+            sftp_russh::sftp_chown,
+            sftp_russh::sftp_archive,
+            sftp_russh::sftp_disk_usage,
             // System monitor commands
             system_monitor::get_all_system_info_batch,
             system_monitor::get_dynamic_system_info_batch,

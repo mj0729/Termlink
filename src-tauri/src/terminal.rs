@@ -1,5 +1,5 @@
 use once_cell::sync::Lazy;
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::{collections::HashMap, io::Read, thread};
 use tauri::Emitter;
@@ -9,8 +9,8 @@ enum PtyMsg {
     Resize { cols: u16, rows: u16 },
 }
 
-static PTY_SENDERS: Lazy<Mutex<HashMap<String, crossbeam_channel::Sender<PtyMsg>>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+static PTY_SENDERS: Lazy<RwLock<HashMap<String, crossbeam_channel::Sender<PtyMsg>>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
 
 #[tauri::command]
 pub fn start_pty(
@@ -23,7 +23,7 @@ pub fn start_pty(
     cwd: Option<String>,
 ) -> Result<(), String> {
     let (tx, rx) = crossbeam_channel::unbounded::<PtyMsg>();
-    PTY_SENDERS.lock().insert(id.clone(), tx);
+    PTY_SENDERS.write().insert(id.clone(), tx);
 
     thread::spawn(move || {
         let pty_system = native_pty_system();
@@ -92,8 +92,13 @@ pub fn start_pty(
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        let chunk = String::from_utf8_lossy(&buf[..n]).to_string();
-                        let _ = win_clone.emit(&format!("pty://{}", id_clone), chunk);
+                        // UTF-8 正常路径零分配
+                        if let Ok(chunk) = std::str::from_utf8(&buf[..n]) {
+                            let _ = win_clone.emit(&format!("pty://{}", id_clone), chunk);
+                        } else {
+                            let chunk = String::from_utf8_lossy(&buf[..n]).into_owned();
+                            let _ = win_clone.emit(&format!("pty://{}", id_clone), chunk);
+                        }
                     }
                     Err(_) => break,
                 }
@@ -127,7 +132,8 @@ pub fn start_pty(
 
 #[tauri::command]
 pub fn write_pty(id: String, data: String) -> Result<(), String> {
-    if let Some(tx) = PTY_SENDERS.lock().get(&id) {
+    let tx = PTY_SENDERS.read().get(&id).cloned();
+    if let Some(tx) = tx {
         tx.send(PtyMsg::Write(data)).map_err(|e| e.to_string())
     } else {
         Err("PTY not found".into())
@@ -136,7 +142,8 @@ pub fn write_pty(id: String, data: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn resize_pty(id: String, cols: u16, rows: u16) -> Result<(), String> {
-    if let Some(tx) = PTY_SENDERS.lock().get(&id) {
+    let tx = PTY_SENDERS.read().get(&id).cloned();
+    if let Some(tx) = tx {
         tx.send(PtyMsg::Resize { cols, rows })
             .map_err(|e| e.to_string())
     } else {
@@ -146,6 +153,6 @@ pub fn resize_pty(id: String, cols: u16, rows: u16) -> Result<(), String> {
 
 #[tauri::command]
 pub fn close_pty(id: String) -> Result<(), String> {
-    PTY_SENDERS.lock().remove(&id);
+    PTY_SENDERS.write().remove(&id);
     Ok(())
 }

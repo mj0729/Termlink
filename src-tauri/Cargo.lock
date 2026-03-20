@@ -136,7 +136,6 @@ dependencies = [
  "dirs",
  "futures",
  "keyring",
- "lazy_static",
  "log",
  "once_cell",
  "parking_lot",

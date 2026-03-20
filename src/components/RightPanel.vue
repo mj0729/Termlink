@@ -13,32 +13,39 @@
                   <span class="dashboard-health-pill" :class="`is-${monitorHealthTone}`">
                     {{ monitorHealthLabel }}
                   </span>
-                  <a-button 
-                    type="text" 
-                    size="small" 
+                </div>
+                <p>{{ monitorSummaryText }}</p>
+              </div>
+
+              <div class="dashboard-hero__toolbar">
+                <div class="dashboard-hero__toolbar-actions">
+                  <a-button type="primary" size="small" title="手动刷新" @click="refreshData">
+                    <ReloadOutlined />
+                  </a-button>
+                  <a-button
+                    type="text"
+                    size="small"
                     class="collapse-btn"
+                    title="收起系统监控"
                     @click="$emit('toggle')"
                   >
                     <LeftOutlined v-if="placement === 'left'" />
                     <RightOutlined v-else />
                   </a-button>
                 </div>
-                <p>{{ monitorSummaryText }}</p>
-              </div>
-
-              <div class="dashboard-hero__toolbar">
                 <div class="dashboard-hero__toolbar-meta">
                   <span class="dashboard-hero__timestamp">{{ lastUpdateText }}</span>
                 </div>
-                <a-button type="primary" size="small" @click="refreshData">
-                  <ReloadOutlined />
-                  手动刷新
-                </a-button>
               </div>
             </div>
 
             <div class="dashboard-kpi-grid">
-              <div v-for="item in heroStatistics" :key="item.key" class="dashboard-kpi">
+              <div
+                v-for="item in heroStatistics"
+                :key="item.key"
+                class="dashboard-kpi"
+                :class="`dashboard-kpi--${item.key}`"
+              >
                 <span class="dashboard-kpi__label">{{ item.label }}</span>
                 <a-statistic
                   :value="item.value"
@@ -104,6 +111,7 @@
                   v-for="metric in resourceHighlights"
                   :key="metric.key"
                   class="resource-highlight-row"
+                  :class="`resource-highlight-row--${metric.key}`"
                 >
                   <div class="resource-highlight-row__main">
                     <div class="resource-highlight-row__label">
@@ -124,7 +132,6 @@
                         :suffix="metric.suffix"
                         :value-style="{ color: metric.color, fontSize: '20px', fontWeight: 700 }"
                       />
-                      <span class="resource-highlight-row__trend">{{ metric.trendLabel }}</span>
                     </div>
                   </div>
 
@@ -136,25 +143,6 @@
                       :stroke-color="metric.color"
                       :stroke-width="8"
                     />
-
-                    <div class="sparkline-panel sparkline-panel--inline">
-                      <svg viewBox="0 0 120 28" preserveAspectRatio="none" class="sparkline-panel__svg">
-                        <defs>
-                          <linearGradient :id="`spark-${metric.key}`" x1="0%" y1="0%" x2="100%" y2="0%">
-                            <stop offset="0%" :stop-color="`${metric.color}33`" />
-                            <stop offset="100%" :stop-color="metric.color" />
-                          </linearGradient>
-                        </defs>
-                        <polyline
-                          :points="getSparklinePoints(metric.history)"
-                          fill="none"
-                          :stroke="`url(#spark-${metric.key})`"
-                          stroke-width="3"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                        />
-                      </svg>
-                    </div>
                   </div>
                 </div>
               </div>
@@ -419,7 +407,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, ref, onMounted, onUnmounted, watch } from 'vue'
+import { computed, h, ref, shallowRef, onMounted, onUnmounted, watch } from 'vue'
 import { 
   ThunderboltOutlined,
   DatabaseOutlined,
@@ -513,13 +501,13 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits(['toggle', 'tab-change'])
 
-// 状态数据
-const systemInfo = ref<SystemStaticInfo>({})
-const cpuInfo = ref<CpuInfo>({})
-const memoryInfo = ref<MemoryInfo>({})
-const diskInfo = ref<DiskInfo[]>([])
-const networkInfo = ref<NetworkInfo[]>([])
-const processInfo = ref<ProcessInfo>({})
+// 状态数据 - 使用 shallowRef 避免大对象深度代理开销
+const systemInfo = shallowRef<SystemStaticInfo>({})
+const cpuInfo = shallowRef<CpuInfo>({})
+const memoryInfo = shallowRef<MemoryInfo>({})
+const diskInfo = shallowRef<DiskInfo[]>([])
+const networkInfo = shallowRef<NetworkInfo[]>([])
+const processInfo = shallowRef<ProcessInfo>({})
 const showAllDisks = ref(false)
 const lastUpdate = ref<number | null>(null)
 const cpuHistory = ref<number[]>([])
@@ -696,8 +684,6 @@ const resourceHighlights = computed(() => {
       suffix: '%',
       precision: 1,
       meta: cpuInfo.value.cores?.length ? `${cpuInfo.value.cores.length} 核` : 'CPU',
-      history: cpuHistory.value,
-      trendLabel: buildTrendLabel(cpuHistory.value),
     },
     {
       key: 'memory',
@@ -711,8 +697,6 @@ const resourceHighlights = computed(() => {
       suffix: '%',
       precision: 1,
       meta: `${formatSize(memoryInfo.value.used)} / ${formatSize(memoryInfo.value.total)}`,
-      history: memoryHistory.value,
-      trendLabel: buildTrendLabel(memoryHistory.value),
     },
     {
       key: 'disk',
@@ -726,8 +710,6 @@ const resourceHighlights = computed(() => {
       suffix: '%',
       precision: 1,
       meta: primaryDisk.value ? `可用 ${formatSize(primaryDisk.value.available)}` : '等待磁盘遥测',
-      history: diskHistory.value,
-      trendLabel: buildTrendLabel(diskHistory.value),
     },
   ]
 })
@@ -1046,18 +1028,6 @@ function getUsageLabel(percentage: number) {
   return '健康'
 }
 
-function buildTrendLabel(history: number[]) {
-  if (history.length < 2) return '等待趋势数据'
-
-  const previous = history[history.length - 2] || 0
-  const current = history[history.length - 1] || 0
-  const diff = roundMetric(current - previous)
-
-  if (diff > 0) return `较上次 +${diff}%`
-  if (diff < 0) return `较上次 ${diff}%`
-  return '较上次持平'
-}
-
 function buildRateTrendLabel(history: number[]) {
   if (history.length < 2) return '等待趋势数据'
 
@@ -1068,29 +1038,6 @@ function buildRateTrendLabel(history: number[]) {
   if (Math.abs(diff) < 1024) return '吞吐基本持平'
   const absDiff = Math.abs(diff)
   return diff > 0 ? `较上次 +${formatSize(absDiff)}/s` : `较上次 -${formatSize(absDiff)}/s`
-}
-
-function getSparklinePoints(values: number[]) {
-  if (values.length === 0) {
-    return '0,28 120,28'
-  }
-
-  if (values.length === 1) {
-    const y = 18
-    return `0,${y} 120,${y}`
-  }
-
-  const max = Math.max(...values)
-  const min = Math.min(...values)
-  const range = max - min || 1
-  const width = 120
-  const height = 36
-
-  return values.map((value, index) => {
-    const x = (index / (values.length - 1)) * width
-    const y = height - (((value - min) / range) * (height - 8) + 4)
-    return `${x.toFixed(2)},${y.toFixed(2)}`
-  }).join(' ')
 }
 
 function formatProcessMemory(memoryKb?: number) {
@@ -1734,14 +1681,24 @@ defineExpose({
 .dashboard-hero__toolbar {
   display: grid;
   justify-items: end;
-  gap: 10px;
+  align-content: start;
+  gap: 6px;
   flex-shrink: 0;
 }
 
 .dashboard-hero__toolbar-meta {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
+}
+
+.dashboard-hero__toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
 }
 
 .dashboard-hero__timestamp {
@@ -2015,32 +1972,13 @@ defineExpose({
   flex-shrink: 0;
 }
 
-.resource-highlight-row__trend {
-  color: #6c7d93;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
 .resource-highlight-row__footer {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 72px;
-  align-items: center;
-  gap: 6px;
+  margin-top: 4px;
 }
 
 .resource-highlight-row__progress :deep(.ant-progress) {
   margin: 0;
 }
-
-.sparkline-panel--inline {
-  min-width: 0;
-}
-
-.sparkline-panel--inline .sparkline-panel__svg {
-  height: 16px;
-}
-
-.sparkline-panel span,
 .disk-card__identity span,
 .interface-card__identity span,
 .interface-card__totals,
@@ -2048,19 +1986,6 @@ defineExpose({
 .network-summary-item span {
   color: #6c7d93;
   font-size: 12px;
-}
-
-.sparkline-panel {
-  display: grid;
-  gap: 6px;
-  margin-top: auto;
-}
-
-.sparkline-panel__svg {
-  width: 100%;
-  height: 36px;
-  border-radius: 6px;
-  background: rgba(24, 144, 255, 0.05);
 }
 
 .process-summary-chips {
@@ -2278,23 +2203,27 @@ defineExpose({
 
 .right-panel--embedded.right-panel--monitor .dashboard-hero {
   display: grid;
-  grid-template-columns: 1fr;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 8px 10px;
 }
 
 .right-panel--embedded.right-panel--monitor .dashboard-hero__toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  justify-items: end;
   gap: 6px;
-  width: 100%;
 }
 
 .right-panel--embedded.right-panel--monitor .dashboard-hero__toolbar-meta {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
+}
+
+.right-panel--embedded.right-panel--monitor .dashboard-hero__toolbar-actions {
+  flex-shrink: 0;
+  gap: 8px;
 }
 
 .right-panel--embedded.right-panel--monitor .dashboard-hero__title-row {
@@ -2462,16 +2391,11 @@ defineExpose({
 }
 
 .right-panel--embedded.right-panel--monitor .resource-highlight-row__footer {
-  grid-template-columns: minmax(0, 1fr) 56px;
-  gap: 4px;
+  margin-top: 2px;
 }
 
 .right-panel--embedded.right-panel--monitor .resource-highlight-row__progress :deep(.ant-progress-bg) {
   border-radius: 999px;
-}
-
-.right-panel--embedded.right-panel--monitor .sparkline-panel--inline .sparkline-panel__svg {
-  height: 12px;
 }
 
 .right-panel--embedded.right-panel--monitor .process-summary-chips {
@@ -3421,7 +3345,13 @@ defineExpose({
 
   .dashboard-hero__toolbar {
     width: 100%;
+    justify-items: stretch;
+  }
+
+  .dashboard-hero__toolbar-actions {
+    width: 100%;
     justify-content: space-between;
+    margin-left: 0;
   }
 
   .dashboard-kpi-grid,
@@ -3464,5 +3394,211 @@ defineExpose({
     grid-template-columns: 1fr;
     align-items: flex-start;
   }
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .monitor-content) {
+  background:
+    radial-gradient(circle at top left, rgba(113, 167, 255, 0.12), transparent 30%),
+    linear-gradient(180deg, rgba(11, 18, 32, 0.96), rgba(8, 14, 24, 0.96)) !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-hero-card),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-card) {
+  background: linear-gradient(180deg, rgba(17, 28, 44, 0.96), rgba(13, 22, 35, 0.94)) !important;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32) !important;
+  border: 1px solid rgba(53, 81, 120, 0.4) !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-kpi),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-summary-memory),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .disk-card),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .interface-card),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .memory-composition) {
+  background: linear-gradient(180deg, rgba(20, 33, 51, 0.96), rgba(15, 24, 39, 0.9)) !important;
+  border-color: rgba(53, 81, 120, 0.34) !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-kpi) {
+  --monitor-accent: var(--text-color);
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-kpi--uptime) {
+  --monitor-accent: #8fc6ff;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-kpi--rx) {
+  --monitor-accent: #7fdda0;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-kpi--tx) {
+  --monitor-accent: #ffd36f;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row--cpu) {
+  --monitor-accent: #7fdda0;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row--memory) {
+  --monitor-accent: #ffd36f;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row--disk) {
+  --monitor-accent: #ff8e8e;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-hero__title-row h3),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-section-head h4),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row__name),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-summary-memory__head strong),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-summary-memory__legend-item strong),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .disk-card__identity strong),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .disk-card__percent),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .interface-card__identity strong),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .interface-card__metric),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .process-command),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .process-value) {
+  color: var(--text-color) !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-hero__copy p),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-hero__timestamp),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-kpi__label),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-kpi__meta),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-summary-memory__head span),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-summary-memory__legend-item span),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row__meta),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row__trend),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .disk-card__identity span),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .disk-card__summary),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .interface-card__identity span),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .interface-card__totals),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .process-table .ant-table-thead > tr > th),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .process-table .ant-table-tbody > tr > td) {
+  color: var(--muted-color) !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-kpi .ant-statistic),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row__value .ant-statistic) {
+  color: var(--monitor-accent, var(--text-color)) !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-kpi .ant-statistic-content),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-kpi .ant-statistic-content-value),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-kpi .ant-statistic-content-value-int),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-kpi .ant-statistic-content-value-decimal),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-kpi .ant-statistic-content-suffix),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row__value .ant-statistic-content),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row__value .ant-statistic-content-value),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row__value .ant-statistic-content-value-int),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row__value .ant-statistic-content-value-decimal),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row__value .ant-statistic-content-suffix) {
+  color: var(--monitor-accent, var(--text-color)) !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-kpi .ant-statistic-content) {
+  font-weight: 700 !important;
+  letter-spacing: -0.02em;
+  text-shadow: 0 8px 22px rgba(0, 0, 0, 0.22);
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-kpi .ant-statistic-content-suffix) {
+  font-size: 0.58em !important;
+  font-weight: 600 !important;
+  opacity: 0.96;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row__value .ant-statistic-content) {
+  font-weight: 650 !important;
+  letter-spacing: -0.01em;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row__value .ant-statistic-content-suffix) {
+  font-size: 0.65em !important;
+  font-weight: 600 !important;
+  opacity: 0.92;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row__trend) {
+  color: #7f93ad !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-kpi__label) {
+  color: #a8b8cf !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-kpi__meta),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row__meta),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-summary-memory__head span),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-summary-memory__legend-item span),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .disk-card__identity span),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .disk-card__summary),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .interface-card__identity span),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .interface-card__totals) {
+  color: #8ea2bc !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row__progress .ant-progress-inner),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .disk-card .ant-progress-inner),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .memory-composition__bar) {
+  background: rgba(148, 164, 187, 0.16) !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .process-table .ant-table-thead > tr > th) {
+  background: rgba(113, 167, 255, 0.1) !important;
+  border-bottom-color: rgba(53, 81, 120, 0.34) !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .process-table .ant-table-tbody > tr > td) {
+  border-bottom-color: rgba(53, 81, 120, 0.22) !important;
+  background: transparent !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .process-rank),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .process-summary-chip) {
+  background: rgba(113, 167, 255, 0.14) !important;
+  color: #9bc2ff !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .collapse-btn) {
+  background: rgba(20, 33, 51, 0.92) !important;
+  border-color: rgba(53, 81, 120, 0.42) !important;
+  color: var(--text-color) !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .collapse-btn:hover) {
+  background: rgba(27, 41, 64, 0.96) !important;
+  border-color: rgba(113, 167, 255, 0.42) !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dense-inline-pill) {
+  background: rgba(20, 33, 51, 0.9) !important;
+  border-color: rgba(53, 81, 120, 0.34) !important;
+  color: var(--muted-color) !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dense-inline-pill.is-active) {
+  background: rgba(85, 194, 122, 0.14) !important;
+  border-color: rgba(85, 194, 122, 0.24) !important;
+  color: #7be29c !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-alert-strip) {
+  background: linear-gradient(180deg, rgba(245, 34, 45, 0.18), rgba(114, 28, 36, 0.2)) !important;
+  border-color: rgba(245, 34, 45, 0.28) !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-alert-strip__item) {
+  background: rgba(21, 11, 14, 0.46) !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-alert-strip__header strong),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-alert-strip__message) {
+  color: #ffb3b8 !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-alert-strip__header span),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-alert-strip__description) {
+  color: #ffc8cc !important;
 }
 </style>

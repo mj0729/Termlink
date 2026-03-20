@@ -36,13 +36,13 @@
                     :connection-id="tab.id"
                     :profile="tab.profile"
                     :embedded-monitor-visible="activeId === tab.id && shouldEmbedMonitorInSsh"
-                    :embedded-monitor-collapsed="rightPanelCollapsed"
+                    :embedded-monitor-collapsed="embeddedMonitorCollapsed"
                     @close="closeTab(tab.id)"
                     @reconnect="reconnectSsh(tab)"
                     @open-file-preview="openFilePreview"
                     @start-download="handleStartDownload"
                     @start-upload="handleStartUpload"
-                    @toggle-monitor="rightPanelCollapsed = !rightPanelCollapsed"
+                    @toggle-monitor="embeddedMonitorCollapsed = !embeddedMonitorCollapsed"
                   />
                   
                   <Terminal 
@@ -91,15 +91,15 @@
             :collapsed="effectiveRightPanelCollapsed" 
             @toggle="rightPanelCollapsed = !rightPanelCollapsed"
             @tab-change="rightPanelTab = $event"
-            :connection-id="getActiveTab()?.type === 'ssh' ? getActiveTab()?.id : ''"
-            :ssh-profile="getActiveTab()?.type === 'ssh' ? getActiveTab()?.profile : null"
+            :connection-id="currentTab?.type === 'ssh' ? currentTab?.id : ''"
+            :ssh-profile="currentTab?.type === 'ssh' ? currentTab?.profile : null"
             :active-tab="rightPanelTab"
           />
         </div>
         
             <StatusBar
-              :active-connection="getActiveConnection()"
-              :active-connection-copy-text="getActiveConnectionCopyText()"
+              :active-connection="activeConnection"
+              :active-connection-copy-text="activeConnectionCopyText"
               :tab-count="tabs.length"
               :right-panel-tab="rightPanelTab"
               :right-panel-collapsed="effectiveRightPanelCollapsed"
@@ -150,13 +150,13 @@ import type {
 
 // 导入组件
 import TabManager from './components/TabManager.vue'
-import Terminal from './components/Terminal.vue'
 import SshModal from './components/SshModal.vue'
 import SettingsModal from './components/SettingsModal.vue'
-import RightPanel from './components/RightPanel.vue'
 import StatusBar from './components/StatusBar.vue'
-import ConnectionHub from './components/ConnectionHub.vue'
-import SshWorkspace from './components/SshWorkspace.vue'
+const Terminal = defineAsyncComponent(() => import('./components/Terminal.vue'))
+const RightPanel = defineAsyncComponent(() => import('./components/RightPanel.vue'))
+const ConnectionHub = defineAsyncComponent(() => import('./components/ConnectionHub.vue'))
+const SshWorkspace = defineAsyncComponent(() => import('./components/SshWorkspace.vue'))
 const FileEditor = defineAsyncComponent(() => import('./components/FileEditor.vue'))
 
 // 导入服务
@@ -173,6 +173,7 @@ const rightPanelRef = ref<{
   addUpload: (upload: UploadRequest) => void
 } | null>(null)
 const rightPanelCollapsed = ref(true)
+const embeddedMonitorCollapsed = ref(false)
 const rightPanelTab = ref<MonitorTab>('monitor')
 const sshEditMode = ref(false)
 const editingProfile = ref<SshProfile | null>(null)
@@ -221,8 +222,15 @@ const antdThemeConfig = computed(() => ({
 // 已保存的连接配置
 const profiles = ref<SshProfile[]>([])
 const groups = ref<string[]>([])
-const isConnectionCenterLayout = computed(() => getActiveTab()?.type === 'connections')
-const isSshWorkspaceLayout = computed(() => getActiveTab()?.type === 'ssh')
+
+// 缓存当前活动标签页，避免模板中多次 find()
+const currentTab = computed(() => {
+  if (!activeId.value) return null
+  return tabs.value.find(t => t.id === activeId.value) || null
+})
+
+const isConnectionCenterLayout = computed(() => currentTab.value?.type === 'connections')
+const isSshWorkspaceLayout = computed(() => currentTab.value?.type === 'ssh')
 const shouldEmbedMonitorInSsh = computed(() => (
   isSshWorkspaceLayout.value
   && rightPanelTab.value === 'monitor'
@@ -235,7 +243,7 @@ const effectiveRightPanelCollapsed = computed(() => (
 
 watch(isSshWorkspaceLayout, (nextIsSsh, previousIsSsh) => {
   if (nextIsSsh && !previousIsSsh && rightPanelTab.value === 'monitor') {
-    rightPanelCollapsed.value = false
+    embeddedMonitorCollapsed.value = false
   }
 })
 
@@ -274,37 +282,32 @@ async function refreshConnectionData() {
   await Promise.all([refreshProfiles(), refreshGroups()])
 }
 
-// 获取活动连接信息
-function getActiveConnection() {
-  if (!activeId.value) return ''
-  const activeTab = tabs.value.find(t => t.id === activeId.value)
-  if (!activeTab || activeTab.type === 'connections') return ''
-  if (activeTab.type === 'ssh') {
-    const username = activeTab.profile?.username
-    const host = activeTab.profile?.host
+// 获取活动连接信息（computed 缓存）
+const activeConnection = computed(() => {
+  const tab = currentTab.value
+  if (!tab || tab.type === 'connections') return ''
+  if (tab.type === 'ssh') {
+    const username = tab.profile?.username
+    const host = tab.profile?.host
     if (username && host) return `${username}@${host}`
     return host || ''
   }
+  return tab.title
+})
 
-  return activeTab.title
-}
-
-function getActiveConnectionCopyText() {
-  if (!activeId.value) return ''
-  const activeTab = tabs.value.find(t => t.id === activeId.value)
-  if (activeTab?.type !== 'ssh') return ''
-  return activeTab.profile?.host || ''
-}
+const activeConnectionCopyText = computed(() => {
+  const tab = currentTab.value
+  if (tab?.type !== 'ssh') return ''
+  return tab.profile?.host || ''
+})
 
 function getActiveProfileId() {
-  const activeTab = getActiveTab()
-  return activeTab?.type === 'ssh' ? activeTab.profile?.id || '' : ''
+  return currentTab.value?.type === 'ssh' ? currentTab.value.profile?.id || '' : ''
 }
 
-// 获取活动标签页
+// 获取活动标签页（兼容旧调用）
 function getActiveTab() {
-  if (!activeId.value) return null
-  return tabs.value.find(t => t.id === activeId.value) || null
+  return currentTab.value
 }
 
 // 启动已保存的连接
@@ -337,6 +340,8 @@ async function launchSavedProfile(p: SshProfile) {
 
 // 处理开始下载
 function handleStartDownload(downloadInfo: DownloadRequest) {
+  rightPanelTab.value = 'download'
+  rightPanelCollapsed.value = false
   if (rightPanelRef.value) {
     rightPanelRef.value.addDownload(
       downloadInfo.fileName,
@@ -348,10 +353,23 @@ function handleStartDownload(downloadInfo: DownloadRequest) {
 }
 
 function handleStartUpload(uploadInfo: UploadRequest) {
+  rightPanelTab.value = 'download'
+  rightPanelCollapsed.value = false
   rightPanelRef.value?.addUpload(uploadInfo)
 }
 
 function handleRightPanelTabSelect(tab: MonitorTab) {
+  if (tab === 'monitor' && isSshWorkspaceLayout.value) {
+    if (rightPanelTab.value === 'monitor') {
+      embeddedMonitorCollapsed.value = !embeddedMonitorCollapsed.value
+      return
+    }
+
+    rightPanelTab.value = tab
+    embeddedMonitorCollapsed.value = false
+    return
+  }
+
   if (rightPanelTab.value === tab) {
     rightPanelCollapsed.value = !rightPanelCollapsed.value
     return

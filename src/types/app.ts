@@ -296,3 +296,32 @@ export interface ImportResult {
   skippedCount: number
   overwrittenCount: number
 }
+
+export interface SftpDetailedEntry {
+  name: string
+  path: string
+  isDir: boolean
+  size: number
+  modified?: number
+  permissions: string
+  ownerUser?: string
+  ownerGroup?: string
+  numericPermissions?: string
+  isSymlink: boolean
+  symlinkTarget?: string
+}
+
+export interface SftpDiskUsageInfo {
+  total: string
+  used: string
+  available: string
+  mountPoint: string
+}
+
+export interface AuditLogEntry {
+  id: number
+  timestamp: number
+  command: string
+  result?: string
+  error?: string
+}

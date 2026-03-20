@@ -283,7 +283,7 @@ const props = withDefaults(defineProps<{
   profiles: () => [],
   groups: () => [],
   activeProfileId: '',
-  viewMode: 'list',
+  viewMode: 'grid',
   theme: 'light'
 })
 

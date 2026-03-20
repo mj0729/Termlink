@@ -1,5 +1,67 @@
 # 变更记录
 
+## [0.0.16] - 2026-03-20
+
+### 快速修改
+
+- **[workspace-ui]**: 将连接中心的默认视图从列表切换为卡片视图，并同步调整组件默认值、程序配置默认值以及本地配置回退值，确保首次进入连接中心时优先展示卡片列表 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/ConnectionHub.vue:282-287, src/components/SettingsModal.vue:144-151, src/services/ThemeService.ts:21-28
+
+- **[workspace-ui]**: 移除远程文件工作台顶部路径栏里的重复“显示隐藏文件”按钮，仅保留底部状态栏里的同一开关，避免同一功能在上下两处重复出现 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/RemoteFileWorkbench.vue:5-18, src/components/remote-file/RemotePathBar.vue:41-85
+
+- **[workspace-ui]**: 移除“关键资源”卡片右侧的趋势图与对应占位文案，资源行现在只保留状态、数值和进度条，避免在无历史数据时出现大块空白趋势区 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/RightPanel.vue:128-146, src/components/RightPanel.vue:678-713
+
+- **[workspace-ui]**: 将系统监控头部的按钮组上移到“需关注”标签同一行，手动刷新改为纯图标按钮，并把最近刷新时间下移到按钮组下方，整体层级更接近主机信息区的右侧操作栏 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/RightPanel.vue:20-38, src/components/RightPanel.vue:1742-1768, src/components/RightPanel.vue:2297-2319
+
+- **[workspace-ui]**: 修正系统监控头部右侧操作组的宽度约束，移除 `width: 100%` 导致的溢出问题，让折叠按钮重新回到可视区并稳定贴在工具区最右侧 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/RightPanel.vue:1756-1761
+
+- **[workspace-ui]**: 收紧“终端目录同步文件管理”的触发时机，取消 `cd` 提交瞬间的乐观目录切换，改为只信任 shell 实际返回的当前目录标记；同时为文件区目录加载增加请求序号保护，并把提示符解析改成跨 chunk 拼接、静默直载，避免 `/usr/local` 这类目录在终端已切换时文件区既不报错也不跟进 — by Codex
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/Terminal.vue:89-177, src/components/Terminal.vue:238-278, src/components/RemoteFileWorkbench.vue:174-350
+
+## [0.0.15] - 2026-03-20
+
+### 变更
+
+- **[workspace-ui]**: 将 SSH 工作区左侧系统监控头部的折叠按钮从主机名标题行中移出，改为并入右侧工具区并固定贴近卡片右边缘，避免按钮夹在标题与健康标签之间打断阅读流；已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603201507_monitor-collapse-button-edge](archive/2026-03/202603201507_monitor-collapse-button-edge/)
+  - 决策: monitor-collapse-button-edge#D001(将折叠按钮移入头部右侧工具区)
+
+## [0.0.14] - 2026-03-20
+
+### 变更
+
+- **[ssh-auth]**: 将首次连接/主机密钥变化的确认交互从“两步弹窗”收敛为单个三选项弹窗，用户现在可直接在同一层选择“拒绝连接 / 仅本次信任 / 信任并保存”，减少一次额外点击 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/services/SshService.ts:199-267
+
+- **[workspace-ui]**: 收紧远程文件表格的目录拖放链路，目录行现在会稳定接住内部拖拽移动，并新增“禁止把文件夹拖进自身子目录”的前置保护与批量移动结果提示，避免整理目录时误拖后只看到静默失败 — by Codex
+
+- **[workspace-ui]**: 将远程文件内部拖动状态同步到左侧目录树，支持把右侧文件直接拖到树节点完成移动，并沿用相同的非法目标校验与高亮提示，整理多层目录时不必先切换到目标目录 — by Codex
+
+- **[workspace-ui]**: 收口远程文件表格的选择交互，补强 `Shift` 范围选择、空白区单击清空和 `Cmd/Ctrl + A` 全选，并让这些逻辑统一基于当前可见排序结果工作，避免筛选或文件名拖动手势下出现选择锚点漂移 — by Codex
+
+- **[workspace-ui]**: 让左侧远程目录树复用工作台现有文件菜单与内部拖动状态，支持树节点右键操作、目录树内拖拽移动，并在新建/重命名/删除/移动后主动刷新树缓存，避免树结构停留在旧状态 — by Codex
+
+- **[workspace-ui]**: 将远程文件区的重命名从弹窗改为行内编辑，右键触发后在表格行或目录树节点内直接进入输入态，并统一使用 `Enter` 确认、`Esc` 取消、失焦自动确认，减少目录整理时的弹窗打断 — by Codex
+
+- **[workspace-ui]**: 将 SSH 文件工作台的目录树、文件表格和相关输入框接到终端设置里的字体族配置，远程文件区现在会跟随“程序配置 → 字体族”同步切换，避免终端与文件区字体割裂 — by Codex
+
+- **[workspace-ui]**: 参考 FinalShell 一类文件面板的层次感，压深 SSH 文件区主体底色与选中/悬停对比，并替换目录树/文件表格里的默认线框图标为更接近系统文件管理器风格的本地 SVG 文件夹/文件图标，让文件区更耐看也更易扫读 — by Codex
+
+- **[workspace-ui]**: 为远程文件工作台补上路径集合驱动的多选状态、拖拽框选、`Shift` 连续点选、空白区单击清空、`Cmd/Ctrl + A` 当前视图全选、上下方向键移动当前选中项、`Delete/Backspace` 快捷删除，以及把已选条目直接拖放到目录行内完成移动，目录整理时可直接框选、键盘选择后右键、快捷删除或拖入文件夹；已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603201037_remote-file-multiselect-context-menu](plan/202603201037_remote-file-multiselect-context-menu/)
+  - 决策: remote-file-multiselect-context-menu#D001(远程文件多选以路径集合为唯一状态源)
+
 ## [0.0.13] - 2026-03-20
 
 ### 变更

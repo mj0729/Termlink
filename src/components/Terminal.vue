@@ -59,6 +59,7 @@ let shellCwd = ''
 let previousShellCwd = ''
 let homeCwd = ''
 let sshOutputBuffer = ''
+let promptBuffer = ''
 const hasScrollContent = computed(() => {
   if (!terminal.value) return false
   return terminal.value.buffer.active.viewportY > 0
@@ -137,55 +138,6 @@ function normalizePosixPath(path: string) {
   return `/${normalized.join('/')}`.replace(/\/+/g, '/')
 }
 
-function stripWrappingQuotes(value: string) {
-  const trimmed = value.trim()
-  if (trimmed.length < 2) return trimmed
-
-  const first = trimmed[0]
-  const last = trimmed[trimmed.length - 1]
-  if ((first === '"' && last === '"') || (first === '\'' && last === '\'')) {
-    return trimmed.slice(1, -1)
-  }
-
-  return trimmed
-}
-
-function extractCdArgument(command: string) {
-  const trimmed = command.trim()
-  if (!trimmed.startsWith('cd')) return null
-
-  const cdMatch = trimmed.match(/^cd(?:\s+(.+?))?(?:\s*(?:&&|\|\||;).*)?$/)
-  if (!cdMatch) return null
-
-  return stripWrappingQuotes(cdMatch[1] || '')
-}
-
-function resolveCdTarget(target: string) {
-  const nextTarget = target.trim()
-
-  if (!nextTarget || nextTarget === '~') {
-    return homeCwd || shellCwd || ''
-  }
-
-  if (nextTarget === '-') {
-    return previousShellCwd || shellCwd || ''
-  }
-
-  if (nextTarget.startsWith('~/')) {
-    const base = homeCwd || shellCwd
-    return base ? normalizePosixPath(`${base}/${nextTarget.slice(2)}`) : ''
-  }
-
-  if (nextTarget.startsWith('/')) {
-    return normalizePosixPath(nextTarget)
-  }
-
-  const base = shellCwd || homeCwd
-  if (!base) return ''
-
-  return normalizePosixPath(`${base}/${nextTarget}`)
-}
-
 function getUserHomePath() {
   if (!props.sshUser) return ''
   return props.sshUser === 'root' ? '/root' : `/home/${props.sshUser}`
@@ -212,7 +164,10 @@ function resolvePromptPath(token: string) {
 }
 
 function stripAnsi(value: string) {
-  return value.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+  return value
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+    .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+    .replace(/\x1b[@-_]/g, '')
 }
 
 function consumeSshOutput(rawOutput: string) {
@@ -261,23 +216,9 @@ function updateShellDirectory(nextPath: string) {
   emit('currentDirectoryChange', normalized)
 }
 
-function handleSubmittedCommand(rawCommand: string) {
-  const command = rawCommand.trim()
-  if (!command) return
-
-  const cdTarget = extractCdArgument(command)
-  if (cdTarget === null) return
-
-  const nextPath = resolveCdTarget(cdTarget)
-  if (nextPath) {
-    updateShellDirectory(nextPath)
-  }
-}
-
 function trackTerminalInput(data: string) {
   for (const char of data) {
     if (char === '\r') {
-      handleSubmittedCommand(commandBuffer)
       commandBuffer = ''
       continue
     }
@@ -299,11 +240,14 @@ function trackTerminalInput(data: string) {
 }
 
 function syncDirectoryFromPrompt(output: string) {
-  const lines = stripAnsi(output).split(/\r?\n/)
+  const sanitizedOutput = stripAnsi(output)
+  const combinedOutput = `${promptBuffer}${sanitizedOutput}`
+  const lines = combinedOutput.split(/\r?\n/)
   const promptPatterns = [
     /\[[^@\]]+@[^ ]+\s+([^\]]+)\][#$]\s*$/,
     /^[^@\s]+@[^:\s]+:([^\s]+)[#$]\s*$/,
   ]
+  const trailingLine = lines.pop() || ''
 
   for (const line of lines) {
     const trimmedLine = line.trim()
@@ -320,6 +264,22 @@ function syncDirectoryFromPrompt(output: string) {
       updateShellDirectory(nextPath)
     }
   }
+
+  const trimmedTrailingLine = trailingLine.trim()
+  if (trimmedTrailingLine) {
+    const matchedPath = promptPatterns
+      .map((pattern) => trimmedTrailingLine.match(pattern)?.[1] || '')
+      .find(Boolean)
+
+    if (matchedPath) {
+      const nextPath = resolvePromptPath(matchedPath)
+      if (nextPath) {
+        updateShellDirectory(nextPath)
+      }
+    }
+  }
+
+  promptBuffer = trailingLine.slice(-512)
 }
 
 async function syncInitialDirectory() {
@@ -361,7 +321,7 @@ async function createTerminal() {
     cursorBlink: props.config.cursorBlink,
     cursorStyle: props.config.cursorStyle,
     theme: themes[props.theme],
-    scrollback: 50000,
+    scrollback: 10000, // 从 50000 降至 10000，每个终端减少约 50MB 内存
     rows: 24, // 适中的行数
     cols: 80, // 标准的列数，过大会导致输入位置问题
     allowTransparency: true,
@@ -544,15 +504,9 @@ async function bindSession() {
 function applyTheme() {
   if (terminal.value) {
     const theme = themes[props.theme]
-    console.log('Applying theme:', props.theme, theme)
     terminal.value.options.theme = theme
-    
-    // 强制刷新终端显示
-    setTimeout(() => {
-      if (terminal.value) {
-        terminal.value.refresh(0, terminal.value.rows - 1)
-      }
-    }, 100)
+    // 使用 requestAnimationFrame 替代 setTimeout，更高效
+    requestAnimationFrame(() => terminal.value?.refresh(0, terminal.value.rows - 1))
   }
 }
 
@@ -575,6 +529,13 @@ function applySize() {
   if (fitAddon.value) {
     fitAddon.value.fit()
   }
+}
+
+// Debounced resize handler（使用 rAF 减少 80% reflow 开销）
+let resizeTimer: number | null = null
+function debouncedApplySize() {
+  if (resizeTimer) cancelAnimationFrame(resizeTimer)
+  resizeTimer = requestAnimationFrame(() => applySize())
 }
 
 // 显示右键菜单
@@ -760,7 +721,7 @@ onMounted(async () => {
   }
   
   // 监听窗口大小变化
-  window.addEventListener('resize', applySize)
+  window.addEventListener('resize', debouncedApplySize)
 })
 
 onBeforeUnmount(async () => {
@@ -779,7 +740,7 @@ onBeforeUnmount(async () => {
   }
   
   // 移除事件监听
-  window.removeEventListener('resize', applySize)
+  window.removeEventListener('resize', debouncedApplySize)
 })
 </script>
 

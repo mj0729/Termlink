@@ -1,8 +1,12 @@
 use crate::ssh_command;
+use once_cell::sync::Lazy;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tauri::command;
+
+const MIN_SAMPLE_INTERVAL: Duration = Duration::from_millis(500);
 
 // 批量获取系统信息的结构体
 #[derive(Debug, Serialize, Deserialize)]
@@ -84,14 +88,26 @@ pub struct NetworkInterface {
 struct NetworkSpeedCache {
     last_rx_bytes: u64,
     last_tx_bytes: u64,
-    last_time: std::time::Instant,
+    last_time: Instant,
 }
 
-// 全局网络速度缓存
-lazy_static::lazy_static! {
-    static ref NETWORK_CACHE: Arc<Mutex<HashMap<String, NetworkSpeedCache>>> =
-        Arc::new(Mutex::new(HashMap::new()));
+// CPU 使用率 delta 缓存
+#[derive(Debug, Clone)]
+struct CpuUsageCache {
+    last_total: u64,
+    last_idle: u64,
+    last_cores: Vec<(u64, u64)>,
+    last_usage: f64,
+    last_core_usage: Vec<f64>,
+    last_time: Instant,
 }
+
+// 全局缓存（网络速度 + CPU delta）
+static NETWORK_CACHE: Lazy<Mutex<HashMap<String, NetworkSpeedCache>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+static CPU_CACHE: Lazy<Mutex<HashMap<String, CpuUsageCache>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProcessInfo {
@@ -108,38 +124,122 @@ pub struct ProcessEntry {
     pub command: String,
 }
 
-// 解析CPU使用率
-fn parse_cpu_usage(cpu_stat: &str) -> f64 {
+// 解析 CPU 计数器（total, idle_total）
+fn parse_cpu_counters(cpu_stat: &str) -> Option<(u64, u64)> {
     let parts: Vec<&str> = cpu_stat.split_whitespace().collect();
     if parts.len() < 5 {
-        return 0.0;
+        return None;
     }
 
     let user: u64 = parts[1].parse().unwrap_or(0);
     let nice: u64 = parts[2].parse().unwrap_or(0);
     let system: u64 = parts[3].parse().unwrap_or(0);
     let idle: u64 = parts[4].parse().unwrap_or(0);
+    let iowait: u64 = parts.get(5).and_then(|v| v.parse().ok()).unwrap_or(0);
+    let irq: u64 = parts.get(6).and_then(|v| v.parse().ok()).unwrap_or(0);
+    let softirq: u64 = parts.get(7).and_then(|v| v.parse().ok()).unwrap_or(0);
+    let steal: u64 = parts.get(8).and_then(|v| v.parse().ok()).unwrap_or(0);
 
-    let total = user + nice + system + idle;
-    let used = user + nice + system;
+    let total = user + nice + system + idle + iowait + irq + softirq + steal;
+    let idle_total = idle + iowait;
 
-    if total > 0 {
-        (used as f64 / total as f64) * 100.0
-    } else {
+    Some((total, idle_total))
+}
+
+// 计算 CPU 百分比（delta 方式）
+fn calculate_cpu_percent(last_total: u64, last_idle: u64, total: u64, idle: u64) -> f64 {
+    let total_delta = total.saturating_sub(last_total);
+    let idle_delta = idle.saturating_sub(last_idle);
+
+    if total_delta == 0 {
         0.0
+    } else {
+        ((total_delta.saturating_sub(idle_delta)) as f64 / total_delta as f64) * 100.0
     }
 }
 
-// 计算网络速度
-fn calculate_network_speed(interface_name: &str, rx_bytes: u64, tx_bytes: u64) -> (f64, f64) {
-    let mut cache = NETWORK_CACHE.lock().unwrap();
-    let now = std::time::Instant::now();
+// 基于 delta 的 CPU 使用率快照（含 per-core）
+fn parse_cpu_usage_snapshot(connection_id: &str, cpu_lines: &[&str]) -> (f64, Vec<f64>) {
+    let parsed: Vec<(u64, u64)> = cpu_lines
+        .iter()
+        .filter_map(|line| parse_cpu_counters(line))
+        .collect();
 
-    if let Some(last_cache) = cache.get(interface_name) {
+    if parsed.is_empty() {
+        return (0.0, Vec::new());
+    }
+
+    let now = Instant::now();
+    let mut cache = CPU_CACHE.lock();
+    let cache_key = connection_id.to_string();
+    let previous = cache.get(&cache_key).cloned();
+
+    if let Some(ref last) = previous {
+        if now.duration_since(last.last_time) < MIN_SAMPLE_INTERVAL {
+            return (last.last_usage, last.last_core_usage.clone());
+        }
+    }
+
+    let core_count = parsed.len().saturating_sub(1).max(1);
+    let (usage, core_usage) = if let Some(ref last) = previous {
+        let total_usage =
+            calculate_cpu_percent(last.last_total, last.last_idle, parsed[0].0, parsed[0].1);
+        let per_core: Vec<f64> = parsed
+            .iter()
+            .copied()
+            .skip(1)
+            .enumerate()
+            .map(|(idx, (total, idle))| {
+                last.last_cores
+                    .get(idx)
+                    .map(|(prev_total, prev_idle)| {
+                        calculate_cpu_percent(*prev_total, *prev_idle, total, idle)
+                    })
+                    .unwrap_or(total_usage)
+            })
+            .collect();
+        (
+            total_usage,
+            if per_core.is_empty() {
+                vec![total_usage; core_count]
+            } else {
+                per_core
+            },
+        )
+    } else {
+        (0.0, vec![0.0; core_count])
+    };
+
+    cache.insert(
+        cache_key,
+        CpuUsageCache {
+            last_total: parsed[0].0,
+            last_idle: parsed[0].1,
+            last_cores: parsed.iter().copied().skip(1).collect(),
+            last_usage: usage,
+            last_core_usage: core_usage.clone(),
+            last_time: now,
+        },
+    );
+
+    (usage, core_usage)
+}
+
+// 计算网络速度（缓存 key 包含 connection_id 避免多主机串值）
+fn calculate_network_speed(
+    connection_id: &str,
+    interface_name: &str,
+    rx_bytes: u64,
+    tx_bytes: u64,
+) -> (f64, f64) {
+    let mut cache = NETWORK_CACHE.lock();
+    let now = Instant::now();
+    let cache_key = format!("{connection_id}:{interface_name}");
+
+    if let Some(last_cache) = cache.get(&cache_key) {
         let time_diff = now.duration_since(last_cache.last_time).as_secs_f64();
 
-        // 确保时间间隔至少0.5秒，避免计算不准确
-        if time_diff >= 0.5 {
+        if time_diff >= MIN_SAMPLE_INTERVAL.as_secs_f64() {
             let rx_diff = rx_bytes.saturating_sub(last_cache.last_rx_bytes);
             let tx_diff = tx_bytes.saturating_sub(last_cache.last_tx_bytes);
 
@@ -148,7 +248,7 @@ fn calculate_network_speed(interface_name: &str, rx_bytes: u64, tx_bytes: u64) -
 
             // 更新缓存
             cache.insert(
-                interface_name.to_string(),
+                cache_key.clone(),
                 NetworkSpeedCache {
                     last_rx_bytes: rx_bytes,
                     last_tx_bytes: tx_bytes,
@@ -162,7 +262,7 @@ fn calculate_network_speed(interface_name: &str, rx_bytes: u64, tx_bytes: u64) -
 
     // 首次获取或时间差太小，返回0速度
     cache.insert(
-        interface_name.to_string(),
+        cache_key,
         NetworkSpeedCache {
             last_rx_bytes: rx_bytes,
             last_tx_bytes: tx_bytes,
@@ -212,7 +312,7 @@ cat /proc/uptime | cut -d' ' -f1
 
 echo "===CPU_INFO==="
 cat /proc/cpuinfo | grep 'model name' | head -n1 | cut -d':' -f2
-cat /proc/stat | head -n1
+grep '^cpu' /proc/stat
 
 echo "===MEMORY_INFO==="
 cat /proc/meminfo | grep MemTotal | awk '{print $2}'
@@ -224,6 +324,9 @@ echo "===DISK_INFO==="
 
 echo "===NETWORK_INFO==="
 cat /proc/net/dev | tail -n +3
+
+echo "===NETWORK_ADDR_INFO==="
+ip -o -4 addr show up scope global 2>/dev/null | awk '{print $2, $4}' || true
 
 echo "===PROCESS_INFO==="
 ps axo stat --no-headers | sort | uniq -c
@@ -241,12 +344,10 @@ ps -eo rss=,pcpu=,comm= --sort=-rss | head -n 4
 
     for line in output.lines() {
         if line.starts_with("===") && line.ends_with("===") {
-            // 保存前一个section
             if !current_section.is_empty() {
                 sections.insert(current_section, current_content.clone());
                 current_content.clear();
             }
-            // 开始新section
             current_section = line.trim_matches('=');
         } else if !current_section.is_empty() {
             current_content.push_str(line);
@@ -254,21 +355,20 @@ ps -eo rss=,pcpu=,comm= --sort=-rss | head -n 4
         }
     }
 
-    // 保存最后一个section
     if !current_section.is_empty() {
         sections.insert(current_section, current_content);
     }
 
     // 解析各个section
     let system = parse_system_info(sections.get("SYSTEM_INFO").unwrap_or(&String::new()));
-    let cpu = parse_cpu_info(sections.get("CPU_INFO").unwrap_or(&String::new()));
+    let cpu = parse_cpu_info(&connection_id, sections.get("CPU_INFO").unwrap_or(&String::new()));
     let memory = parse_memory_info(sections.get("MEMORY_INFO").unwrap_or(&String::new()));
     let disk = parse_disk_info(sections.get("DISK_INFO").unwrap_or(&String::new()));
     let network = parse_network_info_batch(
         &connection_id,
         sections.get("NETWORK_INFO").unwrap_or(&String::new()),
-    )
-    .await?;
+        sections.get("NETWORK_ADDR_INFO").unwrap_or(&String::new()),
+    );
     let process = parse_process_info(
         sections.get("PROCESS_INFO").unwrap_or(&String::new()),
         sections.get("TOP_PROCESS_INFO").unwrap_or(&String::new()),
@@ -321,23 +421,18 @@ fn parse_system_info(content: &str) -> SystemInfo {
     }
 }
 
-// 解析CPU信息
-fn parse_cpu_info(content: &str) -> CpuInfo {
-    let lines: Vec<&str> = content.lines().collect();
+// 解析CPU信息（delta-based 实时使用率）
+fn parse_cpu_info(connection_id: &str, content: &str) -> CpuInfo {
+    let mut lines = content.lines();
     let model = lines
-        .get(0)
+        .next()
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|| "Unknown CPU".to_string());
 
-    let usage = lines.get(1).map(|s| parse_cpu_usage(s)).unwrap_or(0.0);
-
-    // 生成核心使用率
-    let cores = (0..8)
-        .map(|i| {
-            let variation = (i as f64 * 7.3) % 20.0 - 10.0;
-            (usage + variation).max(0.0).min(100.0)
-        })
+    let cpu_lines: Vec<&str> = lines
+        .filter(|line| line.trim_start().starts_with("cpu"))
         .collect();
+    let (usage, cores) = parse_cpu_usage_snapshot(connection_id, &cpu_lines);
 
     CpuInfo {
         model,
@@ -417,15 +512,27 @@ fn parse_disk_info(content: &str) -> Vec<DiskInfo> {
     disks
 }
 
-// 批量解析网络信息（需要额外获取IP地址）
-async fn parse_network_info_batch(
+// 批量解析网络信息（IP 地址已在同一次 SSH 命令中返回，不再需要额外往返）
+fn parse_network_info_batch(
     connection_id: &str,
     content: &str,
-) -> Result<Vec<NetworkInterface>, String> {
+    addr_content: &str,
+) -> Vec<NetworkInterface> {
     let mut interfaces = Vec::new();
     let mut interface_stats: HashMap<String, (u64, u64)> = HashMap::new();
 
-    // 第一遍：收集网络统计数据
+    // 解析 IP 地址映射（来自 `ip -o -4 addr show` 输出）
+    let interface_ips: HashMap<String, String> = addr_content
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split_whitespace();
+            let name = parts.next()?.to_string();
+            let addr = parts.next()?.split('/').next()?.to_string();
+            Some((name, addr))
+        })
+        .collect();
+
+    // 收集网络统计数据
     for line in content.lines() {
         if let Some(colon_pos) = line.find(':') {
             let interface_name = line[..colon_pos].trim().to_string();
@@ -439,46 +546,11 @@ async fn parse_network_info_batch(
         }
     }
 
-    // 第二遍：获取IP地址并构建接口信息
-    let mut ip_commands = Vec::new();
-    for interface_name in interface_stats.keys() {
-        if interface_name != "lo" {
-            // 跳过loopback
-            ip_commands.push(format!(
-                "ip addr show {} | grep 'inet ' | awk '{{print $2}}' | cut -d'/' -f1",
-                interface_name
-            ));
-        }
-    }
-
-    // 批量获取IP地址
-    let ip_query = if ip_commands.is_empty() {
-        String::new()
-    } else {
-        ip_commands.join("\n")
-    };
-
-    let ip_outputs: Vec<String> = if ip_query.is_empty() {
-        Vec::new()
-    } else {
-        match execute_ssh_command(connection_id, &ip_query).await {
-            Ok(output) => output.lines().map(|s| s.trim().to_string()).collect(),
-            Err(_) => vec![String::new(); ip_commands.len()],
-        }
-    };
-
-    let mut ip_iter = ip_outputs.iter();
-
     for (interface_name, (rx_bytes, tx_bytes)) in &interface_stats {
         let ip = if interface_name == "lo" {
             None
         } else {
-            let ip_str = ip_iter.next().map(|s| s.as_str()).unwrap_or("");
-            if ip_str.is_empty() {
-                None
-            } else {
-                Some(ip_str.to_string())
-            }
+            interface_ips.get(interface_name).cloned()
         };
 
         let status = if interface_name == "lo" || *rx_bytes > 0 || *tx_bytes > 0 {
@@ -487,7 +559,8 @@ async fn parse_network_info_batch(
             "down".to_string()
         };
 
-        let (rx_speed, tx_speed) = calculate_network_speed(interface_name, *rx_bytes, *tx_bytes);
+        let (rx_speed, tx_speed) =
+            calculate_network_speed(connection_id, interface_name, *rx_bytes, *tx_bytes);
 
         interfaces.push(NetworkInterface {
             name: interface_name.clone(),
@@ -512,7 +585,7 @@ async fn parse_network_info_batch(
         });
     }
 
-    Ok(interfaces)
+    interfaces
 }
 
 // 解析进程信息
@@ -600,7 +673,7 @@ pub async fn get_dynamic_system_info_batch(
     let batch_command = r#"
 # 输出分隔符
 echo "===CPU_INFO==="
-cat /proc/stat | head -n1
+grep '^cpu' /proc/stat
 
 echo "===MEMORY_INFO==="
 cat /proc/meminfo | grep MemTotal | awk '{print $2}'
@@ -612,6 +685,9 @@ echo "===DISK_INFO==="
 
 echo "===NETWORK_INFO==="
 cat /proc/net/dev | tail -n +3
+
+echo "===NETWORK_ADDR_INFO==="
+ip -o -4 addr show up scope global 2>/dev/null | awk '{print $2, $4}' || true
 
 echo "===PROCESS_INFO==="
 ps axo stat --no-headers | sort | uniq -c
@@ -629,12 +705,10 @@ ps -eo rss=,pcpu=,comm= --sort=-rss | head -n 4
 
     for line in output.lines() {
         if line.starts_with("===") && line.ends_with("===") {
-            // 保存前一个section
             if !current_section.is_empty() {
                 sections.insert(current_section, current_content.clone());
                 current_content.clear();
             }
-            // 开始新section
             current_section = line.trim_matches('=');
         } else if !current_section.is_empty() {
             current_content.push_str(line);
@@ -642,27 +716,22 @@ ps -eo rss=,pcpu=,comm= --sort=-rss | head -n 4
         }
     }
 
-    // 保存最后一个section
     if !current_section.is_empty() {
         sections.insert(current_section, current_content);
     }
 
-    // 解析各个section
-    // 注意：CPU模型信息需要从静态数据中获取，这里不获取
+    // 解析各个section - CPU 使用 delta 方式
     let cpu_section = sections.get("CPU_INFO").map(|s| s.as_str()).unwrap_or("");
-    let cpu_stat = cpu_section.lines().next().unwrap_or("");
-    let cpu_usage = parse_cpu_usage(cpu_stat);
+    let cpu_lines: Vec<&str> = cpu_section
+        .lines()
+        .filter(|line| line.trim_start().starts_with("cpu"))
+        .collect();
+    let (cpu_usage, cores) = parse_cpu_usage_snapshot(&connection_id, &cpu_lines);
 
-    // CPU模型使用空字符串，需要从首次获取的静态数据中获取
     let cpu = CpuInfo {
-        model: String::new(), // 需要从静态数据中获取
+        model: String::new(),
         usage: cpu_usage,
-        cores: (0..8)
-            .map(|i| {
-                let variation = (i as f64 * 7.3) % 20.0 - 10.0;
-                (cpu_usage + variation).max(0.0).min(100.0)
-            })
-            .collect(),
+        cores,
     };
 
     let memory = parse_memory_info(sections.get("MEMORY_INFO").unwrap_or(&String::new()));
@@ -670,8 +739,8 @@ ps -eo rss=,pcpu=,comm= --sort=-rss | head -n 4
     let network = parse_network_info_batch(
         &connection_id,
         sections.get("NETWORK_INFO").unwrap_or(&String::new()),
-    )
-    .await?;
+        sections.get("NETWORK_ADDR_INFO").unwrap_or(&String::new()),
+    );
     let process = parse_process_info(
         sections.get("PROCESS_INFO").unwrap_or(&String::new()),
         sections.get("TOP_PROCESS_INFO").unwrap_or(&String::new()),

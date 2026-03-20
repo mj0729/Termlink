@@ -152,6 +152,17 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits(['toggle', 'launchProfile', 'showFileManager', 'refreshProfiles', 'openFilePreview', 'startDownload', 'editProfile'])
 
+// 文件类型扩展名常量（避免每次调用重新创建数组）
+const TEXT_EXTS = new Set([
+  'txt', 'md', 'json', 'xml', 'html', 'css', 'js', 'ts', 'vue',
+  'py', 'java', 'cpp', 'c', 'h', 'rs', 'go', 'php', 'rb', 'sh',
+  'yml', 'yaml', 'ini', 'conf', 'log', 'sql', 'csv'
+])
+const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp'])
+const VIDEO_EXTS = new Set(['mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv'])
+const AUDIO_EXTS = new Set(['mp3', 'wav', 'flac', 'aac', 'ogg'])
+const ARCHIVE_EXTS = new Set(['zip', 'rar', '7z', 'tar', 'gz'])
+
 // 搜索和视图状态
 const searchText = ref('')
 const viewMode = ref<'list' | 'group'>('list')
@@ -386,13 +397,8 @@ function handleSftpFileDoubleClick(file: SftpFileEntry) {
 
 // 判断是否为文本文件
 function isTextFile(filename: string) {
-  const textExts = [
-    'txt', 'md', 'json', 'xml', 'html', 'css', 'js', 'ts', 'vue', 
-    'py', 'java', 'cpp', 'c', 'h', 'rs', 'go', 'php', 'rb', 'sh',
-    'yml', 'yaml', 'ini', 'conf', 'log', 'sql', 'csv'
-  ]
   const ext = filename.split('.').pop()?.toLowerCase()
-  return textExts.includes(ext)
+  return ext ? TEXT_EXTS.has(ext) : false
 }
 
 // 打开文件预览
@@ -625,22 +631,16 @@ function showSftpContextMenu(event: MouseEvent, file: SftpFileEntry) {
 // 获取文件图标
 function getSftpFileIcon(file: SftpFileEntry) {
   if (file.is_dir) return FolderOutlined
-  
+
   const ext = file.name.split('.').pop()?.toLowerCase()
   if (!ext) return FileOutlined
-  
-  const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp']
-  const videoExts = ['mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv']
-  const audioExts = ['mp3', 'wav', 'flac', 'aac', 'ogg']
-  const textExts = ['txt', 'md', 'json', 'xml', 'html', 'css', 'js', 'ts', 'vue']
-  const archiveExts = ['zip', 'rar', '7z', 'tar', 'gz']
-  
-  if (imageExts.includes(ext)) return FileImageOutlined
-  if (videoExts.includes(ext)) return VideoCameraOutlined
-  if (audioExts.includes(ext)) return SoundOutlined
-  if (textExts.includes(ext)) return FileTextOutlined
-  if (archiveExts.includes(ext)) return FileZipOutlined
-  
+
+  if (IMAGE_EXTS.has(ext)) return FileImageOutlined
+  if (VIDEO_EXTS.has(ext)) return VideoCameraOutlined
+  if (AUDIO_EXTS.has(ext)) return SoundOutlined
+  if (TEXT_EXTS.has(ext)) return FileTextOutlined
+  if (ARCHIVE_EXTS.has(ext)) return FileZipOutlined
+
   return FileOutlined
 }
 

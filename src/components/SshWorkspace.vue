@@ -1,8 +1,8 @@
 <template>
-  <div class="ssh-workspace-shell" :class="{ 'has-monitor': embeddedMonitorVisible }">
+  <div class="ssh-workspace-shell" :class="{ 'has-monitor': showEmbeddedMonitor }">
     <RightPanel
       class="ssh-workspace__monitor"
-      :class="{ 'is-hidden': !embeddedMonitorVisible }"
+      :class="{ 'is-hidden': !showEmbeddedMonitor }"
       :collapsed="embeddedMonitorCollapsed"
       :connection-id="connectionId || ''"
       :ssh-profile="profile"
@@ -46,6 +46,7 @@
           :active="active"
           :sync-path="terminalPath"
           :density="workspaceDensity"
+          :font-family="config.fontFamily"
           :title="workspaceTitle"
           @open-file-preview="$emit('openFilePreview', $event)"
           @start-download="$emit('startDownload', $event)"
@@ -113,6 +114,7 @@ const isResizing = ref(false)
 const terminalPath = ref('')
 const splitterHeight = 8
 const terminalRatio = ref(0.4)
+const showEmbeddedMonitor = computed(() => props.embeddedMonitorVisible && !props.embeddedMonitorCollapsed)
 let resizeFrame = 0
 let resizeObserver: ResizeObserver | null = null
 const workspaceDensity = computed<WorkspaceDensity>(() => props.config.density || 'balanced')
@@ -268,11 +270,25 @@ onBeforeUnmount(() => {
   max-width: clamp(420px, 30%, 620px);
   min-width: 0;
   min-height: 0;
+  opacity: 1;
+  transform: translateX(0);
+  overflow: hidden;
+  will-change: width, max-width, opacity, transform;
+  transition:
+    flex-basis 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+    width 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+    max-width 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.2s ease,
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .ssh-workspace__monitor.is-hidden {
+  flex: 0 0 0;
   width: 0;
+  max-width: 0;
   min-width: 0;
+  opacity: 0;
+  transform: translateX(-14px);
   overflow: hidden;
   pointer-events: none;
 }

@@ -217,6 +217,30 @@ class SftpService {
     
     return languageMap[extension] || 'plaintext'
   }
+
+  async listDetailed(connectionId: string, path: string): Promise<import('../types/app').SftpDetailedEntry[]> {
+    return invoke<import('../types/app').SftpDetailedEntry[]>('sftp_list_detailed', { connectionId, path })
+  }
+
+  async stat(connectionId: string, path: string): Promise<import('../types/app').SftpDetailedEntry> {
+    return invoke<import('../types/app').SftpDetailedEntry>('sftp_stat', { connectionId, path })
+  }
+
+  async chmod(connectionId: string, path: string, mode: string): Promise<void> {
+    await invoke('sftp_chmod', { connectionId, path, mode })
+  }
+
+  async chown(connectionId: string, path: string, user: string, group: string): Promise<void> {
+    await invoke('sftp_chown', { connectionId, path, user, group })
+  }
+
+  async archive(connectionId: string, paths: string[], archiveFormat: string, outputPath: string): Promise<void> {
+    await invoke('sftp_archive', { connectionId, paths, archiveFormat, outputPath })
+  }
+
+  async diskUsage(connectionId: string, path: string): Promise<import('../types/app').SftpDiskUsageInfo> {
+    return invoke<import('../types/app').SftpDiskUsageInfo>('sftp_disk_usage', { connectionId, path })
+  }
 }
 
 // 导出单例

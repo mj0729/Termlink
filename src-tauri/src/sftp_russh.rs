@@ -25,6 +25,40 @@ pub struct SftpTextChunk {
     pub has_more: bool,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SftpDetailedEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub modified: Option<u64>,
+    pub permissions: String,
+    pub owner_user: Option<String>,
+    pub owner_group: Option<String>,
+    pub numeric_permissions: Option<String>,
+    pub is_symlink: bool,
+    pub symlink_target: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SftpDiskUsageInfo {
+    pub total: String,
+    pub used: String,
+    pub available: String,
+    pub mount_point: String,
+}
+
+#[derive(Debug)]
+struct ParsedStatRecord {
+    numeric_permissions: String,
+    owner_user: Option<String>,
+    owner_group: Option<String>,
+    is_symlink: bool,
+    symlink_target: Option<String>,
+}
+
 fn decode_utf16_bytes(bytes: &[u8], little_endian: bool) -> Result<String, String> {
     if !bytes.len().is_multiple_of(2) {
         return Err("UTF-16 文本长度不是偶数字节".to_string());
@@ -127,6 +161,159 @@ fn decode_utf8_chunk(bytes: &[u8]) -> Result<(String, usize), String> {
     }
 
     Err("UTF-8 分段解码失败".to_string())
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn validate_mode(mode: &str) -> Result<(), String> {
+    let valid =
+        (mode.len() == 3 || mode.len() == 4) && mode.chars().all(|c| matches!(c, '0'..='7'));
+
+    if valid {
+        Ok(())
+    } else {
+        Err("权限模式格式无效，仅支持 3-4 位八进制数字".to_string())
+    }
+}
+
+fn validate_owner_segment(value: &str, field_name: &str) -> Result<(), String> {
+    if value.is_empty() {
+        return Err(format!("{}不能为空", field_name));
+    }
+
+    if value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+    {
+        Ok(())
+    } else {
+        Err(format!(
+            "{}格式无效，仅支持字母、数字、点、下划线和横线",
+            field_name
+        ))
+    }
+}
+
+async fn run_remote_command(
+    connection_id: &str,
+    action: &str,
+    command: String,
+) -> Result<String, String> {
+    connection_manager::execute_command(connection_id.to_string(), command)
+        .await
+        .map_err(|e| format!("{}失败: {}", action, e))
+}
+
+fn parse_symlink_target(raw_name: &str) -> Option<String> {
+    raw_name
+        .split_once(" -> ")
+        .map(|(_, target)| target.trim().trim_matches('\'').to_string())
+        .filter(|target| !target.is_empty())
+}
+
+fn parse_stat_record(line: &str) -> Result<ParsedStatRecord, String> {
+    let parts = line.trim().split('\u{1f}').collect::<Vec<_>>();
+    if parts.len() != 5 {
+        return Err(format!("解析 stat 输出失败: {}", line));
+    }
+
+    let numeric_permissions = parts[0].trim();
+    if !((numeric_permissions.len() == 3 || numeric_permissions.len() == 4)
+        && numeric_permissions.chars().all(|c| matches!(c, '0'..='7')))
+    {
+        return Err(format!("解析权限信息失败: {}", line));
+    }
+
+    let normalized_permissions = if numeric_permissions.len() == 3 {
+        format!("0{}", numeric_permissions)
+    } else {
+        numeric_permissions.to_string()
+    };
+
+    let file_type = parts[3].trim();
+    let raw_name = parts[4].trim();
+
+    Ok(ParsedStatRecord {
+        numeric_permissions: normalized_permissions,
+        owner_user: Some(parts[1].trim().to_string()).filter(|v| !v.is_empty()),
+        owner_group: Some(parts[2].trim().to_string()).filter(|v| !v.is_empty()),
+        is_symlink: file_type == "symbolic link" || raw_name.contains(" -> "),
+        symlink_target: parse_symlink_target(raw_name),
+    })
+}
+
+fn permissions_from_octal(octal: &str) -> String {
+    let digits = octal.trim();
+    let digits = if digits.len() >= 3 {
+        &digits[digits.len() - 3..]
+    } else {
+        "000"
+    };
+
+    digits
+        .chars()
+        .flat_map(|digit| {
+            let value = digit.to_digit(8).unwrap_or(0);
+            [
+                if value & 4 != 0 { 'r' } else { '-' },
+                if value & 2 != 0 { 'w' } else { '-' },
+                if value & 1 != 0 { 'x' } else { '-' },
+            ]
+        })
+        .collect()
+}
+
+fn common_remote_parent(paths: &[String]) -> Result<String, String> {
+    let first = paths
+        .first()
+        .ok_or_else(|| "创建压缩包失败: 未提供源路径".to_string())?;
+
+    let mut common = split_remote_path(first)
+        .0
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>();
+
+    for path in paths.iter().skip(1) {
+        let current = split_remote_path(path)
+            .0
+            .split('/')
+            .filter(|segment| !segment.is_empty())
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+
+        let mut shared_len = 0usize;
+        while shared_len < common.len()
+            && shared_len < current.len()
+            && common[shared_len] == current[shared_len]
+        {
+            shared_len += 1;
+        }
+        common.truncate(shared_len);
+    }
+
+    if common.is_empty() {
+        Ok("/".to_string())
+    } else {
+        Ok(format!("/{}", common.join("/")))
+    }
+}
+
+fn relative_remote_path(parent: &str, path: &str) -> Result<String, String> {
+    if parent == "/" {
+        return path
+            .strip_prefix('/')
+            .map(|value| value.to_string())
+            .ok_or_else(|| format!("计算相对路径失败: {}", path));
+    }
+
+    let prefix = format!("{}/", parent.trim_end_matches('/'));
+    path.strip_prefix(&prefix)
+        .map(|value| value.to_string())
+        .ok_or_else(|| format!("计算相对路径失败: {}", path))
 }
 
 fn decode_utf16_chunk(bytes: &[u8], little_endian: bool) -> Result<(String, usize), String> {
@@ -615,6 +802,299 @@ pub async fn resolve_sftp_target_path(
 ) -> Result<String, String> {
     let session = get_sftp_session(&connection_id).await?;
     resolve_remote_target_path(&session, &path).await
+}
+
+#[tauri::command]
+pub async fn sftp_list_detailed(
+    connection_id: String,
+    path: String,
+) -> Result<Vec<SftpDetailedEntry>, String> {
+    let session = get_sftp_session(&connection_id).await?;
+    let entries = session
+        .read_dir(&path)
+        .await
+        .map_err(|e| format!("列出目录失败: {}", e))?;
+
+    let mut base_entries = Vec::new();
+    for entry in entries {
+        let metadata = entry.metadata();
+        let name = entry.file_name().to_string();
+        let full_path = join_remote_path(&path, &name);
+
+        base_entries.push((
+            name,
+            full_path,
+            entry.file_type().is_dir(),
+            metadata.len(),
+            metadata
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs()),
+        ));
+    }
+
+    let mut detailed_entries = Vec::with_capacity(base_entries.len());
+
+    for chunk in base_entries.chunks(64) {
+        let quoted_paths = chunk
+            .iter()
+            .map(|(_, full_path, _, _, _)| shell_quote(full_path))
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        let command = format!(
+            "LC_ALL=C stat -c '%a\\x1f%U\\x1f%G\\x1f%F\\x1f%N' -- {}",
+            quoted_paths
+        );
+
+        let stat_output =
+            run_remote_command(&connection_id, "读取目录详细信息", command).await;
+
+        match stat_output {
+            Ok(output) => {
+                let records = output
+                    .lines()
+                    .filter(|line| !line.trim().is_empty())
+                    .map(parse_stat_record)
+                    .collect::<Result<Vec<_>, _>>();
+
+                match records {
+                    Ok(records) if records.len() == chunk.len() => {
+                        for ((name, full_path, is_dir, size, modified), record) in
+                            chunk.iter().zip(records.into_iter())
+                        {
+                            detailed_entries.push(SftpDetailedEntry {
+                                name: name.clone(),
+                                path: full_path.clone(),
+                                is_dir: *is_dir,
+                                size: *size,
+                                modified: *modified,
+                                permissions: permissions_from_octal(
+                                    &record.numeric_permissions,
+                                ),
+                                owner_user: record.owner_user,
+                                owner_group: record.owner_group,
+                                numeric_permissions: Some(record.numeric_permissions),
+                                is_symlink: record.is_symlink,
+                                symlink_target: record.symlink_target,
+                            });
+                        }
+                    }
+                    _ => {
+                        for (name, full_path, is_dir, size, modified) in chunk {
+                            detailed_entries.push(SftpDetailedEntry {
+                                name: name.clone(),
+                                path: full_path.clone(),
+                                is_dir: *is_dir,
+                                size: *size,
+                                modified: *modified,
+                                permissions: String::new(),
+                                owner_user: None,
+                                owner_group: None,
+                                numeric_permissions: None,
+                                is_symlink: false,
+                                symlink_target: None,
+                            });
+                        }
+                    }
+                }
+            }
+            Err(_) => {
+                for (name, full_path, is_dir, size, modified) in chunk {
+                    detailed_entries.push(SftpDetailedEntry {
+                        name: name.clone(),
+                        path: full_path.clone(),
+                        is_dir: *is_dir,
+                        size: *size,
+                        modified: *modified,
+                        permissions: String::new(),
+                        owner_user: None,
+                        owner_group: None,
+                        numeric_permissions: None,
+                        is_symlink: false,
+                        symlink_target: None,
+                    });
+                }
+            }
+        }
+    }
+
+    detailed_entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.name.cmp(&b.name),
+    });
+
+    Ok(detailed_entries)
+}
+
+#[tauri::command]
+pub async fn sftp_stat(
+    connection_id: String,
+    path: String,
+) -> Result<SftpDetailedEntry, String> {
+    let session = get_sftp_session(&connection_id).await?;
+    let metadata = session
+        .metadata(&path)
+        .await
+        .map_err(|e| format!("获取文件元数据失败: {}", e))?;
+
+    let output = run_remote_command(
+        &connection_id,
+        "获取文件详情",
+        format!(
+            "LC_ALL=C stat -c '%a\\x1f%U\\x1f%G\\x1f%F\\x1f%N' -- {}",
+            shell_quote(&path)
+        ),
+    )
+    .await?;
+
+    let record = output
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .ok_or_else(|| "获取文件详情失败: stat 输出为空".to_string())
+        .and_then(parse_stat_record)?;
+
+    Ok(SftpDetailedEntry {
+        name: path.split('/').last().unwrap_or(&path).to_string(),
+        path,
+        is_dir: metadata.is_dir(),
+        size: metadata.len(),
+        modified: metadata
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs()),
+        permissions: permissions_from_octal(&record.numeric_permissions),
+        owner_user: record.owner_user,
+        owner_group: record.owner_group,
+        numeric_permissions: Some(record.numeric_permissions),
+        is_symlink: record.is_symlink,
+        symlink_target: record.symlink_target,
+    })
+}
+
+#[tauri::command]
+pub async fn sftp_chmod(
+    connection_id: String,
+    path: String,
+    mode: String,
+) -> Result<(), String> {
+    validate_mode(&mode)?;
+    run_remote_command(
+        &connection_id,
+        "修改权限",
+        format!("chmod {} -- {}", mode, shell_quote(&path)),
+    )
+    .await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn sftp_chown(
+    connection_id: String,
+    path: String,
+    user: String,
+    group: String,
+) -> Result<(), String> {
+    validate_owner_segment(&user, "用户")?;
+    validate_owner_segment(&group, "用户组")?;
+    run_remote_command(
+        &connection_id,
+        "修改所有者",
+        format!("chown {}:{} -- {}", user, group, shell_quote(&path)),
+    )
+    .await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn sftp_archive(
+    connection_id: String,
+    paths: Vec<String>,
+    archive_format: String,
+    output_path: String,
+) -> Result<(), String> {
+    if paths.is_empty() {
+        return Err("创建压缩包失败: 未提供源路径".to_string());
+    }
+
+    let parent = common_remote_parent(&paths)?;
+    let work_dir = if parent.is_empty() { "." } else { &parent };
+    let relative_paths = paths
+        .iter()
+        .map(|path| relative_remote_path(&parent, path))
+        .collect::<Result<Vec<_>, _>>()?;
+    let quoted_entries = relative_paths
+        .iter()
+        .map(|path| shell_quote(path))
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let command = match archive_format.as_str() {
+        "tar.gz" => format!(
+            "cd {} && tar czf {} -- {}",
+            shell_quote(work_dir),
+            shell_quote(&output_path),
+            quoted_entries
+        ),
+        "zip" => format!(
+            "command -v zip >/dev/null 2>&1 || {{ echo 'zip 未安装' >&2; exit 127; }}; cd {} && zip -r {} {}",
+            shell_quote(work_dir),
+            shell_quote(&output_path),
+            quoted_entries
+        ),
+        _ => return Err("创建压缩包失败: 仅支持 tar.gz 和 zip 格式".to_string()),
+    };
+
+    run_remote_command(&connection_id, "创建压缩包", command).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn sftp_disk_usage(
+    connection_id: String,
+    path: String,
+) -> Result<SftpDiskUsageInfo, String> {
+    let quoted_path = shell_quote(&path);
+    let primary = format!(
+        "LC_ALL=C df -h --output=size,used,avail,target -- {} 2>/dev/null | tail -n 1",
+        quoted_path
+    );
+
+    let output = match run_remote_command(&connection_id, "获取磁盘用量", primary).await {
+        Ok(value) if !value.trim().is_empty() => value,
+        _ => {
+            run_remote_command(
+                &connection_id,
+                "获取磁盘用量",
+                format!("LC_ALL=C df -h -- {} | tail -n 1", quoted_path),
+            )
+            .await?
+        }
+    };
+
+    let parts = output.split_whitespace().collect::<Vec<_>>();
+    if parts.len() >= 4 && parts.len() < 6 {
+        return Ok(SftpDiskUsageInfo {
+            total: parts[0].to_string(),
+            used: parts[1].to_string(),
+            available: parts[2].to_string(),
+            mount_point: parts[3..].join(" "),
+        });
+    }
+
+    if parts.len() >= 6 {
+        return Ok(SftpDiskUsageInfo {
+            total: parts[1].to_string(),
+            used: parts[2].to_string(),
+            available: parts[3].to_string(),
+            mount_point: parts[5..].join(" "),
+        });
+    }
+
+    Err(format!("解析磁盘用量失败: {}", output))
 }
 
 #[tauri::command]

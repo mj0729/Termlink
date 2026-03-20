@@ -1,6 +1,6 @@
 use crate::ssh_auth::{self, Client, SshAuthRequest};
 use once_cell::sync::Lazy;
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 use russh::{client, Channel, ChannelMsg, Disconnect};
 use russh_sftp::client::SftpSession;
 use serde::Serialize;
@@ -83,8 +83,8 @@ enum LoopEvent {
     CommandChannelClosed,
 }
 
-static CONNECTION_MANAGERS: Lazy<Mutex<HashMap<String, mpsc::UnboundedSender<ConnectionCmd>>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+static CONNECTION_MANAGERS: Lazy<RwLock<HashMap<String, mpsc::UnboundedSender<ConnectionCmd>>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
 
 pub async fn start_connection(
     window: Window,
@@ -95,7 +95,7 @@ pub async fn start_connection(
     let connection_id = auth.connection_id.clone();
 
     {
-        let managers = CONNECTION_MANAGERS.lock();
+        let managers = CONNECTION_MANAGERS.read();
         if managers.contains_key(&connection_id) {
             return Err(format!("SSH连接已存在: {}", connection_id));
         }
@@ -106,7 +106,7 @@ pub async fn start_connection(
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
 
     CONNECTION_MANAGERS
-        .lock()
+        .write()
         .insert(connection_id.clone(), cmd_tx.clone());
 
     let manager = ConnectionManager {
@@ -198,7 +198,7 @@ pub async fn disconnect_connection(connection_id: String) -> Result<(), String> 
 
 fn manager_sender(connection_id: &str) -> Result<mpsc::UnboundedSender<ConnectionCmd>, String> {
     CONNECTION_MANAGERS
-        .lock()
+        .read()
         .get(connection_id)
         .cloned()
         .ok_or_else(|| format!("SSH连接不存在: {}", connection_id))
@@ -331,11 +331,12 @@ impl ConnectionManager {
     async fn handle_terminal_message(&mut self, msg: ChannelMsg) -> bool {
         match msg {
             ChannelMsg::Data { data } => {
-                let output = String::from_utf8_lossy(&data).to_string();
-                let chunk = self.record_terminal_output(output);
+                let output = String::from_utf8_lossy(&data).into_owned();
+                let chunk = self.make_terminal_chunk(output);
                 let _ = self
                     .window
-                    .emit(&format!("ssh_data://{}", self.connection_id), chunk);
+                    .emit(&format!("ssh_data://{}", self.connection_id), &chunk);
+                self.store_terminal_chunk(chunk);
             }
             ChannelMsg::Eof | ChannelMsg::Close | ChannelMsg::ExitStatus { .. } => {
                 self.terminal_channel = None;
@@ -409,16 +410,17 @@ impl ConnectionManager {
         Ok(())
     }
 
-    fn record_terminal_output(&mut self, output: String) -> TerminalChunk {
+    fn make_terminal_chunk(&mut self, output: String) -> TerminalChunk {
         self.terminal_output_seq += 1;
-
-        let chunk = TerminalChunk {
+        TerminalChunk {
             seq: self.terminal_output_seq,
             data: output,
-        };
+        }
+    }
 
+    fn store_terminal_chunk(&mut self, chunk: TerminalChunk) {
         self.terminal_buffer_bytes += chunk.data.len();
-        self.terminal_buffer.push_back(chunk.clone());
+        self.terminal_buffer.push_back(chunk);
 
         while self.terminal_buffer_bytes > TERMINAL_BUFFER_LIMIT_BYTES {
             if let Some(removed) = self.terminal_buffer.pop_front() {
@@ -429,8 +431,6 @@ impl ConnectionManager {
                 break;
             }
         }
-
-        chunk
     }
 
     fn build_terminal_snapshot(&self, from_seq: u64) -> TerminalSnapshot {
@@ -450,7 +450,7 @@ impl ConnectionManager {
     }
 
     async fn cleanup(&mut self) {
-        CONNECTION_MANAGERS.lock().remove(&self.connection_id);
+        CONNECTION_MANAGERS.write().remove(&self.connection_id);
         let _ = self
             .window
             .emit(&format!("ssh_exit://{}", self.connection_id), "");
@@ -471,25 +471,37 @@ async fn execute_session_command(
         .await
         .map_err(|e| format!("执行命令失败: {}", e))?;
 
-    let mut output = String::new();
+    let mut stdout = String::new();
+    let mut stderr = String::new();
     let mut code = None;
 
     while let Some(msg) = channel.wait().await {
         match msg {
             ChannelMsg::Data { data } => {
-                output.push_str(&String::from_utf8_lossy(&data));
+                stdout.push_str(&String::from_utf8_lossy(&data));
+            }
+            ChannelMsg::ExtendedData { data, .. } => {
+                stderr.push_str(&String::from_utf8_lossy(&data));
             }
             ChannelMsg::ExitStatus { exit_status } => {
                 code = Some(exit_status);
             }
-            ChannelMsg::Eof => break,
+            ChannelMsg::Eof | ChannelMsg::Close => break,
             _ => {}
         }
     }
 
     if code == Some(0) || code.is_none() {
-        Ok(output.trim().to_string())
+        Ok(stdout.trim().to_string())
     } else {
-        Err(format!("命令执行失败，退出码: {:?}", code))
+        let stderr = stderr.trim();
+        let stdout = stdout.trim();
+        Err(if !stderr.is_empty() {
+            stderr.to_string()
+        } else if !stdout.is_empty() {
+            stdout.to_string()
+        } else {
+            format!("命令执行失败，退出码: {:?}", code)
+        })
     }
 }

@@ -7,25 +7,25 @@
         <span class="file-size">{{ formatFileSize(fileInfo.size) }}</span>
       </div>
       <div class="editor-actions">
-        <a-button 
-          v-if="hasUnsavedChanges" 
-          type="primary" 
-          size="small" 
+        <a-button
+          v-if="hasUnsavedChanges"
+          type="primary"
+          size="small"
           @click="saveFile"
           :loading="saving"
         >
           保存
         </a-button>
-        <a-button 
-          v-if="hasUnsavedChanges" 
-          size="small" 
+        <a-button
+          v-if="hasUnsavedChanges"
+          size="small"
           @click="discardChanges"
         >
           撤销更改
         </a-button>
-        <a-button 
-          size="small" 
-          @click="downloadFile" 
+        <a-button
+          size="small"
+          @click="downloadFile"
           :loading="downloading"
         >
           下载
@@ -40,7 +40,7 @@
         />
       </div>
     </div>
-    
+
     <div class="editor-content" ref="editorContainer">
       <div class="editor-surface">
         <div v-if="chunkedLoadingActive" class="large-file-toolbar">
@@ -58,7 +58,7 @@
             {{ hasMoreChunks ? '继续加载 2 MB' : '已加载完成' }}
           </a-button>
         </div>
-        <div v-if="searchVisible" class="search-toolbar">
+        <div v-if="chunkedLoadingActive && searchVisible" class="search-toolbar">
           <a-input
             ref="searchInputRef"
             :value="searchQuery"
@@ -81,14 +81,23 @@
             关闭
           </a-button>
         </div>
+
+        <div
+          v-show="!chunkedLoadingActive"
+          ref="monacoContainer"
+          class="monaco-host"
+          :class="{ 'monaco-host--search-offset': searchVisible }"
+        ></div>
+
         <textarea
+          v-show="chunkedLoadingActive"
           ref="textareaRef"
           :value="fileContent"
           class="file-textarea"
           :class="{
             'is-readonly': readOnly,
             'has-large-file-toolbar': chunkedLoadingActive,
-            'has-search-toolbar': searchVisible
+            'has-search-toolbar': chunkedLoadingActive && searchVisible
           }"
           :readonly="readOnly"
           :spellcheck="false"
@@ -109,8 +118,23 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
+import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'
+import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker'
+import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker'
+import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker'
+import type { editor } from 'monaco-editor'
 import type { PropType } from 'vue'
+import SftpService from '../services/SftpService'
 import type { DownloadRequest, SftpFileEntry, ThemeName } from '../types/app'
+
+type MonacoApi = typeof import('monaco-editor')
+type MonacoEditorInstance = editor.IStandaloneCodeEditor
+type MonacoModel = editor.ITextModel
+type MonacoDisposable = { dispose: () => void }
+type MonacoEnvironmentShape = {
+  getWorker?: (workerId: string, label: string) => Worker
+}
 
 const props = defineProps({
   fileInfo: {
@@ -134,6 +158,7 @@ const props = defineProps({
 const emit = defineEmits(['startDownload'])
 
 const LARGE_FILE_CHUNK_BYTES = 2 * 1024 * 1024
+const LARGE_FILE_READONLY_BYTES = 256 * 1024
 
 interface SftpTextChunk {
   content: string
@@ -142,8 +167,203 @@ interface SftpTextChunk {
   hasMore: boolean
 }
 
+const languageContributionLoaders: Record<string, () => Promise<unknown>> = {
+  bat: () => import('monaco-editor/esm/vs/basic-languages/bat/bat.contribution'),
+  c: () => import('monaco-editor/esm/vs/basic-languages/cpp/cpp.contribution'),
+  cpp: () => import('monaco-editor/esm/vs/basic-languages/cpp/cpp.contribution'),
+  csharp: () => import('monaco-editor/esm/vs/basic-languages/csharp/csharp.contribution'),
+  css: () => import('monaco-editor/esm/vs/language/css/monaco.contribution'),
+  go: () => import('monaco-editor/esm/vs/basic-languages/go/go.contribution'),
+  html: () => import('monaco-editor/esm/vs/language/html/monaco.contribution'),
+  ini: () => import('monaco-editor/esm/vs/basic-languages/ini/ini.contribution'),
+  java: () => import('monaco-editor/esm/vs/basic-languages/java/java.contribution'),
+  javascript: () => import('monaco-editor/esm/vs/basic-languages/javascript/javascript.contribution'),
+  json: () => import('monaco-editor/esm/vs/language/json/monaco.contribution'),
+  less: () => import('monaco-editor/esm/vs/basic-languages/less/less.contribution'),
+  markdown: () => import('monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution'),
+  php: () => import('monaco-editor/esm/vs/basic-languages/php/php.contribution'),
+  powershell: () => import('monaco-editor/esm/vs/basic-languages/powershell/powershell.contribution'),
+  python: () => import('monaco-editor/esm/vs/basic-languages/python/python.contribution'),
+  ruby: () => import('monaco-editor/esm/vs/basic-languages/ruby/ruby.contribution'),
+  rust: () => import('monaco-editor/esm/vs/basic-languages/rust/rust.contribution'),
+  shell: () => import('monaco-editor/esm/vs/basic-languages/shell/shell.contribution'),
+  sql: () => import('monaco-editor/esm/vs/basic-languages/sql/sql.contribution'),
+  typescript: () => import('monaco-editor/esm/vs/language/typescript/monaco.contribution'),
+  xml: () => import('monaco-editor/esm/vs/basic-languages/xml/xml.contribution'),
+  yaml: () => import('monaco-editor/esm/vs/basic-languages/yaml/yaml.contribution'),
+}
+
+const loadedLanguages = new Set<string>()
+
+let monacoPromise: Promise<MonacoApi> | null = null
+let monacoEditorInstance: MonacoEditorInstance | null = null
+let monacoModel: MonacoModel | null = null
+let monacoDisposables: MonacoDisposable[] = []
+let monacoResizeObserver: ResizeObserver | null = null
+
+function ensureMonacoEnvironment() {
+  const globalScope = globalThis as typeof globalThis & { MonacoEnvironment?: MonacoEnvironmentShape }
+  if (globalScope.MonacoEnvironment?.getWorker) return
+
+  globalScope.MonacoEnvironment = {
+    getWorker(_: string, label: string) {
+      if (label === 'json') {
+        return new jsonWorker()
+      }
+      if (label === 'css' || label === 'scss' || label === 'less') {
+        return new cssWorker()
+      }
+      if (label === 'html' || label === 'handlebars' || label === 'razor') {
+        return new htmlWorker()
+      }
+      if (label === 'typescript' || label === 'javascript') {
+        return new tsWorker()
+      }
+      return new editorWorker()
+    }
+  }
+}
+
+async function loadMonaco() {
+  if (!monacoPromise) {
+    ensureMonacoEnvironment()
+    monacoPromise = import('monaco-editor')
+  }
+
+  return monacoPromise
+}
+
+async function ensureLanguageContribution(language: string) {
+  const normalized = languageContributionLoaders[language] ? language : 'plaintext'
+  if (loadedLanguages.has(normalized)) return
+
+  const loader = languageContributionLoaders[normalized]
+  if (!loader) return
+
+  await loader()
+  loadedLanguages.add(normalized)
+}
+
+function getEditorLanguage(filename: string) {
+  const extension = filename.split('.').pop()?.toLowerCase() ?? ''
+  return SftpService.getLanguageByExtension(extension)
+}
+
+function getEditorUri(monaco: MonacoApi) {
+  return monaco.Uri.from({
+    scheme: 'file',
+    path: props.fileInfo.path
+  })
+}
+
+function getMonacoThemeName() {
+  return props.theme === 'dark' ? 'vs-dark' : 'vs'
+}
+
+function updateDirtyState(nextValue: string) {
+  fileContent.value = nextValue
+  hasUnsavedChanges.value = !readOnly.value && nextValue !== originalContent.value
+}
+
+function syncMonacoValue(nextValue: string) {
+  if (!monacoEditorInstance || !monacoModel) return
+  if (monacoModel.getValue() === nextValue) return
+
+  const selection = monacoEditorInstance.getSelection()
+  monacoModel.setValue(nextValue)
+  if (selection) {
+    monacoEditorInstance.setSelection(selection)
+  }
+}
+
+function disposeMonacoEditor() {
+  monacoDisposables.forEach((disposable) => disposable.dispose())
+  monacoDisposables = []
+  monacoResizeObserver?.disconnect()
+  monacoResizeObserver = null
+  monacoEditorInstance?.dispose()
+  monacoEditorInstance = null
+  monacoModel?.dispose()
+  monacoModel = null
+}
+
+async function initMonacoEditor() {
+  if (chunkedLoadingActive.value || !monacoContainer.value) return
+
+  const monaco = await loadMonaco()
+  const language = getEditorLanguage(props.fileInfo.name)
+  await ensureLanguageContribution(language)
+
+  const uri = getEditorUri(monaco)
+  monacoModel?.dispose()
+  monacoModel = monaco.editor.createModel(fileContent.value, language, uri)
+
+  monacoEditorInstance?.dispose()
+  monacoEditorInstance = monaco.editor.create(monacoContainer.value, {
+    automaticLayout: false,
+    fontFamily: '"JetBrains Mono", "SFMono-Regular", Consolas, monospace',
+    fontLigatures: false,
+    fontSize: 12,
+    glyphMargin: false,
+    lineDecorationsWidth: 10,
+    lineNumbers: 'on',
+    minimap: { enabled: false },
+    model: monacoModel,
+    padding: { top: 14, bottom: 20 },
+    readOnly: readOnly.value,
+    renderLineHighlight: 'line',
+    roundedSelection: false,
+    scrollBeyondLastLine: false,
+    smoothScrolling: true,
+    tabSize: 2,
+    theme: getMonacoThemeName(),
+    wordWrap: 'off'
+  })
+
+  monacoDisposables = [
+    monacoEditorInstance.onDidChangeModelContent(() => {
+      const nextValue = monacoModel?.getValue() ?? ''
+      updateDirtyState(nextValue)
+    })
+  ]
+
+  monacoResizeObserver?.disconnect()
+  monacoResizeObserver = new ResizeObserver(() => {
+    monacoEditorInstance?.layout()
+  })
+  monacoResizeObserver.observe(monacoContainer.value)
+
+  await nextTick()
+  monacoEditorInstance.layout()
+}
+
+async function refreshMonacoEditor() {
+  if (chunkedLoadingActive.value) {
+    disposeMonacoEditor()
+    return
+  }
+
+  if (!monacoEditorInstance || !monacoModel) {
+    await initMonacoEditor()
+    return
+  }
+
+  const monaco = await loadMonaco()
+  const language = getEditorLanguage(props.fileInfo.name)
+  await ensureLanguageContribution(language)
+
+  monaco.editor.setTheme(getMonacoThemeName())
+  monaco.editor.setModelLanguage(monacoModel, language)
+  monacoEditorInstance.updateOptions({
+    readOnly: readOnly.value
+  })
+  syncMonacoValue(fileContent.value)
+  monacoEditorInstance.layout()
+}
+
 // 状态管理
 const editorContainer = ref<HTMLDivElement | null>(null)
+const monacoContainer = ref<HTMLDivElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const searchInputRef = ref()
 const fileContent = ref('')
@@ -165,9 +385,8 @@ const searchMatchCount = ref(0)
 
 function isReadOnlyByDefault(filename: string, size?: number) {
   const ext = filename.split('.').pop()?.toLowerCase()
-  const largeFileThreshold = 256 * 1024
   const readOnlyExtensions = new Set(['log', 'txt', 'out', 'trace'])
-  return readOnlyExtensions.has(ext || '') || (size || 0) >= largeFileThreshold
+  return readOnlyExtensions.has(ext || '') || (size || 0) >= LARGE_FILE_READONLY_BYTES
 }
 
 function isImmersiveFile(filename: string) {
@@ -181,7 +400,7 @@ const shouldUseChunkedLoading = computed(() => (
 ))
 const searchSummary = computed(() => {
   if (!searchQuery.value) {
-    return chunkedLoadingActive.value ? '搜索仅针对已加载内容' : '输入关键字后回车搜索'
+    return chunkedLoadingActive.value ? '搜索仅针对已加载内容' : 'Monaco 自带搜索'
   }
 
   if (!searchMatchCount.value) {
@@ -204,8 +423,7 @@ function handleContentInput() {
     return
   }
 
-  fileContent.value = nextValue
-  hasUnsavedChanges.value = true
+  updateDirtyState(nextValue)
 }
 
 function resetLoadState() {
@@ -352,6 +570,8 @@ function runSearch(forward = true) {
 }
 
 function openSearch() {
+  if (!chunkedLoadingActive.value) return
+
   searchVisible.value = true
   const textarea = textareaRef.value
   const selectedText = textarea
@@ -400,7 +620,7 @@ function handleGlobalKeydown(event: KeyboardEvent) {
   if (!props.active) return
 
   const isFindShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f'
-  if (isFindShortcut) {
+  if (isFindShortcut && chunkedLoadingActive.value) {
     event.preventDefault()
     openSearch()
     return
@@ -436,6 +656,7 @@ async function appendChunk(offset: number, replaceContent = false) {
   hasMoreChunks.value = chunk.hasMore
   chunkedLoadingActive.value = true
   resetEditorMode()
+  disposeMonacoEditor()
 
   requestAnimationFrame(() => {
     if (textareaRef.value && wasNearBottom) {
@@ -447,20 +668,22 @@ async function appendChunk(offset: number, replaceContent = false) {
 // 加载文件内容
 async function loadFileContent() {
   if (!props.active || !props.connectionId) return
-  
+
   loading.value = true
   try {
     resetLoadState()
     if (shouldUseChunkedLoading.value) {
       await appendChunk(0, true)
     } else {
-      const content = await invoke<string>('read_sftp_file', { 
+      const content = await invoke<string>('read_sftp_file', {
         connectionId: props.connectionId,
-        path: props.fileInfo.path 
+        path: props.fileInfo.path
       })
       fileContent.value = content
       originalContent.value = content
       resetEditorMode()
+      await nextTick()
+      await refreshMonacoEditor()
     }
   } catch (error) {
     console.error('加载文件失败:', error)
@@ -492,18 +715,18 @@ async function loadMore() {
 // 保存文件
 async function saveFile() {
   if (!props.connectionId || readOnly.value || chunkedLoadingActive.value) return
-  
+
   saving.value = true
   try {
-    const content = fileContent.value
+    const content = monacoModel?.getValue() ?? fileContent.value
     await invoke('write_sftp_file', {
       connectionId: props.connectionId,
       path: props.fileInfo.path,
-      content: content
+      content
     })
-    
+
     originalContent.value = content
-    hasUnsavedChanges.value = false
+    updateDirtyState(content)
     message.success('文件保存成功')
   } catch (error) {
     console.error('保存文件失败:', error)
@@ -525,6 +748,7 @@ async function saveFile() {
 function discardChanges() {
   fileContent.value = originalContent.value
   hasUnsavedChanges.value = false
+  syncMonacoValue(originalContent.value)
   message.info('已撤销所有更改')
 }
 
@@ -534,27 +758,25 @@ async function downloadFile() {
     message.error('无法获取连接信息')
     return
   }
-  
+
   downloading.value = true
   try {
-    // 选择下载位置
     const savePath = await invoke<string | null>('select_download_location', {
       fileName: props.fileInfo.name
     })
-    
+
     if (!savePath) {
       downloading.value = false
-      return // 用户取消了选择
+      return
     }
-    
-    // 通过事件通知父组件开始下载
+
     emit('startDownload', {
       fileName: props.fileInfo.name,
       remotePath: props.fileInfo.path,
-      savePath: savePath,
+      savePath,
       connectionId: props.connectionId
     } satisfies DownloadRequest)
-    
+
     message.info(`正在下载到: ${savePath}`)
   } catch (error) {
     console.error('下载文件失败:', error)
@@ -572,30 +794,46 @@ function formatFileSize(bytes?: number) {
   return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i]
 }
 
-// 监听只读模式切换
-watch(() => readOnly.value, (newValue) => {
+watch(() => readOnly.value, async (newValue) => {
   if (newValue) {
     hasUnsavedChanges.value = false
+  } else {
+    hasUnsavedChanges.value = fileContent.value !== originalContent.value
+  }
+
+  if (!chunkedLoadingActive.value) {
+    await refreshMonacoEditor()
   }
 })
 
-// 监听active状态变化
 watch(() => props.active, async (newActive) => {
-  if (newActive && !originalContent.value) {
+  if (!newActive) return
+
+  if (!originalContent.value) {
+    await loadFileContent()
+    return
+  }
+
+  await nextTick()
+  await refreshMonacoEditor()
+})
+
+watch(() => props.fileInfo.path, async () => {
+  resetLoadState()
+  resetEditorMode()
+  closeSearch()
+  disposeMonacoEditor()
+  if (props.active) {
     await loadFileContent()
   }
 })
 
-watch(() => props.fileInfo.path, () => {
-  resetLoadState()
-  resetEditorMode()
-  closeSearch()
-  if (props.active) {
-    void loadFileContent()
+watch(() => props.theme, async () => {
+  if (!chunkedLoadingActive.value) {
+    await refreshMonacoEditor()
   }
 })
 
-// 组件挂载时加载文件
 onMounted(async () => {
   window.addEventListener('keydown', handleGlobalKeydown)
   resetEditorMode()
@@ -606,6 +844,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleGlobalKeydown)
+  disposeMonacoEditor()
 })
 </script>
 
@@ -665,7 +904,7 @@ onBeforeUnmount(() => {
   position: absolute;
   top: 10px;
   right: 10px;
-  z-index: 2;
+  z-index: 3;
   padding: 0;
   border-bottom: none;
   background: transparent;
@@ -705,7 +944,7 @@ onBeforeUnmount(() => {
   position: absolute;
   right: 12px;
   bottom: 12px;
-  z-index: 2;
+  z-index: 3;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -722,7 +961,7 @@ onBeforeUnmount(() => {
   position: absolute;
   top: 12px;
   left: 12px;
-  z-index: 2;
+  z-index: 3;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -751,6 +990,18 @@ onBeforeUnmount(() => {
   font-size: 11px;
   color: var(--muted-color);
   white-space: nowrap;
+}
+
+.monaco-host {
+  width: 100%;
+  height: 100%;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 28%),
+    transparent;
+}
+
+.file-editor--immersive .monaco-host {
+  padding-top: 0;
 }
 
 .file-textarea {
@@ -790,7 +1041,7 @@ onBeforeUnmount(() => {
 .editor-loading-overlay {
   position: absolute;
   inset: 0;
-  z-index: 3;
+  z-index: 4;
   display: flex;
   align-items: center;
   justify-content: center;

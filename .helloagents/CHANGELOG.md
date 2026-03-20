@@ -1,5 +1,25 @@
 # 变更记录
 
+## [0.0.22] - 2026-03-20
+
+### 快速修改
+
+- **[workspace-ui]**: 将嵌入式监控里的磁盘容量卡片改为按“使用百分比从高到低”排序，占用更高、更值得优先关注的挂载点会排在最前面；若占用率相同，再按剩余可用空间从小到大排序 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/RightPanel.vue:549-558
+
+- **[workspace-ui]**: 将终端显示区统一收口为更符合终端习惯的黑底白字；即使应用处于浅色模式，`Terminal.vue` 也会继续使用深色终端配色，并把终端外层底色固定为深色，避免 SSH 终端出现整块白底观感 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/Terminal.vue:72-119, src/components/Terminal.vue:771-786
+
+## [0.0.21] - 2026-03-20
+
+### 变更
+
+- **[app-shell]**: 将前端构建链升级到 `Vite 8.0.1`，同步把 `@vitejs/plugin-vue` 升到 `6.0.5`，并在现有 `manualChunks` 配置下完成 `pnpm run build` 与 `cargo check --manifest-path src-tauri/Cargo.toml` 双验证；当前残留风险是 `@tailwindcss/vite@4.2.1` 仍仅声明支持到 `Vite 7`，安装时会出现 peer 警告，但实际构建已通过 — by 孟彦祖
+  - 方案: [202603201716_vite8-upgrade](archive/2026-03/202603201716_vite8-upgrade/)
+  - 决策: vite8-upgrade#D001(直接升级到 Vite 8 并同步校正直接相关插件)
+
 ## [0.0.20] - 2026-03-20
 
 ### 变更

@@ -209,8 +209,8 @@
                 >
                   <div class="disk-card__row">
                     <div class="disk-card__identity">
-                      <strong>{{ disk.device }}</strong>
-                      <span>{{ disk.mountpoint || '-' }}</span>
+                      <strong>{{ disk.mountpoint || '-' }}</strong>
+                      <span>{{ disk.device }}</span>
                     </div>
                     <div class="disk-card__usage">
                       <span class="disk-card__percent" :style="{ color: getProgressColor(disk.usage || 0) }">
@@ -546,21 +546,14 @@ const transferStats = computed(() => ({
   error: transfers.value.filter((item) => item.status === 'error').length,
 }))
 
-function rankDisk(disk: DiskInfo) {
-  const mountpoint = disk.mountpoint || ''
-  if (mountpoint === '/') return 0
-  if (mountpoint === '/boot/efi') return 1
-  if (mountpoint === '/boot') return 2
-  if (mountpoint === '/home') return 3
-  if (mountpoint === '/var') return 4
-  if ((disk.device || '').startsWith('/dev/')) return 10
-  return 20
-}
-
 const sortedDiskInfo = computed(() => (
   [...diskInfo.value].sort((left, right) => {
-    const rankDiff = rankDisk(left) - rankDisk(right)
-    if (rankDiff !== 0) return rankDiff
+    const usageDiff = (right.usage || 0) - (left.usage || 0)
+    if (usageDiff !== 0) return usageDiff
+
+    const availableDiff = (left.available || 0) - (right.available || 0)
+    if (availableDiff !== 0) return availableDiff
+
     return (left.mountpoint || left.device || '').localeCompare(right.mountpoint || right.device || '')
   })
 ))
@@ -1621,6 +1614,25 @@ defineExpose({
 .panel-content {
   padding: 8px 8px 10px;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.34) transparent;
+}
+
+.panel-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.panel-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.panel-content::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.34);
+  border-radius: 999px;
+}
+
+.panel-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
 }
 
 .monitor-content {
@@ -2500,7 +2512,7 @@ defineExpose({
 }
 
 .right-panel--embedded.right-panel--monitor .disk-card__summary {
-  color: #6c7d93;
+  color: #2f3d4f;
   font-size: 9px;
   white-space: nowrap;
 }
@@ -2564,6 +2576,11 @@ defineExpose({
 .interface-card__identity strong {
   color: #162236;
   font-size: 14px;
+}
+
+.disk-card__summary {
+  color: #2f3d4f;
+  font-weight: 500;
 }
 
 .disk-card__identity,
@@ -3505,7 +3522,6 @@ defineExpose({
 :global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row__meta),
 :global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row__trend),
 :global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .disk-card__identity span),
-:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .disk-card__summary),
 :global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .interface-card__identity span),
 :global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .interface-card__totals),
 :global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .process-table .ant-table-thead > tr > th),
@@ -3567,10 +3583,13 @@ defineExpose({
 :global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-summary-memory__head span),
 :global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-summary-memory__legend-item span),
 :global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .disk-card__identity span),
-:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .disk-card__summary),
 :global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .interface-card__identity span),
 :global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .interface-card__totals) {
   color: #8ea2bc !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .disk-card__summary) {
+  color: #d6e2f1 !important;
 }
 
 :global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row__progress .ant-progress-inner),

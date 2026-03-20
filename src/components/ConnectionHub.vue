@@ -125,7 +125,6 @@
                 <span role="columnheader">地址</span>
                 <span role="columnheader">认证</span>
                 <span role="columnheader">标签</span>
-                <span role="columnheader">状态</span>
                 <span role="columnheader">操作</span>
               </div>
 
@@ -162,19 +161,20 @@
                   <span
                     v-for="tag in getVisibleTags(profile)"
                     :key="tag"
-                    class="hub-chip hub-chip--tag"
-                    :style="getTagStyle(tag)"
+                    class="hub-tag-icon"
+                    :style="getTagIconStyle(tag)"
+                    :title="tag"
+                    :aria-label="`标签 ${tag}`"
                   >
-                    {{ tag }}
                   </span>
-                  <span v-if="getHiddenTagCount(profile) > 0" class="hub-chip">+{{ getHiddenTagCount(profile) }}</span>
+                  <span
+                    v-if="getHiddenTagCount(profile) > 0"
+                    class="hub-chip hub-chip--counter"
+                    :title="`还有 ${getHiddenTagCount(profile)} 个标签`"
+                  >
+                    +{{ getHiddenTagCount(profile) }}
+                  </span>
                   <span v-if="!profile.tags?.length" class="hub-row__placeholder">无标签</span>
-                </div>
-
-                <div class="hub-row__cell hub-row__cell--status">
-                  <span class="hub-state" :class="{ 'is-active': activeProfileId === profile.id }">
-                    {{ activeProfileId === profile.id ? '已连接' : '就绪' }}
-                  </span>
                 </div>
 
                 <div class="hub-row__cell hub-row__cell--actions">
@@ -247,7 +247,23 @@
                 <div class="hub-card__meta">
                   <span v-if="profile.group" class="hub-chip">{{ profile.group }}</span>
                   <span class="hub-chip hub-chip--accent">{{ getAuthLabel(profile) }}</span>
-                  <span v-if="activeProfileId === profile.id" class="hub-state is-active">已连接</span>
+                  <span v-if="profile.tags?.length" class="hub-card__tags" aria-label="连接标签">
+                    <span
+                      v-for="tag in getVisibleTags(profile)"
+                      :key="tag"
+                      class="hub-tag-icon"
+                      :style="getTagIconStyle(tag)"
+                      :title="tag"
+                      :aria-label="`标签 ${tag}`"
+                    ></span>
+                    <span
+                      v-if="getHiddenTagCount(profile) > 0"
+                      class="hub-chip hub-chip--counter"
+                      :title="`还有 ${getHiddenTagCount(profile)} 个标签`"
+                    >
+                      +{{ getHiddenTagCount(profile) }}
+                    </span>
+                  </span>
                 </div>
               </div>
             </div>
@@ -401,14 +417,10 @@ function getProfileMonogram(profile: SshProfile) {
 
 function getAuthLabel(profile: SshProfile) {
   if (profile.private_key) {
-    return '密钥认证'
+    return '私钥认证'
   }
 
-  if (profile.save_password) {
-    return '已存密码'
-  }
-
-  return '手动认证'
+  return '密码认证'
 }
 
 function getVisibleTags(profile: SshProfile) {
@@ -419,18 +431,19 @@ function getHiddenTagCount(profile: SshProfile) {
   return Math.max((profile.tags?.length ?? 0) - 2, 0)
 }
 
-function getTagStyle(tag: string) {
+function getTagIconStyle(tag: string) {
   const preset = getProfileTagPreset(tag)
+
   if (!preset) {
-    return {}
+    return {
+      backgroundColor: props.theme === 'dark' ? '#94a3b8' : '#64748b',
+      boxShadow: '0 0 0 3px color-mix(in srgb, currentColor 12%, transparent)'
+    }
   }
 
-  const isDark = props.theme === 'dark'
-
   return {
-    backgroundColor: isDark ? preset.darkBackground : preset.background,
-    borderColor: isDark ? preset.darkBorder : preset.border,
-    color: isDark ? preset.darkText : preset.text,
+    backgroundColor: preset.color,
+    boxShadow: `0 0 0 3px ${props.theme === 'dark' ? preset.darkBackground : preset.background}`
   }
 }
 
@@ -727,7 +740,7 @@ watch(tagItems, (nextTags) => {
 .hub-list__head,
 .hub-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1.35fr) minmax(200px, 1fr) minmax(120px, 0.68fr) minmax(150px, 0.7fr) 88px 72px;
+  grid-template-columns: minmax(220px, 1.35fr) minmax(200px, 1fr) minmax(120px, 0.68fr) minmax(150px, 0.7fr) 72px;
   gap: 12px;
   align-items: center;
 }
@@ -838,8 +851,7 @@ watch(tagItems, (nextTags) => {
   gap: 4px;
 }
 
-.hub-chip,
-.hub-state {
+.hub-chip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -859,10 +871,22 @@ watch(tagItems, (nextTags) => {
   border-color: var(--primary-ring);
 }
 
-.hub-state.is-active {
-  color: var(--success-color);
-  background: color-mix(in srgb, var(--success-color) 14%, transparent);
-  border-color: color-mix(in srgb, var(--success-color) 22%, transparent);
+.hub-chip--counter {
+  min-width: 30px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hub-row__cell--tags {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hub-tag-icon {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  flex: 0 0 auto;
 }
 
 .hub-grid {
@@ -904,6 +928,12 @@ watch(tagItems, (nextTags) => {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.hub-card__tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .hub-card__actions {
@@ -1008,9 +1038,7 @@ watch(tagItems, (nextTags) => {
   }
 
   .hub-row__cell--tags,
-  .hub-row__cell--status,
-  .hub-list__head span:nth-child(4),
-  .hub-list__head span:nth-child(5) {
+  .hub-list__head span:nth-child(4) {
     display: none;
   }
 }
@@ -1093,8 +1121,7 @@ watch(tagItems, (nextTags) => {
 :global(body[data-theme="dark"] .hub-empty__icon),
 :global(body[data-theme="dark"] .hub-toolbar__count),
 :global(body[data-theme="dark"] .hub-badge),
-:global(body[data-theme="dark"] .hub-chip),
-:global(body[data-theme="dark"] .hub-state) {
+:global(body[data-theme="dark"] .hub-chip) {
   border-color: var(--border-color);
   background: var(--surface-1);
 }
@@ -1124,11 +1151,6 @@ watch(tagItems, (nextTags) => {
 :global(body[data-theme="dark"] .hub-chip--accent) {
   background: var(--primary-soft);
   border-color: var(--primary-ring);
-}
-
-:global(body[data-theme="dark"] .hub-state.is-active) {
-  background: rgba(85, 194, 122, 0.12);
-  border-color: rgba(85, 194, 122, 0.2);
 }
 
 :global(body[data-theme="dark"] .hub-icon-action:hover) {

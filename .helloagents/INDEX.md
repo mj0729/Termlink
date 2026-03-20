@@ -4,11 +4,11 @@
 project: Termlink
 kb_version: 1
 created: 2026-03-18
-updated: 2026-03-19
+updated: 2026-03-20
 primary_language: zh-CN
 tech_stack:
   - Vue 3.5
-  - Vite 7
+  - Vite 8
   - Tauri 2
   - JavaScript
 active_package:

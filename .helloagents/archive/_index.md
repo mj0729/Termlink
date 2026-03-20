@@ -1,6 +1,6 @@
 # 归档索引
 
-- 2026-03: 已归档 8 个方案包
+- 2026-03: 已归档 10 个方案包
 
 | 202603181130 | compact-workspace-redesign | - | - | - | ✅完成 |
 | 202603181016 | tailwind4-ts-migration | - | - | - | ✅完成 |
@@ -15,3 +15,4 @@
 | 202603191414 | antdv-auto-import | - | - | - | ✅完成 |
 
 | 202603201507 | monitor-collapse-button-edge | - | - | - | ✅完成 |
+| 202603201716 | vite8-upgrade | - | - | - | ✅完成 |

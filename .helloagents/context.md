@@ -7,7 +7,7 @@
 ## 当前技术栈
 
 - 前端框架: Vue 3.5
-- 构建工具: Vite 7
+- 构建工具: Vite 8
 - 样式引擎: Tailwind CSS 4（通过 `@tailwindcss/vite` 接入）
 - 桌面容器: Tauri 2
 - 包管理器: pnpm 10
@@ -37,3 +37,6 @@
 - 第四轮已完成低风险 vendor 分包优化：`vite.config.ts` 将 `antdv-next` 拆为 `icons / style / date / data-entry / structure / display / feedback` 多组 vendor chunk，已消除单个 `antdv` chunk 超过 500 kB 的告警
 - 第五轮已完成 `antdv-next` 自动按需注册：入口已移除 `app.use(AntdvNext)`，改由 `unplugin-vue-components` 解析 `<a-*>` 模板组件、`unplugin-auto-import` 注入 `Input / Modal / message`，同时生成 `src/components.d.ts` 与 `src/auto-imports.d.ts`
 - 当前构建中 `antdv-next` 相关产物已进一步收缩到约 `49K / 53K / 118K / 236K / 282K / 353K` 的多组 vendor chunk，且上一轮的 circular chunk 提示已消失
+- 当前前端构建链已升级到 `Vite 8.0.1` 与 `@vitejs/plugin-vue 6.0.5`，`pnpm run build` 和 `cargo check --manifest-path src-tauri/Cargo.toml` 已通过
+- 本轮升级后，构建产物中可见 `rolldown-runtime`，且 `monaco` / `antdv-next` 大块产物仍会触发 `>500 kB` 警告；这属于当前分包策略下的已知现象，不阻断构建
+- `@tailwindcss/vite@4.2.1` 目前仍声明 peer `vite@"^5.2.0 || ^6 || ^7"`，因此安装阶段会对 `Vite 8` 报出未满足 peer 警告；实际生产构建仍可通过，后续可关注 Tailwind 官方是否发布显式支持 `Vite 8` 的版本

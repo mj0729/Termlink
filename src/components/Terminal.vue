@@ -95,27 +95,27 @@ const themes: Record<ThemeName, ITheme> = {
     brightWhite: '#ffffff'
   },
   light: {
-    background: '#f7fbff',
-    foreground: '#1b2433',
-    cursor: '#1b2433',
-    selectionBackground: '#d7e8ff',
+    background: '#0b0e14',
+    foreground: '#ffffff',
+    cursor: '#ffffff',
+    selectionBackground: '#264f78',
     selectionForeground: '#ffffff',
-    black: '#1b2433',
-    red: '#cd3131',
-    green: '#00bc00',
-    yellow: '#949800',
-    blue: '#0451a5',
-    magenta: '#bc05bc',
-    cyan: '#0598bc',
-    white: '#000000',
-    brightBlack: '#000000',
-    brightRed: '#cd3131',
-    brightGreen: '#14ce14',
-    brightYellow: '#b5ba00',
-    brightBlue: '#0451a5',
-    brightMagenta: '#bc05bc',
-    brightCyan: '#0598bc',
-    brightWhite: '#000000'
+    black: '#000000',
+    red: '#e06c75',
+    green: '#98c379',
+    yellow: '#d19a66',
+    blue: '#61afef',
+    magenta: '#c678dd',
+    cyan: '#56b6c2',
+    white: '#ffffff',
+    brightBlack: '#5c6370',
+    brightRed: '#e06c75',
+    brightGreen: '#98c379',
+    brightYellow: '#d19a66',
+    brightBlue: '#61afef',
+    brightMagenta: '#c678dd',
+    brightCyan: '#56b6c2',
+    brightWhite: '#ffffff'
   }
 }
 
@@ -774,7 +774,7 @@ onBeforeUnmount(async () => {
   height: 100%;
   overflow: hidden;
   padding: 0;
-  background: var(--workspace-center-bg);
+  background: #0b0e14;
 }
 
 .terminal-frame {
@@ -782,26 +782,26 @@ onBeforeUnmount(async () => {
   height: 100%;
   border-radius: 0;
   overflow: hidden;
-  background: transparent;
+  background: #0b0e14;
   border: none;
   box-shadow: none;
 }
 
 .terminal-container {
   position: absolute;
-  inset: 0;
+  inset: 6px 8px 6px 8px;
 }
 
 .terminal-area--comfortable .terminal-container {
-  inset: 0;
+  inset: 8px 10px 8px 10px;
 }
 
 .terminal-area--balanced .terminal-container {
-  inset: 0;
+  inset: 6px 8px 6px 8px;
 }
 
 .terminal-area--compact .terminal-container {
-  inset: 0;
+  inset: 4px 6px 4px 6px;
 }
 
 .scroll-indicator {

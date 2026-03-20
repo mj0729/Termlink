@@ -15,6 +15,9 @@
 - `ConnectionHub` 的分组筛选与连接卡片已统一为 `a-segmented`、`a-card`、`a-tag` 组合，保留高密度 SSH 工作台信息布局
 - `StatusBar` 的设置、监控和传输入口已统一为 `a-button` 文本按钮，和其他工作台工具控件共享交互反馈
 - `RightPanel` 的传输筛选已统一为 `a-segmented`，不再保留独立原生 pill 按钮实现
+- `RightPanel` 的嵌入式系统监控已重构为左侧宽仪表盘，采用 `a-card + a-statistic + a-progress + a-alert + a-table` 组合，首屏强化资源状态、实时告警、Top 进程和磁盘/网络分区信息
+- 系统监控新增前端短周期历史缓存，用于 CPU / 内存 / 根磁盘 / 网络吞吐的轻量趋势图，不依赖额外图表库
+- `SshWorkspace` 在窄屏纵向堆叠场景下提高了监控区最大高度，避免宽仪表盘被截断
 - `FileEditor` 的大文本 `textarea` 与隐藏文件上传 `input` 仍保留原生实现，原因是它们属于性能敏感或平台能力敏感路径，不作为 UI 库统一目标
 - `TopMenu.vue` 当前未接入主应用壳层，仍有原生按钮遗留；后续若恢复使用，应继续按 `antdv-next` 体系收口
 

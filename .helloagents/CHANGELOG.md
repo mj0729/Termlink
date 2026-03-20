@@ -1,5 +1,13 @@
 # 变更记录
 
+## [0.0.13] - 2026-03-20
+
+### 变更
+
+- **[workspace-ui]**: 将 SSH 工作区左侧系统监控重构为约 960px 的现代运维仪表盘，采用 `a-card`、`a-statistic`、`a-progress`、`a-alert` 与 `a-table` 重排首屏概览、关键资源、实时告警、Top 进程、磁盘和网络接口信息，并补充前端短期趋势图与颜色分级规则，显著提升信息密度与运维可读性；已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603200927_monitor-dashboard-redesign](plan/202603200927_monitor-dashboard-redesign/)
+  - 决策: monitor-dashboard-redesign#D001(在现有 RightPanel 基础上扩展左侧宽仪表盘，而不是新建独立监控工作台)
+
 ## [0.0.12] - 2026-03-19
 
 ### 变更

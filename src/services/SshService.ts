@@ -274,6 +274,14 @@ class SshService {
     }
   }
 
+  getConnectionTabTitle(profile: Pick<SshProfile, 'name' | 'username' | 'host'>): string {
+    if (profile.name?.trim()) {
+      return profile.name.trim()
+    }
+
+    return profile.username ? `${profile.username}@${profile.host}` : profile.host
+  }
+
   async persistPasswordIfNeeded(profile: SshProfile, password: string | null): Promise<void> {
     if (!profile.save_password || profile.private_key || !password) {
       return
@@ -331,7 +339,7 @@ class SshService {
 
   async launchProfile(profile: SshProfile): Promise<ConnectionTab> {
     const id = `ssh-${Date.now()}`
-    const title = profile.username ? `${profile.username}@${profile.host}` : profile.host
+    const title = this.getConnectionTabTitle(profile)
 
     try {
       const password = await this.resolvePasswordForProfile(profile)
@@ -348,7 +356,6 @@ class SshService {
 
   async createSshConnection(sshData: SshConnectionPayload): Promise<ConnectionTab> {
     const id = `ssh-${Date.now()}`
-    const title = sshData.name || sshData.host
     const profile: SshProfile = {
       id,
       host: sshData.host,
@@ -360,6 +367,7 @@ class SshService {
       tags: sshData.tags || [],
       private_key: sshData.usePrivateKey ? sshData.privateKey : null,
     }
+    const title = this.getConnectionTabTitle(profile)
 
     const initialPassword = sshData.usePrivateKey ? null : (sshData.password || null)
 

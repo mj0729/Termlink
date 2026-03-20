@@ -263,7 +263,9 @@ onBeforeUnmount(() => {
 }
 
 .ssh-workspace__monitor {
-  flex: 0 0 auto;
+  flex: 0 0 clamp(420px, 30%, 620px);
+  width: clamp(420px, 30%, 620px);
+  max-width: clamp(420px, 30%, 620px);
   min-width: 0;
   min-height: 0;
 }
@@ -354,7 +356,10 @@ onBeforeUnmount(() => {
   }
 
   .ssh-workspace__monitor {
-    max-height: 320px;
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: none;
+    max-height: 520px;
   }
 
   .ssh-workspace {

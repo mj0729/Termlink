@@ -2,9 +2,22 @@
   <div class="status-bar">
     <div class="status-bar__main">
       <span class="status-dot" :class="{ 'is-active': activeConnection }"></span>
-      <span class="status-connection">
-        {{ activeConnection || '从顶部连接带或连接中心开始' }}
-      </span>
+      <div class="status-connection-group">
+        <span class="status-connection">
+          {{ activeConnection || '从顶部连接带或连接中心开始' }}
+        </span>
+        <a-button
+          v-if="activeConnectionCopyText"
+          class="status-copy-btn"
+          @click="copyActiveConnection"
+          aria-label="复制 IP"
+          title="复制 IP"
+          type="text"
+          size="small"
+        >
+          <CopyOutlined />
+        </a-button>
+      </div>
     </div>
     <div class="status-bar__meta">
       <a-button
@@ -45,12 +58,16 @@
 </template>
 
 <script setup lang="ts">
-import { DesktopOutlined, DownloadOutlined, SettingOutlined } from '@antdv-next/icons'
+import { CopyOutlined, DesktopOutlined, DownloadOutlined, SettingOutlined } from '@antdv-next/icons'
 import type { PropType } from 'vue'
 import type { MonitorTab } from '../types/app'
 
-defineProps({
+const props = defineProps({
   activeConnection: {
+    type: String,
+    default: ''
+  },
+  activeConnectionCopyText: {
     type: String,
     default: ''
   },
@@ -69,6 +86,17 @@ defineProps({
 })
 
 defineEmits(['selectRightPanelTab', 'showSettings'])
+
+async function copyActiveConnection() {
+  if (!props.activeConnectionCopyText) return
+
+  try {
+    await navigator.clipboard.writeText(props.activeConnectionCopyText)
+    message.success('IP 已复制到剪贴板')
+  } catch {
+    message.error('复制失败')
+  }
+}
 </script>
 
 <style scoped>
@@ -94,6 +122,7 @@ defineEmits(['selectRightPanelTab', 'showSettings'])
 
 .status-bar__main {
   flex: 1;
+  overflow: hidden;
 }
 
 .status-bar__meta {
@@ -113,8 +142,15 @@ defineEmits(['selectRightPanelTab', 'showSettings'])
   box-shadow: 0 0 0 4px rgba(45, 125, 255, 0.1);
 }
 
+.status-connection-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .status-connection {
-  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -172,6 +208,24 @@ defineEmits(['selectRightPanelTab', 'showSettings'])
 
 .status-panel-btn :deep(.anticon) {
   font-size: 13px;
+}
+
+.status-copy-btn {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  padding: 0;
+  border-radius: 8px;
+  color: var(--muted-color);
+}
+
+.status-copy-btn:hover {
+  color: var(--text-color);
+  background: rgba(255, 255, 255, 0.35) !important;
+}
+
+.status-copy-btn :deep(.anticon) {
+  font-size: 12px;
 }
 
 @media (max-width: 768px) {

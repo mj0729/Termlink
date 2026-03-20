@@ -99,6 +99,7 @@
         
             <StatusBar
               :active-connection="getActiveConnection()"
+              :active-connection-copy-text="getActiveConnectionCopyText()"
               :tab-count="tabs.length"
               :right-panel-tab="rightPanelTab"
               :right-panel-collapsed="effectiveRightPanelCollapsed"
@@ -277,7 +278,22 @@ async function refreshConnectionData() {
 function getActiveConnection() {
   if (!activeId.value) return ''
   const activeTab = tabs.value.find(t => t.id === activeId.value)
-  return activeTab?.type === 'connections' ? '' : activeTab ? activeTab.title : ''
+  if (!activeTab || activeTab.type === 'connections') return ''
+  if (activeTab.type === 'ssh') {
+    const username = activeTab.profile?.username
+    const host = activeTab.profile?.host
+    if (username && host) return `${username}@${host}`
+    return host || ''
+  }
+
+  return activeTab.title
+}
+
+function getActiveConnectionCopyText() {
+  if (!activeId.value) return ''
+  const activeTab = tabs.value.find(t => t.id === activeId.value)
+  if (activeTab?.type !== 'ssh') return ''
+  return activeTab.profile?.host || ''
 }
 
 function getActiveProfileId() {

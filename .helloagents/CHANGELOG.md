@@ -1,5 +1,41 @@
 # 变更记录
 
+## [0.0.25] - 2026-03-22
+
+### 快速修改
+
+- **[workspace-ui]**: 终端 `cd` 驱动文件管理器切换目录时，左侧目录树现在会在展开祖先节点后自动把当前目录滚动定位到可视区；不仅右侧列表会同步进入目录，左树也会跟着高亮并自动定位到对应节点 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/remote-file/RemoteDirectoryTree.vue:2-6, src/components/remote-file/RemoteDirectoryTree.vue:82-129, src/components/remote-file/RemoteDirectoryTree.vue:365-369
+
+- **[workspace-ui]**: 为应用壳层补上统一的原生右键菜单拦截；普通空白区、连接中心和工作区默认不再弹浏览器原生菜单，仅输入框、文本域和 Monaco 编辑区保留系统右键能力 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/App.vue:3-6, src/App.vue:281-295
+
+- **[workspace-ui]**: 修复顶部标签右键偶发落到系统默认菜单的问题；现在 `TabManager` 会在整个 `ant-tabs` 标签节点范围内统一拦截 `contextmenu`，即使点到关闭按钮、标签边缘或状态点，也会稳定打开项目自定义菜单 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/TabManager.vue:4-16, src/components/TabManager.vue:88-152
+
+- **[workspace-ui]**: 修正激活标签页顶部描边在浅色背景下看起来像“缺了一条上边框”的问题；当前 active tab 额外补了一层顶部高光描边，并去掉上移 1px 的位移，避免顶部边线被吞掉 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/TabManager.vue:304-309
+
+## [0.0.24] - 2026-03-22
+
+### 变更
+
+- **[workspace-ui]**: 为新开 tab 和工作区切换补上轻量 reveal 动效；`App.vue` 统一通过 `openTabWithMotion()` 打开标签，`TabManager` 为新标签内容增加短促滑入并恢复 `inkBar` 过渡，工作区内容区会以 240ms 左右的淡入+轻微上浮进入，不再像瞬间硬切，已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603220932_ssh-tab-open-motion](plan/202603220932_ssh-tab-open-motion/)
+  - 决策: ssh-tab-open-motion#D001(采用短时 CSS reveal，而不是复杂 Transition 组件重构)
+
+## [0.0.23] - 2026-03-22
+
+### 变更
+
+- **[ssh-runtime]**: 优化连接中心进入 SSH 工作区的首击体验；前端现在会先创建 `connecting` 标签并立即切换工作区，Rust 侧则把 host key 校验合并进正式握手、为确认弹窗复用本次握手的 verification 缓存，从而去掉已信任主机每次连接的额外 preview 握手，已通过 `pnpm run build` 与 `cargo check --manifest-path src-tauri/Cargo.toml` 验证 — by 孟彦祖
+  - 方案: [202603220914_ssh-connect-lag-investigation](plan/202603220914_ssh-connect-lag-investigation/)
+  - 决策: ssh-connect-lag-investigation#D001(保留 host key 安全校验，但把校验并入正式握手)
+
 ## [0.0.22] - 2026-03-20
 
 ### 快速修改

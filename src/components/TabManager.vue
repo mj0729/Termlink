@@ -7,9 +7,10 @@
         :active-key="activeId"
         :items="tabItems"
         @change="$emit('change', $event)"
+        @contextmenu="handleTabsContextMenu"
         @edit="onEditTab"
         :hide-add="true"
-        :animated="false"
+        :animated="{ inkBar: true, tabPane: false }"
       />
       <a-button
         type="text"
@@ -46,6 +47,10 @@ const props = defineProps({
   activeId: {
     type: String,
     default: ''
+  },
+  freshTabId: {
+    type: String,
+    default: ''
   }
 })
 
@@ -72,7 +77,7 @@ const contextMenuItems = computed(() => {
   if (!tab) return []
 
   const isSsh = tab.type === 'ssh'
-  const isConnected = isSsh && tab.sshState !== 'disconnected'
+  const isConnected = isSsh && tab.sshState === 'connected'
   const hasDisconnectedSsh = (props.tabs as ConnectionTab[]).some((item) => (
     item.type === 'ssh' && item.sshState === 'disconnected' && item.profile
   ))
@@ -91,7 +96,11 @@ const tabItems = computed(() => (props.tabs as ConnectionTab[]).map((tab) => ({
   key: tab.id,
   closable: true,
   label: h('span', {
-    class: 'tab-content flex items-center gap-2',
+    class: [
+      'tab-content flex items-center gap-2',
+      { 'tab-content--fresh': props.freshTabId === tab.id },
+    ],
+    'data-tab-id': tab.id,
     onContextmenu: (event: MouseEvent) => openContextMenu(event, tab),
   }, [
     h('span', { class: ['tab-kind', `tab-kind--${tab.type}`] }, tab.type === 'ssh' ? 'SSH' : tab.type === 'file' ? 'FILE' : tab.type === 'connections' ? 'HUB' : 'LOCAL'),
@@ -100,11 +109,19 @@ const tabItems = computed(() => (props.tabs as ConnectionTab[]).map((tab) => ({
           class: [
             'tab-status',
             tab.type === 'ssh'
-              ? (tab.sshState === 'disconnected' ? 'is-offline' : 'is-live')
+              ? (tab.sshState === 'disconnected'
+                ? 'is-offline'
+                : tab.sshState === 'connecting'
+                  ? 'is-pending'
+                  : 'is-live')
               : 'is-linked'
           ],
           'aria-label': tab.type === 'ssh'
-            ? (tab.sshState === 'disconnected' ? '已断开' : '连接中')
+            ? (tab.sshState === 'disconnected'
+              ? '已断开'
+              : tab.sshState === 'connecting'
+                ? '连接中'
+                : '已连接')
             : '关联连接'
         })
       : null,
@@ -122,6 +139,31 @@ function openContextMenu(event: MouseEvent, tab: ConnectionTab) {
     y: event.clientY,
     tabId: tab.id,
   }
+}
+
+function handleTabsContextMenu(event: MouseEvent) {
+  const target = event.target as HTMLElement | null
+  const tabElement = target?.closest('.ant-tabs-tab')
+  if (!tabElement) {
+    return
+  }
+
+  const tabContent = tabElement.querySelector<HTMLElement>('.tab-content[data-tab-id]')
+  const tabId = tabContent?.dataset.tabId
+  if (!tabId) {
+    event.preventDefault()
+    event.stopPropagation()
+    return
+  }
+
+  const tab = (props.tabs as ConnectionTab[]).find((item) => item.id === tabId)
+  if (!tab) {
+    event.preventDefault()
+    event.stopPropagation()
+    return
+  }
+
+  openContextMenu(event, tab)
 }
 
 function closeContextMenu() {
@@ -189,6 +231,10 @@ function onEditTab(targetKeyOrEvent: string | MouseEvent, action: 'add' | 'remov
   gap: 6px;
 }
 
+.tab-content--fresh {
+  animation: tab-content-arrive 220ms cubic-bezier(0.18, 0.82, 0.24, 1);
+}
+
 .tab-kind {
   display: inline-flex;
   align-items: center;
@@ -247,6 +293,11 @@ function onEditTab(targetKeyOrEvent: string | MouseEvent, action: 'add' | 'remov
   box-shadow: 0 0 0 3px rgba(74, 169, 107, 0.14);
 }
 
+.tab-status.is-pending {
+  background: #f4b940;
+  box-shadow: 0 0 0 3px rgba(244, 185, 64, 0.18);
+}
+
 .tab-status.is-offline {
   background: rgba(128, 148, 177, 0.58);
   box-shadow: 0 0 0 3px rgba(128, 148, 177, 0.12);
@@ -274,13 +325,19 @@ function onEditTab(targetKeyOrEvent: string | MouseEvent, action: 'add' | 'remov
   border-radius: 9px !important;
   color: var(--muted-color) !important;
   box-shadow: inset 0 0 0 1px var(--border-color);
+  transition:
+    transform 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease;
 }
 
 :deep(.ant-tabs-tab-active) {
   background: var(--surface-2) !important;
   box-shadow:
     var(--shadow-card),
-    inset 0 0 0 1px var(--strong-border);
+    inset 0 0 0 1px var(--strong-border),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
 :deep(.ant-tabs-tab-btn) {
@@ -307,5 +364,18 @@ function onEditTab(targetKeyOrEvent: string | MouseEvent, action: 'add' | 'remov
 
 :deep(.ant-tabs-content-holder) {
   display: none;
+}
+
+@keyframes tab-content-arrive {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 7px, 0) scale(0.985);
+    filter: saturate(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: saturate(1);
+  }
 }
 </style>

@@ -7,6 +7,9 @@
 
 ## 本次迁移更新
 
+- `TabManager` 现在会为新建标签提供一次性轻滑入动效，并重新启用 `inkBar` 过渡；整体风格偏轻盈克制，不影响终端工作流
+- `ConnectionHub` 点击已保存连接时不再等待后端建连完成后才切换工作区，而是立即打开 SSH 标签页并展示 `connecting` 中间态
+- `TabManager`、`Terminal`、`RemoteFileWorkbench`、`SshWorkspace` 已统一支持 `connecting / connected / disconnected` 三态；只有 `connected` 才会绑定终端会话、加载远程文件和启动嵌入式监控
 - 组件脚本中的 `message`、`Modal` 和图标导入已统一迁移到 `antdv-next` 生态
 - `TopMenu` 仍作为独立组件保留在仓库中，本轮已将内部原生按钮统一为 `a-button`，但它当前未接入主应用壳层
 - `TabManager` 已改为 `items` 模式标签页，减少对旧 `TabPane` 结构的依赖

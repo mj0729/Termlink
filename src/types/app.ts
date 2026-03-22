@@ -109,7 +109,7 @@ export interface ConnectionTab {
   title: string
   type: TabType
   profile?: SshProfile | null
-  sshState?: 'connected' | 'disconnected'
+  sshState?: 'connecting' | 'connected' | 'disconnected'
   autoPassword?: string | null
   fileInfo?: SftpFileEntry
   connectionId?: string

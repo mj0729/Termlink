@@ -121,7 +121,7 @@ const terminalPath = ref('')
 const splitterHeight = 8
 const terminalRatio = ref(0.4)
 const showEmbeddedMonitor = computed(() => props.embeddedMonitorVisible && !props.embeddedMonitorCollapsed)
-const monitorConnectionId = computed(() => props.sshState === 'disconnected' ? '' : (props.connectionId || ''))
+const monitorConnectionId = computed(() => props.sshState === 'connected' ? (props.connectionId || '') : '')
 let resizeFrame = 0
 let activateSyncFrame = 0
 let resizeObserver: ResizeObserver | null = null

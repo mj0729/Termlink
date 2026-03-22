@@ -31,7 +31,7 @@ const props = withDefaults(defineProps<{
   config?: TerminalConfig
   autoPassword?: string
   sshUser?: string
-  sshState?: 'connected' | 'disconnected'
+  sshState?: 'connecting' | 'connected' | 'disconnected'
   type?: string
 }>(), {
   active: false,
@@ -63,6 +63,7 @@ let homeCwd = ''
 let sshOutputBuffer = ''
 let promptBuffer = ''
 let pendingReconnectEnter = false
+let hasShownConnectingNotice = false
 const hasScrollContent = computed(() => {
   if (!terminal.value) return false
   return terminal.value.buffer.active.viewportY > 0
@@ -302,6 +303,23 @@ async function syncInitialDirectory() {
   }
 }
 
+function resetSshSessionState() {
+  lastReceivedSeq = 0
+  commandBuffer = ''
+  shellCwd = ''
+  previousShellCwd = ''
+  homeCwd = ''
+  sshOutputBuffer = ''
+  promptBuffer = ''
+}
+
+function renderConnectingNotice(force = false) {
+  if (!props.id.startsWith('ssh-') || !terminal.value) return
+  if (!force && hasShownConnectingNotice) return
+  terminal.value.writeln('\r\n正在建立 SSH 连接，请稍候...')
+  hasShownConnectingNotice = true
+}
+
 // 创建终端实例
 async function createTerminal() {
   const { Terminal } = await import('@xterm/xterm')
@@ -346,6 +364,10 @@ async function createTerminal() {
   term.onData(data => {
     // 只有当这个终端实例是激活状态时才发送数据
     if (props.active) {
+      if (props.id.startsWith('ssh-') && props.sshState === 'connecting') {
+        renderConnectingNotice()
+        return
+      }
       if (props.id.startsWith('ssh-') && props.sshState === 'disconnected') {
         if (data === '\r') {
           pendingReconnectEnter = true
@@ -419,6 +441,10 @@ async function createTerminal() {
 async function bindSession() {
   // 根据终端类型绑定不同的事件
   if (props.id.startsWith('ssh-')) {
+    if (props.sshState !== 'connected') {
+      return async () => {}
+    }
+
     let hydrating = true
     const pendingChunks: SshTerminalChunk[] = []
 
@@ -702,6 +728,27 @@ watch(() => props.active, (isActive) => {
 })
 
 watch(() => props.sshState, (nextState, prevState) => {
+  if (nextState === 'connecting' && prevState !== 'connecting') {
+    hasShownConnectingNotice = false
+    resetSshSessionState()
+    if (unbindSession) {
+      Promise.resolve(unbindSession()).then(() => {
+        unbindSession = null
+      })
+    }
+    renderConnectingNotice(true)
+    return
+  }
+
+  if (nextState === 'connected' && prevState !== 'connected' && !unbindSession) {
+    hasShownConnectingNotice = false
+    resetSshSessionState()
+    Promise.resolve(bindSession()).then(async (cleanup) => {
+      unbindSession = cleanup
+      await syncInitialDirectory()
+    })
+  }
+
   if (nextState === 'connected' && prevState === 'disconnected' && pendingReconnectEnter) {
     pendingReconnectEnter = false
     setTimeout(() => {
@@ -716,21 +763,19 @@ watch(() => props.sshState, (nextState, prevState) => {
 let unbindSession = null
 
 onMounted(async () => {
-  lastReceivedSeq = 0
-  commandBuffer = ''
-  shellCwd = ''
-  previousShellCwd = ''
-  homeCwd = ''
-  sshOutputBuffer = ''
+  resetSshSessionState()
   pendingReconnectEnter = false
+  hasShownConnectingNotice = false
 
   // 创建终端
   await createTerminal()
-  
-  // 绑定会话
-  unbindSession = await bindSession()
 
-  await syncInitialDirectory()
+  if (props.id.startsWith('ssh-') && props.sshState === 'connecting') {
+    renderConnectingNotice(true)
+  } else {
+    unbindSession = await bindSession()
+    await syncInitialDirectory()
+  }
   
   // 应用主题和配置
   applyTheme()

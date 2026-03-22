@@ -1,7 +1,10 @@
 <template>
   <a-config-provider :theme="antdvThemeConfig">
     <a-app>
-      <div class="app-shell min-h-screen bg-[var(--bg-color)] text-[var(--text-color)]">
+      <div
+        class="app-shell min-h-screen bg-[var(--bg-color)] text-[var(--text-color)]"
+        @contextmenu.capture="handleAppContextMenu"
+      >
         <section class="workspace-shell flex h-full w-full">
           <div class="workspace-frame flex h-full w-full flex-col overflow-hidden">
         <div class="main-container flex min-h-0 flex-1 overflow-hidden">
@@ -9,6 +12,7 @@
             <TabManager 
               :tabs="tabs" 
               :active-id="activeId" 
+              :fresh-tab-id="freshTabId"
               @change="activeId = $event"
               @close="closeTab"
               @menu-action="handleTabMenuAction"
@@ -24,7 +28,10 @@
               <template v-for="tab in tabs" :key="tab.id">
                 <div
                   class="workspace-view"
-                  :class="`workspace-view--${tab.type}`"
+                  :class="[
+                    `workspace-view--${tab.type}`,
+                    { 'is-activating': activatingWorkspaceId === tab.id },
+                  ]"
                   v-show="activeId === tab.id"
                 >
                   <SshWorkspace
@@ -93,7 +100,7 @@
             :collapsed="effectiveRightPanelCollapsed" 
             @toggle="rightPanelCollapsed = !rightPanelCollapsed"
             @tab-change="rightPanelTab = $event"
-            :connection-id="currentTab?.type === 'ssh' && currentTab?.sshState !== 'disconnected' ? currentTab?.id : ''"
+            :connection-id="currentTab?.type === 'ssh' && currentTab?.sshState === 'connected' ? currentTab?.id : ''"
             :ssh-profile="currentTab?.type === 'ssh' ? currentTab?.profile : null"
             :active-tab="rightPanelTab"
           />
@@ -171,6 +178,8 @@ const tabs = ref<ConnectionTab[]>([createConnectionCenterTab()])
 const activeId = ref(tabs.value[0]?.id || '')
 const showSshModal = ref(false)
 const showSettings = ref(false)
+const freshTabId = ref('')
+const activatingWorkspaceId = ref('')
 const rightPanelRef = ref<{
   addDownload: (fileName: string, remotePath: string, savePath: string, connectionId: string) => void
   addUpload: (upload: UploadRequest) => void
@@ -182,6 +191,9 @@ const sshEditMode = ref(false)
 const editingProfile = ref<SshProfile | null>(null)
 const manualDisconnectingIds = new Set<string>()
 const closingTabIds = new Set<string>()
+let freshTabTimer: number | null = null
+let workspaceMotionFrame: number | null = null
+let workspaceMotionTimer: number | null = null
 
 // 主题和设置
 const theme = ref<ThemeName>(ThemeService.getTheme())
@@ -252,6 +264,11 @@ watch(isSshWorkspaceLayout, (nextIsSsh, previousIsSsh) => {
   }
 })
 
+watch(activeId, (nextId, prevId) => {
+  if (!nextId || nextId === prevId) return
+  triggerWorkspaceMotion(nextId)
+})
+
 function isUserCancelledConnection(error: unknown) {
   return String(error).includes('已取消连接')
 }
@@ -261,6 +278,74 @@ function createConnectionCenterTab(): ConnectionTab {
     id: `connections-${Date.now()}`,
     title: '连接中心',
     type: 'connections'
+  }
+}
+
+function isNativeContextMenuAllowed(target: EventTarget | null) {
+  const element = target as HTMLElement | null
+  if (!element) return false
+
+  return Boolean(
+    element.closest('input, textarea, select, [contenteditable="true"], .monaco-editor, .monaco-diff-editor')
+  )
+}
+
+function handleAppContextMenu(event: MouseEvent) {
+  if (isNativeContextMenuAllowed(event.target)) {
+    return
+  }
+
+  event.preventDefault()
+}
+
+function clearFreshTabMotion() {
+  if (freshTabTimer) {
+    window.clearTimeout(freshTabTimer)
+    freshTabTimer = null
+  }
+  freshTabId.value = ''
+}
+
+function markFreshTab(id: string) {
+  clearFreshTabMotion()
+  freshTabId.value = id
+  freshTabTimer = window.setTimeout(() => {
+    if (freshTabId.value === id) {
+      freshTabId.value = ''
+    }
+    freshTabTimer = null
+  }, 360)
+}
+
+function triggerWorkspaceMotion(id: string) {
+  if (workspaceMotionFrame) {
+    window.cancelAnimationFrame(workspaceMotionFrame)
+    workspaceMotionFrame = null
+  }
+  if (workspaceMotionTimer) {
+    window.clearTimeout(workspaceMotionTimer)
+    workspaceMotionTimer = null
+  }
+
+  activatingWorkspaceId.value = ''
+  workspaceMotionFrame = window.requestAnimationFrame(() => {
+    activatingWorkspaceId.value = id
+    workspaceMotionTimer = window.setTimeout(() => {
+      if (activatingWorkspaceId.value === id) {
+        activatingWorkspaceId.value = ''
+      }
+      workspaceMotionTimer = null
+    }, 260)
+    workspaceMotionFrame = null
+  })
+}
+
+function openTabWithMotion(tab: ConnectionTab, options: { markFresh?: boolean } = {}) {
+  tabs.value.push(tab)
+  activeId.value = tab.id
+
+  if (options.markFresh !== false) {
+    markFreshTab(tab.id)
   }
 }
 
@@ -321,16 +406,39 @@ async function launchSavedProfile(p: SshProfile) {
     const existingTab = tabs.value.find(tab => tab.type === 'ssh' && tab.profile?.id === p.id)
     if (existingTab) {
       activeId.value = existingTab.id
+      if (existingTab.sshState === 'disconnected') {
+        await reconnectSsh(existingTab, { silent: true })
+      }
       return
     }
 
-    const tabInfo = await SshService.launchProfile(p)
-    tabs.value.push(tabInfo)
-    activeId.value = tabInfo.id
-  } catch (error) {
-    if (isUserCancelledConnection(error)) {
+    const tabInfo = SshService.createPendingProfileTab(p)
+    openTabWithMotion(tabInfo)
+    const autoPassword = await SshService.openSavedProfile(tabInfo.id, p)
+    const currentSshTab = findTabById(tabInfo.id)
+    if (!currentSshTab) {
+      await SshService.closeConnection(tabInfo.id)
       return
     }
+
+    patchSshTab(tabInfo.id, {
+      autoPassword,
+      sshState: 'connected',
+    })
+  } catch (error) {
+    if (isUserCancelledConnection(error)) {
+      const pendingTab = tabs.value.find((tab) => tab.type === 'ssh' && tab.profile?.id === p.id)
+      if (pendingTab?.sshState === 'connecting') {
+        await removePendingSshTab(pendingTab.id)
+      }
+      return
+    }
+
+    const failedTab = tabs.value.find((tab) => tab.type === 'ssh' && tab.profile?.id === p.id)
+    if (failedTab) {
+      patchSshTab(failedTab.id, { sshState: 'disconnected' })
+    }
+
     console.error('启动SSH连接失败:', error)
     message.error({
       content: String(error),
@@ -395,8 +503,7 @@ async function submitSsh(sshData: SshConnectionPayload) {
     } else {
       // 新建模式：创建新连接
       const tabInfo = await SshService.createSshConnection(sshData)
-      tabs.value.push(tabInfo)
-      activeId.value = tabInfo.id
+      openTabWithMotion(tabInfo)
       
       // 刷新配置列表
       if (sshData.savePassword) {
@@ -425,17 +532,31 @@ async function submitSsh(sshData: SshConnectionPayload) {
 // 新建本地会话
 async function newLocal() {
   const id = `local-${Date.now()}`
-  tabs.value.push({ id, title: '本地终端', type: 'local' })
-  activeId.value = id
+  openTabWithMotion({ id, title: '本地终端', type: 'local' })
   
   await invoke('start_pty', { id, cols: 120, rows: 30 })
 }
 
-function updateSshTabState(id: string, state: 'connected' | 'disconnected') {
+function findTabById(id: string) {
+  return tabs.value.find((item) => item.id === id) || null
+}
+
+function updateSshTabState(id: string, state: ConnectionTab['sshState']) {
   const tab = tabs.value.find((item) => item.id === id)
   if (tab?.type === 'ssh') {
     tab.sshState = state
   }
+}
+
+function patchSshTab(id: string, patch: Partial<ConnectionTab>) {
+  const tab = tabs.value.find((item) => item.id === id)
+  if (tab?.type === 'ssh') {
+    Object.assign(tab, patch)
+  }
+}
+
+async function removePendingSshTab(id: string) {
+  await closeTab(id, { skipDisconnect: true })
 }
 
 // 新建 SSH 会话
@@ -453,8 +574,7 @@ function openConnectionCenter() {
   }
 
   const tab = createConnectionCenterTab()
-  tabs.value.push(tab)
-  activeId.value = tab.id
+  openTabWithMotion(tab)
 }
 
 // 编辑 SSH 配置文件
@@ -576,14 +696,13 @@ async function openFilePreview(fileInfo: SftpFileEntry) {
   const activeTab = tabs.value.find(t => t.id === activeId.value)
   const connectionId = activeTab?.id
   
-  tabs.value.push({ 
-    id, 
-    title, 
+  openTabWithMotion({
+    id,
+    title,
     type: 'file',
     fileInfo,
     connectionId
   })
-  activeId.value = id
 }
 
 // 关闭标签页
@@ -608,8 +727,7 @@ async function closeTab(id: string, options: { skipDisconnect?: boolean } = {}) 
 
   if (tabs.value.length === 0) {
     const tab = createConnectionCenterTab()
-    tabs.value.push(tab)
-    activeId.value = tab.id
+    openTabWithMotion(tab)
     return
   }
   
@@ -625,15 +743,21 @@ async function reconnectSsh(tab: ConnectionTab | null, options: { silent?: boole
     if (tab.sshState === 'connected') {
       return true
     }
+    if (tab.sshState === 'connecting') {
+      return false
+    }
     try {
+      updateSshTabState(tab.id, 'connecting')
       await SshService.reconnect(tab.id, tab.profile)
       updateSshTabState(tab.id, 'connected')
       return true
     } catch (error) {
       if (isUserCancelledConnection(error)) {
+        updateSshTabState(tab.id, 'disconnected')
         return false
       }
 
+      updateSshTabState(tab.id, 'disconnected')
       if (!options.silent) {
         message.error({
           content: String(error),
@@ -767,6 +891,14 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  clearFreshTabMotion()
+  if (workspaceMotionFrame) {
+    window.cancelAnimationFrame(workspaceMotionFrame)
+  }
+  if (workspaceMotionTimer) {
+    window.clearTimeout(workspaceMotionTimer)
+  }
+
   // 关闭所有连接
   tabs.value.forEach(async tab => {
     if (tab.type === 'ssh') {
@@ -852,6 +984,8 @@ onBeforeUnmount(() => {
   box-shadow:
     inset 0 0 0 1px var(--workspace-view-border),
     var(--workspace-view-shadow);
+  transform-origin: 50% 18%;
+  will-change: transform, opacity, filter;
 }
 
 .workspace-view--ssh,
@@ -869,6 +1003,47 @@ onBeforeUnmount(() => {
 .workspace-view > * {
   width: 100%;
   height: 100%;
+}
+
+.workspace-view.is-activating {
+  animation: workspace-view-reveal 240ms cubic-bezier(0.2, 0.82, 0.2, 1);
+}
+
+.workspace-view.is-activating::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.12), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 42%);
+  opacity: 0;
+  animation: workspace-view-glow 240ms cubic-bezier(0.18, 0.82, 0.22, 1);
+}
+
+@keyframes workspace-view-reveal {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale(0.992);
+    filter: saturate(0.94);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: saturate(1);
+  }
+}
+
+@keyframes workspace-view-glow {
+  0% {
+    opacity: 0;
+  }
+  38% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 @media (max-width: 1280px) {

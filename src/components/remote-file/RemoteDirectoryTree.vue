@@ -1,5 +1,6 @@
 <template>
   <aside
+    ref="treeShellRef"
     class="remote-tree"
     @pointermove="handleSurfacePointerMove"
     @pointerleave="handleSurfacePointerLeave"
@@ -89,6 +90,7 @@ const emit = defineEmits<{
 const expandedKeys = ref<string[]>(['/'])
 const dirCache = ref<Record<string, string[]>>({})
 const renameInputRef = ref<HTMLInputElement | null>(null)
+const treeShellRef = ref<HTMLElement | null>(null)
 const treeDrag = reactive({
   active: false,
   dragging: false,
@@ -236,6 +238,15 @@ function rebuildTree() {
   } as TreeDataNode & { path: string }]
 }
 
+async function scrollCurrentPathIntoView(path: string) {
+  await nextTick()
+  const target = treeShellRef.value?.querySelector<HTMLElement>(`[data-tree-path="${CSS.escape(path)}"]`)
+  target?.scrollIntoView({
+    block: 'nearest',
+    inline: 'nearest',
+  })
+}
+
 async function loadDirChildren(path: string) {
   if (!props.connectionId || path in dirCache.value) return
   try {
@@ -356,6 +367,7 @@ function handleSurfaceContextMenu(event: MouseEvent) {
 watch(() => props.currentPath, async (newPath) => {
   expandedKeys.value = buildExpandedKeys(newPath)
   await ensureAncestors(newPath)
+  await scrollCurrentPathIntoView(newPath)
 }, { immediate: true })
 
 watch(() => props.connectionId, async (id) => {

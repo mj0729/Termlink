@@ -156,7 +156,7 @@ const props = withDefaults(defineProps<{
   syncPath?: string
   density?: WorkspaceDensity
   fontFamily?: string
-  sshState?: 'connected' | 'disconnected'
+  sshState?: 'connecting' | 'connected' | 'disconnected'
 }>(), {
   connectionId: '',
   title: '远程工作区',
@@ -294,6 +294,9 @@ function normalizeSyncPath(path: string) {
 }
 
 async function loadFiles(path: string, fromHistory = false, options?: { silentError?: boolean }) {
+  if (props.sshState === 'connecting') {
+    return
+  }
   if (props.sshState === 'disconnected') {
     pendingReconnectAction.value = { kind: 'navigate', path: path || '/' }
     emit('reconnect')
@@ -699,6 +702,9 @@ async function applyChown(user: string, group: string, recursive: boolean) {
 }
 
 function openEntry(file: SftpFileEntry) {
+  if (props.sshState === 'connecting') {
+    return
+  }
   if (props.sshState === 'disconnected') {
     pendingReconnectAction.value = { kind: 'open', entry: file }
     emit('reconnect')
@@ -736,8 +742,10 @@ let unlistenDragDrop: UnlistenFn | null = null
 let transferCompleteListener: ((event: Event) => void) | null = null
 
 onMounted(async () => {
-  if (props.syncPath) loadFiles(props.syncPath)
-  else loadFiles('/')
+  if (props.sshState === 'connected') {
+    if (props.syncPath) loadFiles(props.syncPath)
+    else loadFiles('/')
+  }
 
   unlistenDragDrop = await getCurrentWebview().onDragDropEvent((e) => {
     if (!props.connectionId || !props.active) return
@@ -783,7 +791,7 @@ onBeforeUnmount(() => {
 })
 
 watch(() => props.connectionId, (newId) => {
-  if (newId) loadFiles(props.syncPath || '/')
+  if (newId && props.sshState === 'connected') loadFiles(props.syncPath || '/')
 })
 
 watch(() => props.syncPath, (nextPath) => {
@@ -792,7 +800,12 @@ watch(() => props.syncPath, (nextPath) => {
 })
 
 watch(() => props.sshState, (nextState, prevState) => {
-  if (nextState !== 'connected' || prevState !== 'disconnected' || !pendingReconnectAction.value) return
+  if (nextState !== 'connected' || prevState === 'connected') return
+
+  if (!pendingReconnectAction.value) {
+    loadFiles(props.syncPath || currentPath.value || '/')
+    return
+  }
 
   const action = pendingReconnectAction.value
   pendingReconnectAction.value = null

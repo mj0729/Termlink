@@ -279,13 +279,14 @@ class SshService {
     title: string,
     profile: SshProfile,
     autoPassword: string | null,
+    sshState: ConnectionTab['sshState'] = 'connected',
   ): ConnectionTab {
     return {
       id,
       title,
       type: 'ssh',
       profile,
-      sshState: 'connected',
+      sshState,
       autoPassword,
     }
   }
@@ -358,8 +359,7 @@ class SshService {
     const title = this.getConnectionTabTitle(profile)
 
     try {
-      const password = await this.resolvePasswordForProfile(profile)
-      const resolvedPassword = await this.connectProfile(id, profile, password, profile.id)
+      const resolvedPassword = await this.openSavedProfile(id, profile)
       return this.buildConnectionTab(id, title, profile, resolvedPassword)
     } catch (error) {
       if (this.isUserCancelledError(error)) {
@@ -368,6 +368,19 @@ class SshService {
       console.error('SSH连接失败:', error)
       throw this.formatSshError(error, profile)
     }
+  }
+
+  createPendingProfileTab(
+    profile: SshProfile,
+    connectionId = `ssh-${Date.now()}`,
+  ): ConnectionTab {
+    const title = this.getConnectionTabTitle(profile)
+    return this.buildConnectionTab(connectionId, title, profile, null, 'connecting')
+  }
+
+  async openSavedProfile(connectionId: string, profile: SshProfile): Promise<string | null> {
+    const password = await this.resolvePasswordForProfile(profile)
+    return this.connectProfile(connectionId, profile, password, profile.id)
   }
 
   async createSshConnection(sshData: SshConnectionPayload): Promise<ConnectionTab> {

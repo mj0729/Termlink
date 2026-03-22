@@ -203,17 +203,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, h, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, h, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CloseOutlined } from '@antdv-next/icons'
 import { theme as antdTheme } from 'antdv-next'
 import type {
   ConnectionTab,
-  ConnectionStatus,
-  DownloadRequest,
-  MonitorTab,
   SftpFileEntry,
-  SshConnectionPayload,
   SshProfile,
   TabContextMenuAction,
   TerminalConfig,
@@ -238,6 +234,10 @@ const RemoteFileWorkbench = defineAsyncComponent(() => import('./components/Remo
 // 导入服务
 import SshService from './services/SshService'
 import ThemeService from './services/ThemeService'
+import { useWorkspaceTabs } from './composables/useWorkspaceTabs'
+import { useSshConnectionFlow } from './composables/useSshConnectionFlow'
+import { useConnectionCatalog } from './composables/useConnectionCatalog'
+import { useWorkspaceChrome } from './composables/useWorkspaceChrome'
 
 const launchParams = new URLSearchParams(window.location.search)
 const appMode = launchParams.get('mode') || 'main'
@@ -246,25 +246,11 @@ const remoteFilesTitle = launchParams.get('title') || '文件管理'
 const remoteFilesInitialPath = launchParams.get('path') || '/'
 
 // 响应式数据
-const tabs = ref<ConnectionTab[]>([createConnectionCenterTab()])
-const activeId = ref(tabs.value[0]?.id || '')
-const showSshModal = ref(false)
 const showSettings = ref(false)
-const freshTabId = ref('')
-const activatingWorkspaceId = ref('')
 const rightPanelRef = ref<{
   addDownload: (fileName: string, remotePath: string, savePath: string, connectionId: string) => void
   addUpload: (upload: UploadRequest) => void
 } | null>(null)
-const rightPanelCollapsed = ref(true)
-const embeddedMonitorCollapsed = ref(false)
-const rightPanelTab = ref<MonitorTab>('monitor')
-const workspaceFileDrawerState = ref<Record<string, boolean>>({})
-const groupPromptVisible = ref(false)
-const groupPromptTitle = ref('新增分组')
-const groupPromptPlaceholder = ref('请输入分组名称')
-const groupPromptValue = ref('')
-const groupPromptInputRef = ref<{ focus?: () => void } | null>(null)
 const groupPromptCloseIconNode = computed(() => h(CloseOutlined, { class: 'modal-close-icon' }))
 const groupPromptModalClasses = {
   container: 'group-prompt-modal__container',
@@ -303,14 +289,6 @@ const groupPromptModalStyles = {
     padding: '12px 20px 18px',
   },
 }
-const sshEditMode = ref(false)
-const editingProfile = ref<SshProfile | null>(null)
-const manualDisconnectingIds = new Set<string>()
-const closingTabIds = new Set<string>()
-let groupPromptResolver: ((value: string | null) => void) | null = null
-let freshTabTimer: number | null = null
-let workspaceMotionFrame: number | null = null
-let workspaceMotionTimer: number | null = null
 let unsubscribeThemeService: (() => void) | null = null
 
 // 主题和设置
@@ -350,63 +328,51 @@ const antdThemeConfig = computed(() => {
   }
 })
 
-// 已保存的连接配置
-const profiles = ref<SshProfile[]>([])
-const groups = ref<string[]>([])
+const {
+  profiles,
+  groups,
+  showSshModal,
+  sshEditMode,
+  editingProfile,
+  groupPromptVisible,
+  groupPromptTitle,
+  groupPromptPlaceholder,
+  groupPromptValue,
+  groupPromptInputRef,
+  refreshProfiles,
+  refreshConnectionData,
+  closeSshModal,
+  newSsh,
+  editProfile,
+  deleteProfile,
+  handleGroupPromptCancel,
+  handleGroupPromptConfirm,
+  createGroup,
+  renameGroup,
+  deleteGroup,
+} = useConnectionCatalog()
 
-// 缓存当前活动标签页，避免模板中多次 find()
-const currentTab = computed(() => {
-  if (!activeId.value) return null
-  return tabs.value.find(t => t.id === activeId.value) || null
-})
-
-const isConnectionCenterLayout = computed(() => currentTab.value?.type === 'connections')
-const isSshWorkspaceLayout = computed(() => currentTab.value?.type === 'ssh')
-const shouldEmbedMonitorInSsh = computed(() => (
-  isSshWorkspaceLayout.value
-  && rightPanelTab.value === 'monitor'
-))
-const effectiveRightPanelCollapsed = computed(() => (
-  shouldEmbedMonitorInSsh.value || isConnectionCenterLayout.value
-    ? true
-    : rightPanelCollapsed.value
-))
-
-function setWorkspaceFileDrawerState(tabId: string, open: boolean) {
-  workspaceFileDrawerState.value = {
-    ...workspaceFileDrawerState.value,
-    [tabId]: open,
-  }
-}
-
-function getWorkspaceFileDrawerState(tabId: string) {
-  return workspaceFileDrawerState.value[tabId] ?? true
-}
-
-function toggleCurrentWorkspaceFileDrawer() {
-  if (currentTab.value?.type !== 'ssh') return
-  const tabId = currentTab.value.id
-  const nextOpen = !getWorkspaceFileDrawerState(tabId)
-  setWorkspaceFileDrawerState(tabId, nextOpen)
-}
+const {
+  tabs,
+  activeId,
+  currentTab,
+  freshTabId,
+  activatingWorkspaceId,
+  openTabWithMotion,
+  activateTab,
+  findTabById,
+  patchSshTab,
+  updateSshTabState,
+  setWorkspaceFileDrawerState,
+  getWorkspaceFileDrawerState,
+  toggleCurrentWorkspaceFileDrawer,
+  removeTabState,
+  openConnectionCenter,
+  cleanupWorkspaceTabState,
+} = useWorkspaceTabs(createConnectionCenterTab)
 
 function handleStandaloneFilePreview() {
   message.info('独立文件窗口暂不提供文件预览，请在主工作区内打开文件。')
-}
-
-watch(isSshWorkspaceLayout, (nextIsSsh, previousIsSsh) => {
-  if (nextIsSsh && !previousIsSsh && rightPanelTab.value === 'monitor') {
-    embeddedMonitorCollapsed.value = false
-  }
-})
-
-watch(activeId, (nextId, prevId) => {
-  if (!nextId || nextId === prevId) return
-  triggerWorkspaceMotion(nextId)
-})
-
-function isUserCancelledConnection(error: unknown) {
-  return String(error).includes('已取消连接')
 }
 
 function createConnectionCenterTab(): ConnectionTab {
@@ -434,55 +400,15 @@ function handleAppContextMenu(event: MouseEvent) {
   event.preventDefault()
 }
 
-function clearFreshTabMotion() {
-  if (freshTabTimer) {
-    window.clearTimeout(freshTabTimer)
-    freshTabTimer = null
-  }
-  freshTabId.value = ''
-}
-
-function markFreshTab(id: string) {
-  clearFreshTabMotion()
-  freshTabId.value = id
-  freshTabTimer = window.setTimeout(() => {
-    if (freshTabId.value === id) {
-      freshTabId.value = ''
-    }
-    freshTabTimer = null
-  }, 360)
-}
-
-function triggerWorkspaceMotion(id: string) {
-  if (workspaceMotionFrame) {
-    window.cancelAnimationFrame(workspaceMotionFrame)
-    workspaceMotionFrame = null
-  }
-  if (workspaceMotionTimer) {
-    window.clearTimeout(workspaceMotionTimer)
-    workspaceMotionTimer = null
-  }
-
-  activatingWorkspaceId.value = ''
-  workspaceMotionFrame = window.requestAnimationFrame(() => {
-    activatingWorkspaceId.value = id
-    workspaceMotionTimer = window.setTimeout(() => {
-      if (activatingWorkspaceId.value === id) {
-        activatingWorkspaceId.value = ''
-      }
-      workspaceMotionTimer = null
-    }, 260)
-    workspaceMotionFrame = null
+function showLongError(content: string, maxWidth = '400px') {
+  message.error({
+    content,
+    duration: 8,
+    style: {
+      marginTop: '50px',
+      maxWidth,
+    },
   })
-}
-
-function openTabWithMotion(tab: ConnectionTab, options: { markFresh?: boolean } = {}) {
-  tabs.value.push(tab)
-  activeId.value = tab.id
-
-  if (options.markFresh !== false) {
-    markFreshTab(tab.id)
-  }
 }
 
 // 更新终端配置
@@ -496,42 +422,23 @@ function updateThemeCenterConfig(config: Partial<ThemeCenterConfig>) {
   themeCenterConfig.value = result.themeConfig
 }
 
-// 刷新连接配置
-async function refreshProfiles() {
-  profiles.value = await SshService.getProfiles()
-}
-
-async function refreshGroups() {
-  groups.value = await SshService.getGroups()
-}
-
-async function refreshConnectionData() {
-  await Promise.all([refreshProfiles(), refreshGroups()])
-}
-
-// 获取活动连接信息（computed 缓存）
-const activeConnection = computed(() => {
-  const tab = currentTab.value
-  if (!tab || tab.type === 'connections') return ''
-  if (tab.type === 'ssh') {
-    const username = tab.profile?.username
-    const host = tab.profile?.host
-    if (username && host) return `${username}@${host}`
-    return host || ''
-  }
-  return tab.title
-})
-
-const activeConnectionCopyText = computed(() => {
-  const tab = currentTab.value
-  if (tab?.type !== 'ssh') return ''
-  return tab.profile?.host || ''
-})
-
-const activeConnectionState = computed<ConnectionStatus | ''>(() => {
-  const tab = currentTab.value
-  if (tab?.type !== 'ssh') return ''
-  return tab.sshState || 'disconnected'
+const {
+  rightPanelCollapsed,
+  embeddedMonitorCollapsed,
+  rightPanelTab,
+  isSshWorkspaceLayout,
+  shouldEmbedMonitorInSsh,
+  effectiveRightPanelCollapsed,
+  activeConnection,
+  activeConnectionCopyText,
+  activeConnectionState,
+  handleStartDownload,
+  handleStartUpload,
+  handleRightPanelTabSelect,
+} = useWorkspaceChrome({
+  currentTab,
+  appMode,
+  rightPanelRef,
 })
 
 function getActiveProfileId() {
@@ -543,140 +450,28 @@ function getActiveTab() {
   return currentTab.value
 }
 
-// 启动已保存的连接
-async function launchSavedProfile(p: SshProfile) {
-  try {
-    const existingTab = tabs.value.find(tab => tab.type === 'ssh' && tab.profile?.id === p.id)
-    if (existingTab) {
-      activeId.value = existingTab.id
-      if (existingTab.sshState === 'disconnected') {
-        await reconnectSsh(existingTab, { silent: true })
-      }
-      return
-    }
-
-    const tabInfo = SshService.createPendingProfileTab(p)
-    openTabWithMotion(tabInfo)
-    const autoPassword = await SshService.openSavedProfile(tabInfo.id, p)
-    const currentSshTab = findTabById(tabInfo.id)
-    if (!currentSshTab) {
-      await SshService.closeConnection(tabInfo.id)
-      return
-    }
-
-    patchSshTab(tabInfo.id, {
-      autoPassword,
-      sshState: 'connected',
-    })
-  } catch (error) {
-    if (isUserCancelledConnection(error)) {
-      const pendingTab = tabs.value.find((tab) => tab.type === 'ssh' && tab.profile?.id === p.id)
-      if (pendingTab?.sshState === 'connecting') {
-        await removePendingSshTab(pendingTab.id)
-      }
-      return
-    }
-
-    const failedTab = tabs.value.find((tab) => tab.type === 'ssh' && tab.profile?.id === p.id)
-    if (failedTab) {
-      patchSshTab(failedTab.id, { sshState: 'disconnected' })
-    }
-
-    console.error('启动SSH连接失败:', error)
-    message.error({
-      content: String(error),
-      duration: 8, // 显示8秒，给用户足够时间阅读
-      style: {
-        marginTop: '50px',
-        maxWidth: '400px'
-      }
-    })
-  }
-}
-
-// 处理开始下载
-function handleStartDownload(downloadInfo: DownloadRequest) {
-  if (appMode === 'remote-files') {
-    message.info('独立文件窗口暂不展示传输队列，请在主窗口查看下载进度。')
-  }
-  rightPanelTab.value = 'download'
-  rightPanelCollapsed.value = false
-  if (rightPanelRef.value) {
-    rightPanelRef.value.addDownload(
-      downloadInfo.fileName,
-      downloadInfo.remotePath,
-      downloadInfo.savePath,
-      downloadInfo.connectionId
-    )
-  }
-}
-
-function handleStartUpload(uploadInfo: UploadRequest) {
-  if (appMode === 'remote-files') {
-    message.info('独立文件窗口暂不展示传输队列，请在主窗口查看上传进度。')
-  }
-  rightPanelTab.value = 'download'
-  rightPanelCollapsed.value = false
-  rightPanelRef.value?.addUpload(uploadInfo)
-}
-
-function handleRightPanelTabSelect(tab: MonitorTab) {
-  if (tab === 'monitor' && isSshWorkspaceLayout.value) {
-    if (rightPanelTab.value === 'monitor') {
-      embeddedMonitorCollapsed.value = !embeddedMonitorCollapsed.value
-      return
-    }
-
-    rightPanelTab.value = tab
-    embeddedMonitorCollapsed.value = false
-    return
-  }
-
-  if (rightPanelTab.value === tab) {
-    rightPanelCollapsed.value = !rightPanelCollapsed.value
-    return
-  }
-
-  rightPanelTab.value = tab
-  rightPanelCollapsed.value = false
-}
-
-// 提交 SSH 连接
-async function submitSsh(sshData: SshConnectionPayload) {
-  try {
-    if (sshData.isEdit) {
-      // 编辑模式：更新现有配置
-      await SshService.updateProfile(sshData as SshConnectionPayload & { id: string })
-      await refreshConnectionData()
-      showSshModal.value = false
-    } else {
-      // 新建模式：创建新连接
-      const tabInfo = await SshService.createSshConnection(sshData)
-      openTabWithMotion(tabInfo)
-      
-      // 刷新配置列表
-      if (sshData.savePassword) {
-        await refreshConnectionData()
-      }
-      
-      showSshModal.value = false
-    }
-  } catch (error) {
-    if (isUserCancelledConnection(error)) {
-      showSshModal.value = false
-      return
-    }
-    console.error('SSH连接操作失败:', error)
-    message.error({
-      content: String(error),
-      duration: 8, // 显示8秒，给用户足够时间阅读
-      style: {
-        marginTop: '50px',
-        maxWidth: '400px'
-      }
-    })
-  }
-}
+const {
+  isClosingSshTab,
+  markClosingSshTab,
+  clearTrackedSshTab,
+  launchSavedProfile,
+  submitSsh,
+  reconnectSsh,
+  handleSshTabExit,
+  disconnectSshTab,
+  reconnectAllSshTabs,
+} = useSshConnectionFlow({
+  tabs,
+  activateTab,
+  openTabWithMotion,
+  findTabById,
+  patchSshTab,
+  updateSshTabState,
+  closeTab: (id, options = {}) => closeTab(id, options),
+  refreshConnectionData,
+  showLongError,
+  closeSshModal,
+})
 
 // 新建本地会话
 async function newLocal() {
@@ -684,162 +479,6 @@ async function newLocal() {
   openTabWithMotion({ id, title: '本地终端', type: 'local' })
   
   await invoke('start_pty', { id, cols: 120, rows: 30 })
-}
-
-function findTabById(id: string) {
-  return tabs.value.find((item) => item.id === id) || null
-}
-
-function updateSshTabState(id: string, state: ConnectionTab['sshState']) {
-  const tab = tabs.value.find((item) => item.id === id)
-  if (tab?.type === 'ssh') {
-    tab.sshState = state
-  }
-}
-
-function patchSshTab(id: string, patch: Partial<ConnectionTab>) {
-  const tab = tabs.value.find((item) => item.id === id)
-  if (tab?.type === 'ssh') {
-    Object.assign(tab, patch)
-  }
-}
-
-async function removePendingSshTab(id: string) {
-  await closeTab(id, { skipDisconnect: true })
-}
-
-// 新建 SSH 会话
-async function newSsh() {
-  sshEditMode.value = false
-  editingProfile.value = null
-  showSshModal.value = true
-}
-
-function openConnectionCenter() {
-  const existingTab = tabs.value.find(tab => tab.type === 'connections')
-  if (existingTab) {
-    activeId.value = existingTab.id
-    return
-  }
-
-  const tab = createConnectionCenterTab()
-  openTabWithMotion(tab)
-}
-
-// 编辑 SSH 配置文件
-function editProfile(profile: SshProfile) {
-  sshEditMode.value = true
-  editingProfile.value = profile
-  showSshModal.value = true
-}
-
-async function deleteProfile(profile: SshProfile) {
-  Modal.confirm({
-    title: '确认删除',
-    content: `确定要删除连接 "${profile.username ? `${profile.username}@${profile.host}` : profile.host}" 吗？此操作无法撤销。`,
-    okText: '删除',
-    okType: 'danger',
-    cancelText: '取消',
-    async onOk() {
-      try {
-        await invoke('delete_ssh_profile', { profileId: profile.id })
-        await refreshConnectionData()
-        message.success('连接已删除')
-      } catch (error) {
-        console.error('删除连接失败:', error)
-        message.error('删除连接失败')
-      }
-    }
-  })
-}
-
-function promptGroupName(title: string, initialValue = '', placeholder = '请输入分组名称') {
-  groupPromptTitle.value = title
-  groupPromptPlaceholder.value = placeholder
-  groupPromptValue.value = initialValue
-  groupPromptVisible.value = true
-
-  nextTick(() => {
-    groupPromptInputRef.value?.focus?.()
-  })
-
-  return new Promise<string | null>((resolve) => {
-    groupPromptResolver = resolve
-  })
-}
-
-function closeGroupPrompt(result: string | null) {
-  groupPromptVisible.value = false
-  groupPromptResolver?.(result)
-  groupPromptResolver = null
-}
-
-function handleGroupPromptCancel() {
-  closeGroupPrompt(null)
-}
-
-function handleGroupPromptConfirm() {
-  const value = groupPromptValue.value.trim()
-  if (!value) {
-    message.warning('请输入分组名称')
-    nextTick(() => {
-      groupPromptInputRef.value?.focus?.()
-    })
-    return
-  }
-
-  closeGroupPrompt(value)
-}
-
-async function createGroup() {
-  const groupName = await promptGroupName('新增分组')
-  if (!groupName) {
-    return
-  }
-
-  try {
-    groups.value = await SshService.createGroup(groupName)
-    message.success('分组已创建')
-  } catch (error) {
-    console.error('创建分组失败:', error)
-    message.error(String(error))
-  }
-}
-
-async function renameGroup(groupName: string) {
-  const nextName = await promptGroupName('编辑分组', groupName, '请输入新的分组名称')
-  if (!nextName) {
-    return
-  }
-
-  try {
-    groups.value = await SshService.renameGroup(groupName, nextName)
-    await refreshProfiles()
-    message.success('分组已更新')
-  } catch (error) {
-    console.error('编辑分组失败:', error)
-    message.error(String(error))
-  }
-}
-
-async function deleteGroup(groupName: string) {
-  Modal.confirm({
-    title: '确认删除分组',
-    content: `删除分组 "${groupName}" 后，原有连接会被移出该分组。`,
-    okText: '删除',
-    okType: 'danger',
-    cancelText: '取消',
-    async onOk() {
-      try {
-        groups.value = await SshService.deleteGroup(groupName)
-        await refreshProfiles()
-        message.success('分组已删除')
-      } catch (error) {
-        console.error('删除分组失败:', error)
-        message.error(String(error))
-      }
-    }
-  })
 }
 
 // 打开文件预览
@@ -869,7 +508,7 @@ async function closeTab(id: string, options: { skipDisconnect?: boolean } = {}) 
   
   // 清理资源
   if (tab.type === 'ssh' && !options.skipDisconnect && tab.sshState !== 'disconnected') {
-    closingTabIds.add(id)
+    markClosingSshTab(id)
     await SshService.closeConnection(id)
   } else if (tab.type === 'local') {
     await invoke('close_pty', { id })
@@ -877,13 +516,8 @@ async function closeTab(id: string, options: { skipDisconnect?: boolean } = {}) 
   
   // 移除标签页
   tabs.value.splice(index, 1)
-  manualDisconnectingIds.delete(id)
-  closingTabIds.delete(id)
-  if (workspaceFileDrawerState.value[id] !== undefined) {
-    const nextDrawerState = { ...workspaceFileDrawerState.value }
-    delete nextDrawerState[id]
-    workspaceFileDrawerState.value = nextDrawerState
-  }
+  clearTrackedSshTab(id)
+  removeTabState(id)
 
   if (tabs.value.length === 0) {
     const tab = createConnectionCenterTab()
@@ -893,99 +527,7 @@ async function closeTab(id: string, options: { skipDisconnect?: boolean } = {}) 
   
   // 如果关闭的是当前活动标签页，切换到前一个标签页
   if (activeId.value === id) {
-    activeId.value = tabs.value[index - 1]?.id || tabs.value[0]?.id || ''
-  }
-}
-
-// 重新连接SSH
-async function reconnectSsh(tab: ConnectionTab | null, options: { silent?: boolean } = {}) {
-  if (tab?.type === 'ssh' && tab.profile) {
-    if (tab.sshState === 'connected') {
-      return true
-    }
-    if (tab.sshState === 'connecting') {
-      return false
-    }
-    try {
-      updateSshTabState(tab.id, 'connecting')
-      await SshService.reconnect(tab.id, tab.profile)
-      updateSshTabState(tab.id, 'connected')
-      return true
-    } catch (error) {
-      if (isUserCancelledConnection(error)) {
-        updateSshTabState(tab.id, 'disconnected')
-        return false
-      }
-
-      updateSshTabState(tab.id, 'disconnected')
-      if (!options.silent) {
-        message.error({
-          content: String(error),
-          duration: 8,
-          style: {
-            marginTop: '50px',
-            maxWidth: '400px'
-          }
-        })
-      }
-      return false
-    }
-  }
-
-  return false
-}
-
-function handleSshTabExit(id: string) {
-  if (closingTabIds.has(id)) return
-
-  if (manualDisconnectingIds.has(id)) {
-    updateSshTabState(id, 'disconnected')
-    manualDisconnectingIds.delete(id)
-    return
-  }
-
-  closeTab(id, { skipDisconnect: true })
-}
-
-async function disconnectSshTab(id: string) {
-  const tab = tabs.value.find((item) => item.id === id)
-  if (tab?.type !== 'ssh' || tab.sshState === 'disconnected') return
-
-  manualDisconnectingIds.add(id)
-  try {
-    await SshService.closeConnection(id)
-    updateSshTabState(id, 'disconnected')
-  } finally {
-    manualDisconnectingIds.delete(id)
-  }
-}
-
-async function reconnectAllSshTabs() {
-  const candidates = tabs.value.filter((tab) => (
-    tab.type === 'ssh' && tab.sshState === 'disconnected' && tab.profile
-  ))
-
-  if (!candidates.length) return
-
-  let successCount = 0
-  let failedCount = 0
-
-  for (const tab of candidates) {
-    const success = await reconnectSsh(tab, { silent: true })
-    if (success) {
-      successCount += 1
-    } else {
-      failedCount += 1
-    }
-  }
-
-  if (successCount && !failedCount) {
-    message.success(`已连接 ${successCount} 个 SSH 标签`)
-    return
-  }
-
-  if (successCount || failedCount) {
-    message.warning(`批量连接完成：成功 ${successCount} 个，失败 ${failedCount} 个`)
+    activateTab(tabs.value[index - 1]?.id || tabs.value[0]?.id || '')
   }
 }
 
@@ -1043,32 +585,21 @@ onMounted(async () => {
     await refreshConnectionData()
   } catch (error) {
     console.error('初始化连接数据失败:', error)
-    message.error({
-      content: `初始化连接数据失败：${String(error)}`,
-      duration: 8,
-      style: {
-        marginTop: '50px',
-        maxWidth: '460px'
-      }
-    })
+    showLongError(`初始化连接数据失败：${String(error)}`, '460px')
   }
 })
 
 onBeforeUnmount(() => {
   unsubscribeThemeService?.()
   unsubscribeThemeService = null
-  clearFreshTabMotion()
-  if (workspaceMotionFrame) {
-    window.cancelAnimationFrame(workspaceMotionFrame)
-  }
-  if (workspaceMotionTimer) {
-    window.clearTimeout(workspaceMotionTimer)
-  }
+  cleanupWorkspaceTabState()
 
   // 关闭所有连接
   tabs.value.forEach(async tab => {
     if (tab.type === 'ssh') {
-      await SshService.closeConnection(tab.id)
+      if (!isClosingSshTab(tab.id)) {
+        await SshService.closeConnection(tab.id)
+      }
     } else if (tab.type === 'local') {
       await invoke('close_pty', { id: tab.id })
     }

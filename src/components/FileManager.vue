@@ -55,8 +55,8 @@
             <template v-if="column.key === 'name'">
               <div class="file-item">
                 <component 
-                  :is="getFileIcon(record)" 
-                  :style="{ color: getFileColor(record) }"
+                  :is="getFileIcon(record as FileManagerEntry)" 
+                  :style="{ color: getFileColor(record as FileManagerEntry) }"
                 />
                 <span>{{ record.name }}</span>
               </div>
@@ -153,7 +153,7 @@ const canGoForward = computed(() => historyIndex.value < history.value.length - 
 const isAtRoot = computed(() => !currentPath.value || currentPath.value === '/')
 
 // 获取文件图标
-function getFileIcon(file: FileManagerEntry) {
+function getFileIcon(file: Pick<FileManagerEntry, 'name' | 'isDirectory'>) {
   if (file.isDirectory) return FolderOutlined
   
   const ext = file.name.split('.').pop()?.toLowerCase()
@@ -175,7 +175,7 @@ function getFileIcon(file: FileManagerEntry) {
 }
 
 // 获取文件颜色
-function getFileColor(file: FileManagerEntry) {
+function getFileColor(file: Pick<FileManagerEntry, 'name' | 'isDirectory'>) {
   if (file.isDirectory) return '#1890ff'
   
   const ext = file.name.split('.').pop()?.toLowerCase()

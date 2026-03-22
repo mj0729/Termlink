@@ -16,11 +16,11 @@
       >
         <div class="download-info">
           <div class="file-name">{{ download.fileName }}</div>
-          <div class="file-path">{{ download.savePath }}</div>
+          <div class="file-path">{{ download.targetPath }}</div>
           
           <!-- 进度条 -->
           <a-progress 
-            v-if="download.status === 'downloading'"
+            v-if="download.status === 'running'"
             :percent="download.progress" 
             size="small"
             :show-info="false"
@@ -28,8 +28,8 @@
           
           <!-- 状态信息 -->
           <div class="download-status">
-            <span v-if="download.status === 'downloading'">
-              {{ formatSize(download.downloaded) }} / {{ formatSize(download.total) }}
+            <span v-if="download.status === 'running'">
+              {{ formatSize(download.transferred) }} / {{ formatSize(download.total) }}
               ({{ download.progress }}%) - {{ formatSpeed(download.speed) }}
             </span>
             <span v-else-if="download.status === 'completed'" class="success">
@@ -46,7 +46,7 @@
         
         <div class="download-actions">
           <a-button 
-            v-if="download.status === 'downloading'"
+            v-if="download.status === 'running'"
             type="text" 
             size="small" 
             danger
@@ -60,7 +60,7 @@
             v-if="download.status === 'completed'"
             type="text" 
             size="small"
-            @click="openFileLocation(download.savePath)"
+            @click="openFileLocation(download.targetPath)"
             title="打开文件位置"
           >
             <FolderOpenOutlined />
@@ -92,7 +92,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed } from 'vue'
 import { 
   ClearOutlined, 
   StopOutlined, 
@@ -100,166 +100,58 @@ import {
   ReloadOutlined,
   DeleteOutlined 
 } from '@antdv-next/icons'
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
-import type { DownloadItem, DownloadProgressPayload } from '../types/app'
+import type { DownloadRequest } from '../types/app'
+import { useTransferManager } from '../composables/useTransferManager'
+import { formatBytes, formatTransferSpeed } from '../utils/formatters'
 
-const downloads = ref<DownloadItem[]>([])
-let downloadIdCounter = 0
-let progressUnlisten: (() => void) | null = null
+const {
+  transfers,
+  enqueueDownload,
+  cancelTransfer,
+  retryTransfer,
+  removeTransfer,
+  clearCompleted,
+  openFileLocation,
+} = useTransferManager()
+
+const downloads = computed(() => (
+  transfers.value.filter((transfer) => transfer.direction === 'download')
+))
 
 // 添加下载任务
 function addDownload(fileName: string, remotePath: string, savePath: string, connectionId: string) {
-  const downloadId = ++downloadIdCounter
-  const download: DownloadItem = {
-    id: downloadId,
+  const transfer = enqueueDownload({
     fileName,
     remotePath,
     savePath,
     connectionId,
-    status: 'downloading', // downloading, completed, error, cancelled
-    progress: 0,
-    downloaded: 0,
-    total: 0,
-    speed: 0,
-    startTime: Date.now(),
-    error: null
-  }
-  
-  downloads.value.push(download)
-  startDownload(download)
-  
-  return downloadId
-}
+  } satisfies DownloadRequest)
 
-// 开始下载
-async function startDownload(download: DownloadItem) {
-  try {
-    console.log('=== DownloadManager 开始下载 ===', download)
-    
-    // 开始下载（使用正确的API）
-    await invoke('download_sftp_file', {
-      connectionId: download.connectionId,
-      remotePath: download.remotePath,
-      localPath: download.savePath,
-      downloadId: download.id
-    })
-    
-    console.log('✓ DownloadManager 下载API调用成功')
-    
-    if (download.status !== 'cancelled') {
-      download.status = 'completed'
-      download.progress = 100
-      download.downloaded = download.total
-      message.success(`文件下载完成: ${download.fileName}`)
-    }
-  } catch (error) {
-    console.error('✗ DownloadManager 下载失败:', error)
-    if (download.status !== 'cancelled') {
-      download.status = 'error'
-      download.error = String(error)
-      message.error(`下载失败: ${download.fileName}`)
-    }
-  }
-}
-
-// 计算下载速度
-function calculateSpeed(download: DownloadItem) {
-  const elapsed = (Date.now() - download.startTime) / 1000
-  return elapsed > 0 ? download.downloaded / elapsed : 0
+  return transfer.id
 }
 
 // 取消下载
 async function cancelDownload(downloadId: number) {
-  const download = downloads.value.find(d => d.id === downloadId)
-  if (download && download.status === 'downloading') {
-    download.status = 'cancelled'
-    
-    try {
-      await invoke('cancel_download', { downloadId })
-      message.info(`已取消下载: ${download.fileName}`)
-    } catch (error) {
-      console.error('取消下载失败:', error)
-    }
-  }
+  await cancelTransfer(downloadId)
 }
 
 // 重试下载
 function retryDownload(downloadId: number) {
-  const download = downloads.value.find(d => d.id === downloadId)
-  if (download) {
-    download.status = 'downloading'
-    download.progress = 0
-    download.downloaded = 0
-    download.error = null
-    download.startTime = Date.now()
-    startDownload(download)
-  }
-}
-
-// 打开文件位置
-async function openFileLocation(filePath: string) {
-  try {
-    await invoke('open_file_location', { path: filePath })
-  } catch (error) {
-    message.error('无法打开文件位置: ' + error)
-  }
+  retryTransfer(downloadId)
 }
 
 // 移除下载记录
 function removeDownload(downloadId: number) {
-  const index = downloads.value.findIndex(d => d.id === downloadId)
-  if (index !== -1) {
-    downloads.value.splice(index, 1)
-  }
+  removeTransfer(downloadId)
 }
 
-// 清除已完成的下载
-function clearCompleted() {
-  downloads.value = downloads.value.filter(d => 
-    d.status === 'downloading' || d.status === 'error'
-  )
-}
-
-// 格式化文件大小
-function formatSize(bytes: number) {
-  if (!bytes || bytes === 0) return '0 B'
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(1024))
-  return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i]
-}
-
-// 格式化速度
-function formatSpeed(bytesPerSecond: number) {
-  return formatSize(bytesPerSecond) + '/s'
-}
+const formatSize = formatBytes
+const formatSpeed = formatTransferSpeed
 
 // 暴露方法给父组件
 defineExpose({
   addDownload,
   cancelDownload
-})
-
-// 生命周期钩子
-onMounted(async () => {
-  // 监听下载进度事件
-  progressUnlisten = await listen<DownloadProgressPayload>('download-progress', (event) => {
-    const { downloadId, downloaded, total, progress } = event.payload
-    const download = downloads.value.find(d => d.id === downloadId)
-    if (download && download.status === 'downloading') {
-      download.downloaded = downloaded
-      download.total = total
-      download.progress = progress
-      console.log(`📥 DownloadManager 进度: ${download.fileName} - ${progress}% (${formatSize(downloaded)}/${formatSize(total)})`)
-    }
-  })
-})
-
-onUnmounted(() => {
-  // 取消事件监听
-  if (progressUnlisten) {
-    progressUnlisten()
-  }
 })
 </script>
 

@@ -60,6 +60,10 @@ export default defineConfig(({ command }) => ({
             return 'xterm-vendor'
           }
 
+          if (id.includes('vxe-table') || id.includes('vxe-pc-ui')) {
+            return 'vxe-vendor'
+          }
+
           if (
             id.includes('antdv-next')
             || id.includes('@antdv-next')

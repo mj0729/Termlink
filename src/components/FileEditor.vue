@@ -127,6 +127,7 @@ import type { editor } from 'monaco-editor'
 import type { PropType } from 'vue'
 import SftpService from '../services/SftpService'
 import type { DownloadRequest, SftpFileEntry, ThemeName } from '../types/app'
+import { formatBytes } from '../utils/formatters'
 
 type MonacoApi = typeof import('monaco-editor')
 type MonacoEditorInstance = editor.IStandaloneCodeEditor
@@ -368,6 +369,7 @@ const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const searchInputRef = ref()
 const fileContent = ref('')
 const originalContent = ref('')
+const hasLoaded = ref(false)
 const readOnly = ref(false)
 const hasUnsavedChanges = ref(false)
 const loading = ref(false)
@@ -429,6 +431,7 @@ function handleContentInput() {
 function resetLoadState() {
   fileContent.value = ''
   originalContent.value = ''
+  hasLoaded.value = false
   loadedBytes.value = 0
   totalBytes.value = props.fileInfo.size || 0
   hasMoreChunks.value = false
@@ -651,6 +654,7 @@ async function appendChunk(offset: number, replaceContent = false) {
 
   fileContent.value = replaceContent ? chunk.content : `${fileContent.value}${chunk.content}`
   originalContent.value = fileContent.value
+  hasLoaded.value = true
   loadedBytes.value = chunk.nextOffset
   totalBytes.value = chunk.totalBytes
   hasMoreChunks.value = chunk.hasMore
@@ -681,6 +685,7 @@ async function loadFileContent() {
       })
       fileContent.value = content
       originalContent.value = content
+      hasLoaded.value = true
       resetEditorMode()
       await nextTick()
       await refreshMonacoEditor()
@@ -786,13 +791,7 @@ async function downloadFile() {
   }
 }
 
-// 格式化文件大小
-function formatFileSize(bytes?: number) {
-  if (!bytes || bytes === 0) return '-'
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(1024))
-  return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i]
-}
+const formatFileSize = (bytes?: number) => formatBytes(bytes, { emptyValue: '-' })
 
 watch(() => readOnly.value, async (newValue) => {
   if (newValue) {
@@ -809,7 +808,7 @@ watch(() => readOnly.value, async (newValue) => {
 watch(() => props.active, async (newActive) => {
   if (!newActive) return
 
-  if (!originalContent.value) {
+  if (!hasLoaded.value) {
     await loadFileContent()
     return
   }

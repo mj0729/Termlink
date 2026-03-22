@@ -76,8 +76,8 @@
 import { CopyOutlined, DesktopOutlined, DownloadOutlined, FolderOpenOutlined, SettingOutlined } from '@antdv-next/icons'
 import { computed } from 'vue'
 import type { PropType } from 'vue'
-import { getConnectionStatusMeta, type ConnectionStatus } from '../constants/connectionStatus'
-import type { MonitorTab } from '../types/app'
+import { getConnectionStatusMeta } from '../constants/connectionStatus'
+import type { ConnectionStatus, MonitorTab } from '../types/app'
 
 const props = defineProps({
   activeConnection: {

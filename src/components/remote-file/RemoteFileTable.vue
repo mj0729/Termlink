@@ -112,16 +112,17 @@ import {
   FolderTreeIcon,
 } from './RemoteFileIcons'
 import type { SftpFileEntry, WorkspaceDensity } from '../../types/app'
+import { formatBytes, formatUnixTimestamp } from '../../utils/formatters'
 
 const REMOTE_TABLE_COLUMN_WIDTHS_KEY = 'termlink_remote_file_table_column_widths'
-const DEFAULT_COLUMN_WIDTHS = {
+const DEFAULT_COLUMN_WIDTHS: Record<'name' | 'kind' | 'size' | 'modified' | 'permissions' | 'ownerUser', number> = {
   name: 220,
   kind: 90,
   size: 100,
   modified: 160,
   permissions: 100,
   ownerUser: 80,
-} as const
+}
 
 const props = defineProps<{
   files: SftpFileEntry[]
@@ -200,17 +201,8 @@ function fileKind(name: string) {
   return ext ? ext.toUpperCase() : '文件'
 }
 
-function formatSize(bytes?: number) {
-  if (!bytes || bytes === 0) return '-'
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), sizes.length - 1)
-  return `${Math.round((bytes / 1024 ** i) * 100) / 100} ${sizes[i]}`
-}
-
-function formatTime(ts?: number) {
-  if (!ts) return '-'
-  return new Date(ts * 1000).toLocaleString()
-}
+const formatSize = (bytes?: number) => formatBytes(bytes, { emptyValue: '-' })
+const formatTime = (ts?: number) => formatUnixTimestamp(ts, { emptyValue: '-' })
 
 function getFileIcon(file: SftpFileEntry) {
   if (isDirectory(file)) return FolderTreeIcon

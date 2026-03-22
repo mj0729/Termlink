@@ -93,6 +93,7 @@ pub fn run() {
             download_manager::get_sftp_file_info,
             download_manager::download_sftp_file_with_progress,
             download_manager::cancel_download,
+            download_manager::cancel_transfer,
             download_manager::open_file_location,
             // SSH command execution
             ssh_command::execute_ssh_command,

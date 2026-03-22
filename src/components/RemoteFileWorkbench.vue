@@ -133,7 +133,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, onBeforeUnmount, onMounted, reactive, ref, watch, provide } from 'vue'
+import { computed, defineAsyncComponent, h, onBeforeUnmount, onMounted, reactive, ref, watch, provide } from 'vue'
 import { Modal, message, Input } from 'antdv-next'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
@@ -146,14 +146,14 @@ import type {
 } from '../types/app'
 
 // Sub-components
-import RemotePathBar from './remote-file/RemotePathBar.vue'
-import RemoteDirectoryTree from './remote-file/RemoteDirectoryTree.vue'
-import RemoteFileTable from './remote-file/RemoteFileTable.vue'
-import FileContextMenu from './remote-file/FileContextMenu.vue'
-import RemoteStatusBar from './remote-file/RemoteStatusBar.vue'
-import RemoteAuditLog from './remote-file/RemoteAuditLog.vue'
-import ChmodModal from './remote-file/ChmodModal.vue'
-import ChownModal from './remote-file/ChownModal.vue'
+const RemotePathBar = defineAsyncComponent(() => import('./remote-file/RemotePathBar.vue'))
+const RemoteDirectoryTree = defineAsyncComponent(() => import('./remote-file/RemoteDirectoryTree.vue'))
+const RemoteFileTable = defineAsyncComponent(() => import('./remote-file/RemoteFileTable.vue'))
+const FileContextMenu = defineAsyncComponent(() => import('./remote-file/FileContextMenu.vue'))
+const RemoteStatusBar = defineAsyncComponent(() => import('./remote-file/RemoteStatusBar.vue'))
+const RemoteAuditLog = defineAsyncComponent(() => import('./remote-file/RemoteAuditLog.vue'))
+const ChmodModal = defineAsyncComponent(() => import('./remote-file/ChmodModal.vue'))
+const ChownModal = defineAsyncComponent(() => import('./remote-file/ChownModal.vue'))
 
 const props = withDefaults(defineProps<{
   connectionId?: string | null
@@ -501,6 +501,9 @@ async function deleteSelected(entriesToDelete?: SftpFileEntry[]) {
     title: `确认删除这 ${targets.length} 项吗？`,
     okType: 'danger',
     onOk: async () => {
+      const deletedPaths: string[] = []
+      const failedPaths: string[] = []
+
       for (const entry of targets) {
         try {
           if (entry.is_dir || entry.is_directory) {
@@ -508,14 +511,30 @@ async function deleteSelected(entriesToDelete?: SftpFileEntry[]) {
           } else {
             await invoke('delete_sftp_file', { connectionId: props.connectionId, path: entry.path })
           }
+          deletedPaths.push(entry.path)
         } catch (e) {
           console.error(`Delete failed: ${entry.path}`, e)
+          failedPaths.push(entry.path)
         }
       }
-      message.success('删除完成')
-      refreshCurrentPath()
-      refreshTree()
-      addAuditLog(`rm -rf ${targets.map(e => e.path).join(' ')}`)
+
+      if (deletedPaths.length) {
+        refreshCurrentPath()
+        refreshTree()
+        addAuditLog(`rm -rf ${deletedPaths.join(' ')}`)
+      }
+
+      if (!failedPaths.length) {
+        message.success(`删除完成，共 ${deletedPaths.length} 项`)
+        return
+      }
+
+      if (!deletedPaths.length) {
+        message.error(`删除失败，共 ${failedPaths.length} 项`)
+        return
+      }
+
+      message.warning(`删除部分完成：成功 ${deletedPaths.length} 项，失败 ${failedPaths.length} 项`)
     }
   })
 }

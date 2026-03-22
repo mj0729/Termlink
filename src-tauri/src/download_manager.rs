@@ -96,6 +96,13 @@ pub async fn cancel_download(download_id: u32) -> Result<(), String> {
     Ok(())
 }
 
+#[command]
+pub async fn cancel_transfer(transfer_id: u32) -> Result<(), String> {
+    CANCELLED_TRANSFERS.lock().insert(transfer_id);
+    println!("取消传输: {}", transfer_id);
+    Ok(())
+}
+
 pub fn is_transfer_cancelled(transfer_id: u32) -> bool {
     CANCELLED_TRANSFERS.lock().contains(&transfer_id)
 }

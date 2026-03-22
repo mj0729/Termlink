@@ -172,6 +172,7 @@ import RightPanel from './RightPanel.vue'
 import SshService from '../services/SshService'
 import { getConnectionStatusMeta } from '../constants/connectionStatus'
 import { getBroadcastTargetPaneIds } from '../utils/sshWorkspace'
+import { defaultSshConnectionInteractions } from '../utils/sshConnectionInteractions'
 import type {
   ConnectionTab,
   DownloadRequest,
@@ -430,7 +431,7 @@ async function addPane() {
   scheduleLayoutRecovery()
 
   try {
-    const autoPassword = await SshService.openSavedProfile(paneId, props.profile)
+    const autoPassword = await SshService.openSavedProfile(paneId, props.profile, defaultSshConnectionInteractions)
     const pane = extraPanes.value.find((item) => item.id === paneId)
     if (!pane) return
     pane.autoPassword = autoPassword
@@ -448,7 +449,7 @@ async function reconnectPane(pane: WorkspacePane) {
 
   pane.sshState = 'connecting'
   try {
-    await SshService.reconnect(pane.id, pane.profile)
+    await SshService.reconnect(pane.id, pane.profile, defaultSshConnectionInteractions)
     pane.sshState = 'connected'
   } catch (error) {
     pane.sshState = 'disconnected'

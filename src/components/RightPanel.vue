@@ -463,7 +463,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, ref, shallowRef, onBeforeUnmount, onMounted, onUnmounted, watch } from 'vue'
+import { computed, ref, shallowRef, onBeforeUnmount, onMounted, onUnmounted, watch } from 'vue'
 import { 
   ThunderboltOutlined,
   DatabaseOutlined,
@@ -478,10 +478,9 @@ import {
   RightOutlined
 } from '@antdv-next/icons'
 import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
+import { formatBytes, formatTransferSpeed, formatUptime } from '../utils/formatters'
+import { useTransferManager, type TransferTask } from '../composables/useTransferManager'
 import type {
-  DownloadRequest,
-  DownloadProgressPayload,
   MonitorTab,
   ProcessInfo,
   SshProfile,
@@ -491,21 +490,10 @@ import type {
   MemoryInfo,
   DiskInfo,
   NetworkInfo,
-  TransferItem,
-  UploadProgressPayload,
   UploadRequest,
 } from '../types/app'
 
 type TransferFilter = 'all' | 'download' | 'upload' | 'running' | 'completed' | 'error'
-type UploadConflictAction = 'overwrite' | 'rename' | 'skip'
-
-interface TransferTask extends TransferItem {
-  downloadRequest?: DownloadRequest
-  uploadRequest?: UploadRequest
-  note?: string
-  lastProgressAt?: number
-  lastTransferred?: number
-}
 
 interface TransferGroup {
   id: string
@@ -576,11 +564,17 @@ const historyLimit = 18
 // 下载管理状态
 const activeTab = ref<MonitorTab>(props.activeTab)
 const isEmbeddedMonitor = computed(() => props.embedded && activeTab.value === 'monitor')
-const transfers = ref<TransferTask[]>([])
+const {
+  transfers,
+  enqueueDownload,
+  enqueueUpload,
+  cancelTransfers,
+  retryTransfer: retryManagedTransfer,
+  removeTransfer: removeManagedTransfer,
+  clearCompleted: clearManagedCompleted,
+  openFileLocation: openManagedFileLocation,
+} = useTransferManager()
 const transferFilter = ref<TransferFilter>('all')
-let transferIdCounter = 0
-let downloadProgressUnlisten: (() => void) | null = null
-let uploadProgressUnlisten: (() => void) | null = null
 const currentTheme = ref<'light' | 'dark'>('light')
 let themeObserver: MutationObserver | null = null
 
@@ -980,10 +974,6 @@ const visibleTransferGroups = computed(() => {
   }
 })
 
-function getTransferTask(transferId: number) {
-  return transfers.value.find((item) => item.id === transferId) || null
-}
-
 function appendHistory(series: { value: number[] }, metric: number) {
   if (!Number.isFinite(metric)) return
   const nextValue = roundMetric(metric)
@@ -1090,30 +1080,7 @@ function stopAutoRefresh() {
   }
 }
 
-// 格式化文件大小
-function formatSize(bytes?: number) {
-  if (!bytes || bytes === 0) return '0 B'
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(1024))
-  return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i]
-}
-
-// 格式化运行时间
-function formatUptime(seconds?: number) {
-  if (!seconds) return '-'
-  
-  const days = Math.floor(seconds / 86400)
-  const hours = Math.floor((seconds % 86400) / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  
-  if (days > 0) {
-    return `${days}天 ${hours}小时`
-  } else if (hours > 0) {
-    return `${hours}小时 ${minutes}分钟`
-  } else {
-    return `${minutes}分钟`
-  }
-}
+const formatSize = formatBytes
 
 // 获取进度条颜色
 function getProgressColor(percentage: number) {
@@ -1128,9 +1095,7 @@ function getProgressColor(percentage: number) {
   return '#c06b6b'
 }
 
-function formatSpeed(bytesPerSecond: number) {
-  return `${formatSize(bytesPerSecond)}/s`
-}
+const formatSpeed = formatTransferSpeed
 
 function formatNetworkSpeed(bytesPerSecond?: number) {
   return formatSpeed(bytesPerSecond || 0)
@@ -1181,21 +1146,6 @@ function formatProcessMemory(memoryKb?: number) {
   return formatSize((memoryKb || 0) * 1024)
 }
 
-function updateTransferMetrics(transfer: TransferTask, transferred: number, total: number, progress: number) {
-  const now = Date.now()
-  const previousTransferred = transfer.lastTransferred ?? 0
-  const previousTime = transfer.lastProgressAt ?? transfer.startTime
-  const elapsedSeconds = Math.max((now - previousTime) / 1000, 0.001)
-  const delta = Math.max(transferred - previousTransferred, 0)
-
-  transfer.transferred = transferred
-  transfer.total = total
-  transfer.progress = progress
-  transfer.speed = delta / elapsedSeconds
-  transfer.lastTransferred = transferred
-  transfer.lastProgressAt = now
-}
-
 function buildTransferGroup(id: string, items: TransferTask[]): TransferGroup {
   const first = items[0]
   const count = items.length
@@ -1240,140 +1190,8 @@ function buildTransferGroup(id: string, items: TransferTask[]): TransferGroup {
   }
 }
 
-function dispatchTransferComplete(transfer: TransferItem) {
-  window.dispatchEvent(new CustomEvent('transfer-complete', {
-    detail: {
-      direction: transfer.direction,
-      connectionId: transfer.connectionId,
-      sourcePath: transfer.sourcePath,
-      targetPath: transfer.targetPath,
-      status: transfer.status,
-    },
-  }))
-}
-
-async function resolveDownloadTarget(request: DownloadRequest) {
-  const resolvedPath = await invoke<string>('resolve_local_target_path', {
-    path: request.savePath,
-  })
-
-  return {
-    targetPath: resolvedPath,
-    note: resolvedPath !== request.savePath ? '检测到同名本地文件，已自动重命名' : '',
-  }
-}
-
-async function resolveUploadTarget(request: UploadRequest) {
-  const exists = await invoke<boolean>('check_sftp_path_exists', {
-    connectionId: request.connectionId,
-    path: request.targetPath,
-  })
-
-  if (!exists) {
-    return {
-      action: 'overwrite' as const,
-      targetPath: request.targetPath,
-      note: '',
-    }
-  }
-
-  const action = await promptUploadConflictAction(request)
-
-  if (action === 'skip') {
-    return {
-      action,
-      targetPath: request.targetPath,
-      note: '检测到同名远程文件，已跳过上传',
-    }
-  }
-
-  if (action === 'overwrite') {
-    return {
-      action,
-      targetPath: request.targetPath,
-      note: '检测到同名远程文件，已选择覆盖上传',
-    }
-  }
-
-  const resolvedPath = await invoke<string>('resolve_sftp_target_path', {
-    connectionId: request.connectionId,
-    path: request.targetPath,
-  })
-
-  return {
-    action,
-    targetPath: resolvedPath,
-    note: resolvedPath !== request.targetPath ? '检测到同名远程文件，已自动重命名' : '',
-  }
-}
-
-function promptUploadConflictAction(request: UploadRequest): Promise<UploadConflictAction> {
-  return new Promise((resolve) => {
-    let settled = false
-    let modalInstance: { destroy: () => void } | null = null
-    const finish = (action: UploadConflictAction) => {
-      if (settled) return
-      settled = true
-      modalInstance?.destroy()
-      resolve(action)
-    }
-
-    modalInstance = Modal.confirm({
-      title: '发现同名远程文件',
-      content: h('div', { class: 'termlink-confirm-stack' }, [
-        h('div', { class: 'termlink-confirm-path' }, request.targetPath),
-        h('div', { class: 'termlink-confirm-text' }, `请选择如何处理“${request.fileName}”`),
-      ]),
-      okCancel: false,
-      closable: false,
-      maskClosable: false,
-      keyboard: false,
-      footer: () => h('div', { class: 'termlink-confirm-footer' }, [
-        h('button', {
-          type: 'button',
-          class: 'termlink-confirm-button',
-          onClick: () => finish('skip'),
-        }, '跳过'),
-        h('button', {
-          type: 'button',
-          class: 'termlink-confirm-button',
-          onClick: () => finish('rename'),
-        }, '自动重命名'),
-        h('button', {
-          type: 'button',
-          class: 'termlink-confirm-button termlink-confirm-button--primary',
-          onClick: () => finish('overwrite'),
-        }, '覆盖'),
-      ]),
-      onClose: () => finish('skip'),
-    })
-  })
-}
-
 // 生命周期
 onMounted(async () => {
-  downloadProgressUnlisten = await listen<DownloadProgressPayload>('download-progress', (event) => {
-    const { downloadId, downloaded, total, progress } = event.payload
-    const transfer = transfers.value.find(item => item.id === downloadId && item.direction === 'download')
-    if (transfer && transfer.status === 'running') {
-      updateTransferMetrics(transfer, downloaded, total, progress)
-    }
-  })
-
-  uploadProgressUnlisten = await listen<UploadProgressPayload>('upload-progress', (event) => {
-    const { uploadId, uploaded, total, progress } = event.payload
-    const transfer = transfers.value.find(item => item.id === uploadId && item.direction === 'upload')
-    if (transfer && transfer.status === 'running') {
-      updateTransferMetrics(transfer, uploaded, total, progress)
-      if (total > 0 && uploaded >= total) {
-        transfer.status = 'completed'
-        transfer.progress = 100
-        transfer.speed = 0
-        dispatchTransferComplete(transfer)
-      }
-    }
-  })
-
   if (!props.collapsed && props.connectionId) {
     startAutoRefresh()
   }
@@ -1381,9 +1199,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopAutoRefresh()
-  // 取消事件监听
-  downloadProgressUnlisten?.()
-  uploadProgressUnlisten?.()
 })
 
 // 监听属性变化
@@ -1436,195 +1251,29 @@ watch(activeTab, (newTab) => {
 // ============ 传输管理函数 ============
 
 function addDownload(fileName: string, remotePath: string, savePath: string, connectionId: string) {
-  const request: DownloadRequest = {
+  enqueueDownload({
     fileName,
     remotePath,
     savePath,
     connectionId,
-  }
-
-  const transfer: TransferTask = {
-    id: ++transferIdCounter,
-    direction: 'download',
-    fileName,
-    sourcePath: remotePath,
-    targetPath: savePath,
-    connectionId,
-    batchId: request.batchId,
-    batchLabel: request.batchLabel,
-    status: 'running',
-    progress: 0,
-    transferred: 0,
-    total: 0,
-    speed: 0,
-    startTime: Date.now(),
-    error: null,
-    downloadRequest: request,
-  }
-
-  transfers.value.push(transfer)
-  startDownload(transfer)
+  })
   activeTab.value = 'download'
 }
 
 function addUpload(upload: UploadRequest) {
-  const sourcePath = upload.source.kind === 'local-path' ? upload.source.localPath : upload.fileName
-  const transfer: TransferTask = {
-    id: ++transferIdCounter,
-    direction: 'upload',
-    fileName: upload.fileName,
-    sourcePath,
-    targetPath: upload.targetPath,
-    connectionId: upload.connectionId,
-    batchId: upload.batchId,
-    batchLabel: upload.batchLabel,
-    status: 'running',
-    progress: 0,
-    transferred: 0,
-    total: 0,
-    speed: 0,
-    startTime: Date.now(),
-    error: null,
-    uploadRequest: upload,
-  }
-
-  transfers.value.push(transfer)
-  startUpload(transfer, upload)
+  enqueueUpload(upload)
   activeTab.value = 'download'
-}
-
-async function startDownload(transfer: TransferTask) {
-  try {
-    const task = getTransferTask(transfer.id) || transfer
-    const request = task.downloadRequest
-    if (!request) {
-      throw new Error('下载请求不存在')
-    }
-
-    const resolved = await resolveDownloadTarget(request)
-    task.targetPath = resolved.targetPath
-    task.note = resolved.note
-
-    await invoke('download_sftp_file', {
-      connectionId: task.connectionId,
-      remotePath: task.sourcePath,
-      localPath: task.targetPath,
-      downloadId: task.id
-    })
-
-    if (task.status !== 'cancelled') {
-      task.status = 'completed'
-      task.progress = 100
-      message.success(`下载完成: ${task.fileName}`)
-      dispatchTransferComplete(task)
-    }
-  } catch (error) {
-    const task = getTransferTask(transfer.id) || transfer
-    if (task.status !== 'cancelled') {
-      task.status = 'error'
-      task.error = error.toString()
-      message.error(`下载失败: ${task.fileName}`)
-      dispatchTransferComplete(task)
-    }
-  }
-}
-
-async function startUpload(transfer: TransferTask, upload: UploadRequest) {
-  try {
-    const task = getTransferTask(transfer.id) || transfer
-    const resolved = await resolveUploadTarget(upload)
-    task.targetPath = resolved.targetPath
-    task.note = resolved.note
-
-    if (resolved.action === 'skip') {
-      task.status = 'skipped'
-      task.progress = 0
-      task.transferred = 0
-      task.total = 0
-      task.speed = 0
-      task.error = null
-      message.info(`已跳过上传: ${task.fileName}`)
-      dispatchTransferComplete(task)
-      return
-    }
-
-    if (upload.source.kind === 'file') {
-      const data = Array.from(new Uint8Array(await upload.source.file.arrayBuffer()))
-      await invoke('upload_sftp_content', {
-        connectionId: task.connectionId,
-        remotePath: task.targetPath,
-        data,
-        uploadId: task.id,
-      })
-    } else {
-      await invoke('upload_sftp_file', {
-        connectionId: task.connectionId,
-        localPath: upload.source.localPath,
-        remotePath: task.targetPath,
-        uploadId: task.id,
-      })
-    }
-
-    if (task.status !== 'cancelled') {
-      task.status = 'completed'
-      task.progress = 100
-      message.success(`上传完成: ${task.fileName}`)
-      dispatchTransferComplete(task)
-    }
-  } catch (error) {
-    const task = getTransferTask(transfer.id) || transfer
-    if (task.status !== 'cancelled') {
-      task.status = 'error'
-      task.error = error.toString()
-      message.error(`上传失败: ${task.fileName}`)
-      dispatchTransferComplete(task)
-    }
-  }
-}
-
-function cancelTransfer(transferId: number) {
-  const transfer = transfers.value.find(item => item.id === transferId)
-  if (!transfer) return
-
-  transfer.status = 'cancelled'
-  message.info(`${transfer.direction === 'download' ? '已取消下载' : '已取消上传'}: ${transfer.fileName}`)
-  dispatchTransferComplete(transfer)
 }
 
 async function cancelTransferGroup(groupId: string) {
   const group = transferGroups.value.find((item) => item.id === groupId)
   if (!group) return
 
-  for (const transfer of group.items.filter((item) => item.status === 'running')) {
-    try {
-      await invoke('cancel_download', { downloadId: transfer.id })
-    } catch (error) {
-      console.error('取消传输失败:', error)
-    }
-    cancelTransfer(transfer.id)
-  }
+  await cancelTransfers(group.items)
 }
 
 function retryTransfer(transferId: number) {
-  const transfer = transfers.value.find((item) => item.id === transferId)
-  if (!transfer) return
-
-  transfer.status = 'running'
-  transfer.progress = 0
-  transfer.transferred = 0
-  transfer.total = 0
-  transfer.error = null
-  transfer.note = ''
-  transfer.startTime = Date.now()
-
-  if (transfer.direction === 'download' && transfer.downloadRequest) {
-    startDownload(transfer)
-    return
-  }
-
-  if (transfer.direction === 'upload' && transfer.uploadRequest) {
-    startUpload(transfer, transfer.uploadRequest)
-  }
+  retryManagedTransfer(transferId)
 }
 
 function retryTransferGroup(groupId: string) {
@@ -1637,18 +1286,11 @@ function retryTransferGroup(groupId: string) {
 }
 
 async function openFileLocation(filePath: string) {
-  try {
-    await invoke('open_file_location', { path: filePath })
-  } catch (error) {
-    message.error('无法打开文件位置: ' + error)
-  }
+  await openManagedFileLocation(filePath)
 }
 
 function removeTransfer(transferId: number) {
-  const index = transfers.value.findIndex(item => item.id === transferId)
-  if (index !== -1) {
-    transfers.value.splice(index, 1)
-  }
+  removeManagedTransfer(transferId)
 }
 
 function removeTransferGroup(groupId: string) {
@@ -1660,9 +1302,7 @@ function removeTransferGroup(groupId: string) {
 }
 
 function clearCompleted() {
-  transfers.value = transfers.value.filter(item => 
-    item.status === 'running' || item.status === 'error'
-  )
+  clearManagedCompleted()
 }
 
 // 暴露方法给父组件

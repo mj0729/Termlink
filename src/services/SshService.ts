@@ -1,6 +1,4 @@
 import { invoke } from '@tauri-apps/api/core'
-import { Button } from 'antdv-next'
-import { h } from 'vue'
 import type {
   ConnectionTab,
   SshPortForward,
@@ -41,7 +39,7 @@ type SshAuthRequestPayload = {
   port_forwards: SshPortForwardPayload[]
 }
 
-type HostKeyVerification = {
+export type HostKeyVerification = {
   state: 'trusted' | 'unknown' | 'changed' | 'revoked'
   presented: {
     host: string
@@ -54,6 +52,16 @@ type HostKeyVerification = {
     fingerprint_sha256: string
   } | null
   requires_user_confirmation: boolean
+}
+
+export type SshHostKeyDecision = 'trust-and-save' | 'trust-once' | 'reject'
+
+export type SshConnectionInteractions = {
+  requestPassword?: (
+    profile: Pick<SshProfile, 'host' | 'port' | 'username'>,
+    options: { title: string },
+  ) => Promise<string | null>
+  confirmHostKey?: (verification: HostKeyVerification) => Promise<SshHostKeyDecision>
 }
 
 export type SshTerminalChunk = {
@@ -74,37 +82,16 @@ class SshService {
     rows: 24,
   }
 
-  async promptForPassword(
+  async requestPassword(
     profile: Pick<SshProfile, 'host' | 'port' | 'username'>,
+    interactions?: SshConnectionInteractions,
     title = '输入 SSH 密码',
   ): Promise<string | null> {
-    let password = ''
+    if (!interactions?.requestPassword) {
+      return null
+    }
 
-    return new Promise((resolve) => {
-      Modal.confirm({
-        title,
-        content: h('div', { class: 'termlink-confirm-stack' }, [
-          h(
-            'div',
-            { class: 'termlink-confirm-text' },
-            `目标：${profile.username}@${profile.host}:${profile.port}`,
-          ),
-          h('input', {
-            class: 'termlink-confirm-input',
-            type: 'password',
-            autofocus: true,
-            placeholder: '请输入密码',
-            onInput: (event: Event) => {
-              password = (event.target as HTMLInputElement).value
-            },
-          }),
-        ]),
-        okText: '连接',
-        cancelText: '取消',
-        onOk: async () => resolve(password || null),
-        onCancel: async () => resolve(null),
-      })
-    })
+    return interactions.requestPassword(profile, { title })
   }
 
   async resolvePasswordForProfile(profile: SshProfile): Promise<string | null> {
@@ -187,7 +174,10 @@ class SshService {
     }
   }
 
-  async startConnection(auth: SshAuthRequestPayload): Promise<void> {
+  async startConnection(
+    auth: SshAuthRequestPayload,
+    interactions?: SshConnectionInteractions,
+  ): Promise<void> {
     try {
       await invoke('start_ssh_terminal', {
         auth,
@@ -198,7 +188,7 @@ class SshService {
         throw error
       }
 
-      const resolvedAuth = await this.resolveHostKeyTrust(auth)
+      const resolvedAuth = await this.resolveHostKeyTrust(auth, interactions)
       await invoke('start_ssh_terminal', {
         auth: resolvedAuth,
         ...this.defaultTerminalSize,
@@ -226,6 +216,7 @@ class SshService {
 
   async resolveHostKeyTrust(
     auth: SshAuthRequestPayload,
+    interactions?: SshConnectionInteractions,
     verification?: HostKeyVerification,
   ): Promise<SshAuthRequestPayload> {
     const resolvedVerification = verification ?? await invoke<HostKeyVerification>('preview_ssh_host_key', {
@@ -236,7 +227,11 @@ class SshService {
       return auth
     }
 
-    const action = await this.promptHostKeyDecision(resolvedVerification)
+    if (!interactions?.confirmHostKey) {
+      throw new Error('缺少主机密钥确认处理器')
+    }
+
+    const action = await interactions.confirmHostKey(resolvedVerification)
 
     if (action === 'reject') {
       throw new Error('用户取消主机密钥确认')
@@ -260,82 +255,6 @@ class SshService {
       ...auth,
       strict_host_key_checking: false,
     }
-  }
-
-  async promptHostKeyDecision(verification: HostKeyVerification): Promise<'trust-and-save' | 'trust-once' | 'reject'> {
-    const stateLabelMap = {
-      unknown: '首次连接',
-      changed: '主机密钥已变化',
-      revoked: '主机密钥已被撤销',
-      trusted: '主机密钥已受信任',
-    } as const
-
-    const details = [
-      `状态：${stateLabelMap[verification.state] || verification.state}`,
-      `主机：${verification.presented.host}:${verification.presented.port}`,
-      `算法：${verification.presented.algorithm}`,
-      `指纹：${verification.presented.fingerprint_sha256}`,
-    ]
-
-    if (verification.stored?.fingerprint_sha256) {
-      details.push(`已存储指纹：${verification.stored.fingerprint_sha256}`)
-    }
-
-    return new Promise<'trust-and-save' | 'trust-once' | 'reject'>((resolve) => {
-      let settled = false
-      let modal: { destroy: () => void } | null = null
-
-      const finish = (decision: 'trust-and-save' | 'trust-once' | 'reject') => {
-        if (settled) {
-          return
-        }
-        settled = true
-        modal?.destroy()
-        resolve(decision)
-      }
-
-      modal = Modal.confirm({
-        title: verification.state === 'changed' ? '主机密钥已变化' : '确认主机密钥',
-        content: h(
-          'div',
-          { class: 'termlink-confirm-text' },
-          [
-            verification.state === 'changed'
-              ? '检测到主机密钥与已保存记录不一致。'
-              : '这是该主机的首次连接。',
-            '',
-            ...details,
-            '',
-            '选择“仅本次信任”会继续连接，但不会保存到本地主机密钥记录。',
-            '选择“信任并保存”会继续连接，并将当前主机密钥保存到本地记录。',
-          ].join('\n'),
-        ),
-        okText: null,
-        cancelText: null,
-        footer: () => h(
-          'div',
-          { class: 'termlink-confirm-footer' },
-          [
-            h(
-              Button,
-              { class: 'termlink-confirm-button termlink-confirm-button--danger', onClick: () => finish('reject') },
-              { default: () => '拒绝连接' },
-            ),
-            h(
-              Button,
-              { class: 'termlink-confirm-button', onClick: () => finish('trust-once') },
-              { default: () => '仅本次信任' },
-            ),
-            h(
-              Button,
-              { type: 'primary', class: 'termlink-confirm-button termlink-confirm-button--primary', onClick: () => finish('trust-and-save') },
-              { default: () => '信任并保存' },
-            ),
-          ],
-        ),
-        onCancel: async () => finish('reject'),
-      })
-    })
   }
 
   buildConnectionTab(
@@ -383,11 +302,12 @@ class SshService {
     profile: SshProfile,
     initialPassword: string | null,
     profileId: string | null,
+    interactions?: SshConnectionInteractions,
   ): Promise<string | null> {
     let password = profile.private_key ? null : initialPassword
 
     if (!profile.private_key && !password) {
-      password = await this.promptForPassword(profile, '输入 SSH 密码后继续连接')
+      password = await this.requestPassword(profile, interactions, '输入 SSH 密码后继续连接')
     }
 
     if (!profile.private_key && !password) {
@@ -400,6 +320,7 @@ class SshService {
     try {
       await this.startConnection(
         this.buildAuthRequest(connectionId, profile, password, profileId, proxyJump, portForwards),
+        interactions,
       )
       await this.persistPasswordIfNeeded(profile, password)
       return password
@@ -408,25 +329,26 @@ class SshService {
         throw error
       }
 
-      const retryPassword = await this.promptForPassword(profile, '认证失败，请重新输入 SSH 密码')
+      const retryPassword = await this.requestPassword(profile, interactions, '认证失败，请重新输入 SSH 密码')
       if (!retryPassword) {
         throw this.createCancelledError()
       }
 
       await this.startConnection(
         this.buildAuthRequest(connectionId, profile, retryPassword, profileId, proxyJump, portForwards),
+        interactions,
       )
       await this.persistPasswordIfNeeded(profile, retryPassword)
       return retryPassword
     }
   }
 
-  async launchProfile(profile: SshProfile): Promise<ConnectionTab> {
+  async launchProfile(profile: SshProfile, interactions?: SshConnectionInteractions): Promise<ConnectionTab> {
     const id = `ssh-${Date.now()}`
     const title = this.getConnectionTabTitle(profile)
 
     try {
-      const resolvedPassword = await this.openSavedProfile(id, profile)
+      const resolvedPassword = await this.openSavedProfile(id, profile, interactions)
       return this.buildConnectionTab(id, title, profile, resolvedPassword)
     } catch (error) {
       if (this.isUserCancelledError(error)) {
@@ -445,12 +367,19 @@ class SshService {
     return this.buildConnectionTab(connectionId, title, profile, null, 'connecting')
   }
 
-  async openSavedProfile(connectionId: string, profile: SshProfile): Promise<string | null> {
+  async openSavedProfile(
+    connectionId: string,
+    profile: SshProfile,
+    interactions?: SshConnectionInteractions,
+  ): Promise<string | null> {
     const password = await this.resolvePasswordForProfile(profile)
-    return this.connectProfile(connectionId, profile, password, profile.id)
+    return this.connectProfile(connectionId, profile, password, profile.id, interactions)
   }
 
-  async createSshConnection(sshData: SshConnectionPayload): Promise<ConnectionTab> {
+  async createSshConnection(
+    sshData: SshConnectionPayload,
+    interactions?: SshConnectionInteractions,
+  ): Promise<ConnectionTab> {
     const id = `ssh-${Date.now()}`
     const profile: SshProfile = {
       id,
@@ -493,6 +422,7 @@ class SshService {
         profile,
         initialPassword,
         sshData.id || null,
+        interactions,
       )
       return this.buildConnectionTab(id, title, profile, resolvedPassword)
     } catch (error) {
@@ -583,7 +513,11 @@ class SshService {
     }
   }
 
-  async reconnect(id: string, profile: SshProfile): Promise<void> {
+  async reconnect(
+    id: string,
+    profile: SshProfile,
+    interactions?: SshConnectionInteractions,
+  ): Promise<void> {
     try {
       try {
         await invoke('disconnect_ssh_connection', { connectionId: id })
@@ -594,7 +528,7 @@ class SshService {
       }
 
       const password = await this.resolvePasswordForProfile(profile)
-      await this.connectProfile(id, profile, password, profile.id)
+      await this.connectProfile(id, profile, password, profile.id, interactions)
     } catch (e) {
       if (this.isUserCancelledError(e)) {
         throw e

@@ -313,7 +313,10 @@ const tagOptions = computed(() => {
         color: '#94a3b8',
         background: 'rgba(148, 163, 184, 0.16)',
         border: 'rgba(148, 163, 184, 0.26)',
-        text: '#475569'
+        text: '#475569',
+        darkBackground: 'rgba(148, 163, 184, 0.16)',
+        darkBorder: 'rgba(148, 163, 184, 0.28)',
+        darkText: '#cbd5e1',
       })
     }
   })

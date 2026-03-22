@@ -8,7 +8,6 @@
   >
     <a-tree
       v-if="treeData.length"
-      block-node
       :tree-data="treeData"
       :expanded-keys="expandedKeys"
       :selected-keys="[currentPath]"
@@ -401,14 +400,18 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .remote-tree {
-  width: 200px;
-  min-width: 160px;
-  max-width: 280px;
+  width: var(--remote-tree-pane-width, 200px);
+  min-width: var(--remote-tree-pane-min-width, 160px);
+  max-width: var(--remote-tree-pane-max-width, 280px);
   border-right: 1px solid var(--remote-tree-border);
   font-family: var(--remote-file-font-family, inherit);
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 6px 6px 6px 8px;
+  padding:
+    var(--remote-tree-pad-top, 6px)
+    var(--remote-tree-pad-right, 6px)
+    var(--remote-tree-pad-bottom, 6px)
+    var(--remote-tree-pad-left, 8px);
   background: var(--remote-tree-bg);
   box-shadow: var(--remote-tree-shadow);
 }
@@ -424,35 +427,40 @@ onBeforeUnmount(() => {
 }
 
 .remote-tree__title {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: var(--remote-tree-node-gap, 6px);
+  font-size: var(--remote-tree-font-size, 12px);
   color: var(--remote-tree-text);
-  padding: 2px 6px;
-  border-radius: 6px;
+  padding: var(--remote-tree-title-padding-y, 2px) var(--remote-tree-title-padding-x, 6px);
+  border-radius: var(--remote-tree-title-radius, 6px);
+  min-width: 0;
+  max-width: 100%;
+  width: fit-content;
   transition: background-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
 }
 
 .remote-tree__title.is-current {
-  background: var(--remote-tree-current-bg);
+  background: color-mix(in srgb, var(--remote-tree-current-bg) 68%, transparent);
   color: var(--remote-tree-current-text);
   font-weight: 600;
-  box-shadow: var(--remote-tree-current-shadow);
+  box-shadow: none;
 }
 
 .remote-tree__title.is-drop-target {
-  background: var(--remote-tree-drop-bg);
-  box-shadow: var(--remote-tree-drop-shadow);
+  background: color-mix(in srgb, var(--remote-tree-drop-bg) 74%, transparent);
+  box-shadow: none;
 }
 
 .remote-tree__icon {
-  width: 16px;
-  height: 16px;
+  width: var(--remote-tree-icon-size, 16px);
+  height: var(--remote-tree-icon-size, 16px);
   flex-shrink: 0;
 }
 
 .remote-tree__name {
+  display: block;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -461,10 +469,10 @@ onBeforeUnmount(() => {
 .remote-tree__input {
   min-width: 0;
   flex: 1;
-  height: 22px;
-  padding: 0 6px;
+  height: var(--remote-tree-input-height, 22px);
+  padding: 0 var(--remote-tree-input-padding-x, 6px);
   border: 1px solid var(--primary-color, #1677ff);
-  border-radius: 6px;
+  border-radius: var(--remote-tree-input-radius, 6px);
   background: var(--remote-name-input-bg);
   color: var(--remote-name-input-text);
   font: inherit;
@@ -483,13 +491,54 @@ onBeforeUnmount(() => {
   color: inherit;
 }
 
-.remote-tree :deep(.ant-tree-node-content-wrapper) {
-  min-height: 24px;
-  margin: 1px 0;
-  border-radius: 6px;
+.remote-tree :deep(.ant-tree-list-holder-inner) {
+  align-items: flex-start !important;
+}
+
+.remote-tree :deep(.ant-tree-treenode) {
+  padding-block: 0;
+  display: flex !important;
+  align-items: center;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 100%;
+  flex: none !important;
+}
+
+.remote-tree :deep(.ant-tree-indent-unit) {
+  width: var(--remote-tree-indent-width, 16px);
+}
+
+.remote-tree :deep(.ant-tree-switcher),
+.remote-tree :deep(.ant-tree-switcher-noop) {
+  width: var(--remote-tree-switcher-width, 16px);
+  min-width: var(--remote-tree-switcher-width, 16px);
+  margin-inline-end: 1px;
   display: inline-flex;
   align-items: center;
-  width: calc(100% - 2px);
+  justify-content: center;
+}
+
+.remote-tree :deep(.ant-tree-title) {
+  display: inline-flex !important;
+  align-items: center;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 100%;
+  flex: none !important;
+}
+
+.remote-tree :deep(.ant-tree-node-content-wrapper) {
+  min-height: var(--remote-tree-node-min-height, 24px);
+  margin: var(--remote-tree-node-margin-y, 1px) 0;
+  padding: 0 1px !important;
+  border-radius: var(--remote-tree-content-radius, 6px);
+  display: inline-flex;
+  flex: 0 1 auto !important;
+  align-items: center;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 100%;
   transition: background-color 0.16s ease;
 }
 

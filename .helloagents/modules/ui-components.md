@@ -7,6 +7,13 @@
 
 ## 本次迁移更新
 
+- `RemoteFileWorkbench` 与 `RemoteDirectoryTree` 已收紧嵌入式文件管理区的视觉密度：aggressive 模式下移除内容区圆角，左侧目录树进一步压到接近系统文件树的极窄横向占位，并同步压缩节点高度、缩进与内边距，但保留正常可读字号，整体更接近桌面文件管理器的硬朗紧凑观感
+- `RemoteDirectoryTree` 已取消树节点整行铺满的 `block-node` 呈现，并把节点 wrapper 从整列占满改为内容自适应宽度，避免短目录名（如 `/`、`boot`）右侧继续残留大块“伪空白”
+- `RemoteDirectoryTree` 的 Ant Tree 外层默认留白也已被进一步收掉：aggressive 模式下继续压缩缩进宽度、箭头占位和节点 wrapper 自带 padding，让树节点更贴近系统文件树的紧凑层级
+- 针对过度压缩导致的左树可读性下降，`RemoteFileWorkbench`/`RemoteDirectoryTree` 已把 aggressive 模式下的箭头占位、缩进宽度、图标尺寸和节点间距回调到“紧凑但不拥挤”的平衡值，避免箭头、图标、文本相互打架
+- `RemoteDirectoryTree` 已按系统文件树风格重做一轮结构样式：节点标题、`ant-tree-title` 与 `ant-tree-node-content-wrapper` 统一改为内容自适应宽度，当前选中态从重按钮感改成更轻的胶囊高亮，配合更稳的树宽、缩进和前导结构，避免短目录名右侧空白过大或层级前导挤压失真
+- `RemoteDirectoryTree` 已修正一次误设的节点宽度约束：此前 `ant-tree-treenode` 仍被 `min-width: 100%` 强行撑满整列，导致视觉上看起来“怎么改都没变化”；现在已改为真正按内容宽度收口
+- `RemoteDirectoryTree` 现已对 Ant Tree 默认的 `flex / width` 占位做强制覆盖：`ant-tree-treenode`、`ant-tree-title` 与 `ant-tree-node-content-wrapper` 都改为内容宽度收口，避免库默认的整行布局再次把短目录名撑回整列
 - `TabManager` 现在会为新建标签提供一次性轻滑入动效，并重新启用 `inkBar` 过渡；整体风格偏轻盈克制，不影响终端工作流
 - `ConnectionHub` 点击已保存连接时不再等待后端建连完成后才切换工作区，而是立即打开 SSH 标签页并展示 `connecting` 中间态
 - `TabManager`、`Terminal`、`RemoteFileWorkbench`、`SshWorkspace` 已统一支持 `connecting / connected / disconnected` 三态；只有 `connected` 才会绑定终端会话、加载远程文件和启动嵌入式监控

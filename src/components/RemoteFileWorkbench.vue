@@ -884,6 +884,27 @@ provide('connectionId', props.connectionId)
   --remote-file-accent-archive: #c77d34;
   --remote-file-accent-video: #7b67d7;
   --remote-file-accent-audio: #3e9bb0;
+  --remote-tree-pane-width: 200px;
+  --remote-tree-pane-min-width: 160px;
+  --remote-tree-pane-max-width: 280px;
+  --remote-tree-pad-top: 6px;
+  --remote-tree-pad-right: 6px;
+  --remote-tree-pad-bottom: 6px;
+  --remote-tree-pad-left: 8px;
+  --remote-tree-node-min-height: 24px;
+  --remote-tree-node-margin-y: 1px;
+  --remote-tree-node-gap: 6px;
+  --remote-tree-title-padding-y: 2px;
+  --remote-tree-title-padding-x: 6px;
+  --remote-tree-title-radius: 6px;
+  --remote-tree-content-radius: 6px;
+  --remote-tree-input-height: 22px;
+  --remote-tree-input-padding-x: 6px;
+  --remote-tree-input-radius: 6px;
+  --remote-tree-icon-size: 16px;
+  --remote-tree-switcher-width: 16px;
+  --remote-tree-indent-width: 16px;
+  --remote-tree-font-size: 12px;
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
@@ -898,6 +919,27 @@ provide('connectionId', props.connectionId)
 .remote-workbench--aggressive {
   --remote-footer-bg: rgba(227, 233, 239, 0.86);
   --remote-audit-bg: rgba(242, 245, 248, 0.9);
+  --remote-tree-pane-width: 142px;
+  --remote-tree-pane-min-width: 118px;
+  --remote-tree-pane-max-width: 158px;
+  --remote-tree-pad-top: 2px;
+  --remote-tree-pad-right: 2px;
+  --remote-tree-pad-bottom: 2px;
+  --remote-tree-pad-left: 2px;
+  --remote-tree-node-min-height: 19px;
+  --remote-tree-node-margin-y: 0px;
+  --remote-tree-node-gap: 2px;
+  --remote-tree-title-padding-y: 0px;
+  --remote-tree-title-padding-x: 2px;
+  --remote-tree-title-radius: 3px;
+  --remote-tree-content-radius: 0px;
+  --remote-tree-input-height: 19px;
+  --remote-tree-input-padding-x: 2px;
+  --remote-tree-input-radius: 0px;
+  --remote-tree-icon-size: 14px;
+  --remote-tree-switcher-width: 10px;
+  --remote-tree-indent-width: 12px;
+  --remote-tree-font-size: 12px;
 }
 
 :global(body[data-theme="dark"] .remote-workbench) {
@@ -981,14 +1023,13 @@ provide('connectionId', props.connectionId)
 }
 
 .remote-workbench--aggressive .remote-workbench__content {
-  border-radius: 12px;
+  border-radius: 0;
 }
 
 .remote-workbench--aggressive :deep(.remote-tree) {
-  width: 172px;
-  min-width: 140px;
-  max-width: 200px;
-  padding-inline: 4px;
+  width: var(--remote-tree-pane-width);
+  min-width: var(--remote-tree-pane-min-width);
+  max-width: var(--remote-tree-pane-max-width);
 }
 
 .remote-workbench--aggressive :deep(.remote-file-table .vxe-header--column) {

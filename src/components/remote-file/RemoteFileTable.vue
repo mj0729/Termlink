@@ -3,6 +3,7 @@
     ref="tableWrapRef"
     class="remote-file-table"
     :class="{ 'is-box-selecting': selBox.dragging }"
+    :style="tableStyleVars"
     tabindex="0"
     @contextmenu.prevent="handleSurfaceContext"
     @focus="isFocused = true"
@@ -15,7 +16,8 @@
       :loading="loading"
       height="100%"
       :scroll-y="{ enabled: true, gt: 200 }"
-      :row-config="{ height: 32, isCurrent: true, isHover: true }"
+      :column-config="{ resizable: true }"
+      :row-config="rowConfig"
       :sort-config="{ trigger: 'cell', multiple: false }"
       :menu-config="{ enabled: true, body: { options: [[]] } }"
       :row-class-name="rowClassName"
@@ -23,9 +25,10 @@
       @cell-click="handleCellClick"
       @cell-dblclick="handleCellDblClick"
       @cell-menu="handleCellContext"
+      @column-resizable-change="handleColumnResizeChange"
       @sort-change="handleSortChange"
     >
-      <vxe-column field="name" title="文件名" min-width="220" sortable>
+      <vxe-column field="name" title="文件名" :width="displayColumnWidths.name" min-width="220" sortable>
         <template #default="{ row }">
           <div
             class="remote-name-cell"
@@ -52,31 +55,31 @@
         </template>
       </vxe-column>
 
-      <vxe-column field="kind" title="类型" width="90" sortable>
+      <vxe-column field="kind" title="类型" :width="displayColumnWidths.kind" sortable>
         <template #default="{ row }">
           <span class="remote-cell__tag">{{ isDirectory(row) ? '文件夹' : fileKind(row.name) }}</span>
         </template>
       </vxe-column>
 
-      <vxe-column field="size" title="大小" width="100" sortable>
+      <vxe-column field="size" title="大小" :width="displayColumnWidths.size" sortable>
         <template #default="{ row }">
           <span class="remote-cell__mono">{{ isDirectory(row) ? '-' : formatSize(row.size) }}</span>
         </template>
       </vxe-column>
 
-      <vxe-column field="modified" title="修改时间" width="160" sortable>
+      <vxe-column field="modified" title="修改时间" :width="displayColumnWidths.modified" sortable>
         <template #default="{ row }">
           <span class="remote-cell__mono">{{ formatTime(row.modified) }}</span>
         </template>
       </vxe-column>
 
-      <vxe-column field="permissions" title="权限" width="100" sortable>
+      <vxe-column field="permissions" title="权限" :width="displayColumnWidths.permissions" sortable>
         <template #default="{ row }">
           <span class="remote-cell__mono">{{ row.permissions || '-' }}</span>
         </template>
       </vxe-column>
 
-      <vxe-column field="ownerUser" title="所有者" width="80">
+      <vxe-column field="ownerUser" title="所有者" :width="displayColumnWidths.ownerUser">
         <template #default="{ row }">
           <span class="remote-cell__mono">{{ row.ownerUser || row.owner_user || '-' }}</span>
         </template>
@@ -109,6 +112,16 @@ import {
   FolderTreeIcon,
 } from './RemoteFileIcons'
 import type { SftpFileEntry, WorkspaceDensity } from '../../types/app'
+
+const REMOTE_TABLE_COLUMN_WIDTHS_KEY = 'termlink_remote_file_table_column_widths'
+const DEFAULT_COLUMN_WIDTHS = {
+  name: 220,
+  kind: 90,
+  size: 100,
+  modified: 160,
+  permissions: 100,
+  ownerUser: 80,
+} as const
 
 const props = defineProps<{
   files: SftpFileEntry[]
@@ -144,9 +157,37 @@ const tableWrapRef = ref<HTMLElement | null>(null)
 const renameInputRef = ref<HTMLInputElement | null>(null)
 const isDragOver = ref(false)
 const isFocused = ref(false)
+let tableResizeObserver: ResizeObserver | null = null
 
 const selectedPathSet = computed(() => new Set(props.selectedPaths))
 const orderedVisiblePaths = computed(() => props.files.map(getFilePath))
+const columnWidths = ref(loadStoredColumnWidths())
+const tableViewportWidth = ref(0)
+const displayColumnWidths = computed(() => {
+  const widths = { ...columnWidths.value }
+  const fixedWidth = widths.kind + widths.size + widths.modified + widths.permissions + widths.ownerUser
+  const fillWidth = Math.max(DEFAULT_COLUMN_WIDTHS.name, tableViewportWidth.value - fixedWidth)
+  widths.name = Math.max(widths.name, fillWidth)
+  return widths
+})
+const rowHeight = computed(() => {
+  if (props.density === 'comfortable') return 32
+  if (props.density === 'balanced') return 30
+  return 28
+})
+const tableStyleVars = computed(() => {
+  const nameCellPadding = props.density === 'comfortable' ? '2px 4px' : '1px 4px'
+  return {
+    '--remote-table-header-height': '28px',
+    '--remote-table-row-height': `${rowHeight.value}px`,
+    '--remote-name-cell-padding': nameCellPadding,
+  }
+})
+const rowConfig = computed(() => ({
+  height: rowHeight.value,
+  isCurrent: true,
+  isHover: true,
+}))
 
 // ===================== Helpers =====================
 
@@ -185,6 +226,42 @@ function getFileIcon(file: SftpFileEntry) {
 
 function getFilePath(row: SftpFileEntry): string {
   return row.path || row.name
+}
+
+function loadStoredColumnWidths() {
+  const defaults = { ...DEFAULT_COLUMN_WIDTHS }
+  if (typeof window === 'undefined') return defaults
+
+  try {
+    const raw = window.localStorage.getItem(REMOTE_TABLE_COLUMN_WIDTHS_KEY)
+    if (!raw) return defaults
+
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    for (const key of Object.keys(defaults) as Array<keyof typeof DEFAULT_COLUMN_WIDTHS>) {
+      const width = parsed[key]
+      if (typeof width === 'number' && Number.isFinite(width) && width >= 60) {
+        defaults[key] = Math.round(width)
+      }
+    }
+  } catch (error) {
+    console.warn('读取文件表格列宽配置失败:', error)
+  }
+
+  return defaults
+}
+
+function persistColumnWidths() {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(REMOTE_TABLE_COLUMN_WIDTHS_KEY, JSON.stringify(columnWidths.value))
+  } catch (error) {
+    console.warn('保存文件表格列宽配置失败:', error)
+  }
+}
+
+function updateTableViewportWidth() {
+  tableViewportWidth.value = tableWrapRef.value?.clientWidth || 0
+  tableRef.value?.recalculate?.()
 }
 
 function normalizeDirPrefix(path: string) {
@@ -247,6 +324,21 @@ function focusRenameInput() {
 
 function handleRenameInput(event: Event) {
   emit('renameValueChange', (event.target as HTMLInputElement).value)
+}
+
+function handleColumnResizeChange(params: any) {
+  const resizeColumn = params?.resizeColumn || params?.column
+  const field = resizeColumn?.field as keyof typeof DEFAULT_COLUMN_WIDTHS | undefined
+  const resizeWidth = params?.resizeWidth
+
+  if (!field || !(field in DEFAULT_COLUMN_WIDTHS)) return
+  if (typeof resizeWidth !== 'number' || !Number.isFinite(resizeWidth)) return
+
+  columnWidths.value = {
+    ...columnWidths.value,
+    [field]: Math.max(60, Math.round(resizeWidth)),
+  }
+  persistColumnWidths()
 }
 
 function handleRenameKeyDown(event: KeyboardEvent) {
@@ -628,12 +720,17 @@ watch(() => props.renameView, (view) => {
 onMounted(() => {
   const el = tableWrapRef.value
   if (!el) return
+  updateTableViewportWidth()
   // Use native listeners to avoid Vue's .prevent swallowing events
   el.addEventListener('dragover', onNativeDragOver, true)
   el.addEventListener('dragenter', onNativeDragEnter, true)
   el.addEventListener('dragleave', onNativeDragLeave, true)
   el.addEventListener('drop', onNativeDrop, true)
   el.addEventListener('pointerdown', handlePointerDown as EventListener)
+  tableResizeObserver = new ResizeObserver(() => {
+    updateTableViewportWidth()
+  })
+  tableResizeObserver.observe(el)
 })
 
 onBeforeUnmount(() => {
@@ -645,6 +742,8 @@ onBeforeUnmount(() => {
     el.removeEventListener('drop', onNativeDrop, true)
     el.removeEventListener('pointerdown', handlePointerDown as EventListener)
   }
+  tableResizeObserver?.disconnect()
+  tableResizeObserver = null
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', onPointerUp)
   window.removeEventListener('pointercancel', onPointerUp)
@@ -680,6 +779,12 @@ onBeforeUnmount(() => {
   font-weight: 600;
   color: var(--remote-table-header-text);
   background: var(--remote-table-header-bg);
+  height: var(--remote-table-header-height);
+  padding-block: 0;
+}
+
+.remote-file-table :deep(.vxe-header--row) {
+  height: var(--remote-table-header-height);
 }
 
 .remote-file-table :deep(.vxe-table--main-wrapper),
@@ -706,7 +811,35 @@ onBeforeUnmount(() => {
 .remote-file-table :deep(.vxe-body--column) {
   background: var(--remote-table-row-bg);
   border-color: var(--remote-table-row-border);
+  padding-block: 0;
   transition: background-color 0.16s ease;
+}
+
+.remote-file-table :deep(.vxe-cell--title),
+.remote-file-table :deep(.vxe-cell) {
+  line-height: calc(var(--remote-table-row-height) - 6px);
+}
+
+.remote-file-table :deep(.vxe-header--column .vxe-cell) {
+  display: flex;
+  align-items: center;
+  height: var(--remote-table-header-height);
+  line-height: 16px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.remote-file-table :deep(.vxe-cell--col-resizable) {
+  cursor: col-resize;
+}
+
+.remote-file-table :deep(.vxe-cell--col-resizable::before) {
+  opacity: 0.55;
+}
+
+.remote-file-table :deep(.vxe-cell--col-resizable:hover::before),
+.remote-file-table :deep(.vxe-header--column.col--resizing .vxe-cell--col-resizable::before) {
+  opacity: 1;
 }
 
 .remote-file-table :deep(.vxe-body--row.row--hover > .vxe-body--column) {
@@ -739,7 +872,8 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   cursor: default;
-  padding: 2px 4px;
+  min-height: calc(var(--remote-table-row-height) - 4px);
+  padding: var(--remote-name-cell-padding);
   border-radius: 4px;
 }
 

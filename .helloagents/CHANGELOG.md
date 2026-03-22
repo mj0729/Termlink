@@ -1,5 +1,55 @@
 # 变更记录
 
+## [0.0.28] - 2026-03-22
+
+### 变更
+
+- **[workspace-ui]**: 收紧 SSH 嵌入式文件管理区的视觉密度；`RemoteFileWorkbench` 在 aggressive 模式下移除了内容区圆角，左侧目录树同步缩窄宽度并压缩节点高度、缩进、节点间距和容器留白，让文件树更贴近桌面文件管理器的紧凑观感；已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603221358_tighten-remote-file-tree-spacing](plan/202603221358_tighten-remote-file-tree-spacing/)
+  - 决策: tighten-remote-file-tree-spacing#D001(采用局部样式压缩而非重写文件树结构)
+
+### 快速修改
+
+- **[workspace-ui]**: 继续修正左侧目录树“依旧没效果”的根因；这次直接对 Ant Tree 默认的 `flex / width` 行为做强制覆盖，把 `ant-tree-treenode`、`ant-tree-title` 和 `ant-tree-node-content-wrapper` 全部改为内容宽度收口，避免库默认整行布局再次把短目录名撑回整列 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/remote-file/RemoteDirectoryTree.vue:494-537
+
+- **[workspace-ui]**: 修正左侧目录树“重做了但肉眼几乎没变化”的真实根因；此前 `RemoteDirectoryTree` 里的 `ant-tree-treenode` 仍被 `min-width: 100%` 强制撑满整列，抵消了前面对内容自适应宽度的改动。现在已改为真正按内容宽度收口，短目录名右侧不再默认占满整个树栏 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/remote-file/RemoteDirectoryTree.vue:498-502
+
+- **[workspace-ui]**: 按系统文件树风格重做左侧目录树的结构样式；这次不再继续硬压参数，而是同时重排 `RemoteDirectoryTree` 的标题、`ant-tree-title` 和 `ant-tree-node-content-wrapper` 占位链路，让节点按内容宽度自然收口，并把选中态收敛为更轻的胶囊高亮，避免短目录名右侧空白过大和前导结构挤压失真 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/RemoteFileWorkbench.vue:919-942, src/components/remote-file/RemoteDirectoryTree.vue:430-532
+
+- **[workspace-ui]**: 修正左侧文件树被压得过头导致的糟糕观感；把 aggressive 模式下的树宽、箭头占位、缩进宽度、图标尺寸和节点间距回调到更平衡的范围，保留紧凑感，但不再出现箭头、图标与文本互相挤压的失真效果 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/RemoteFileWorkbench.vue:919-942, src/components/remote-file/RemoteDirectoryTree.vue:430-514
+
+- **[workspace-ui]**: 继续收紧左侧文件树的真实占位；在去掉 `block-node` 后，再进一步压缩 aggressive 模式下的树宽、层级缩进、箭头占位，并去掉 Ant Tree 节点 wrapper 自带的横向 padding，让层级前导结构更接近系统文件树 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/RemoteFileWorkbench.vue:919-942, src/components/remote-file/RemoteDirectoryTree.vue:498-513
+
+- **[workspace-ui]**: 修正左侧文件树“参数变了但中间空白看起来没变”的问题；根因是目录树开启了整行铺满的 `block-node`，并把节点 wrapper 设成了整列宽度，导致短目录名右侧始终残留整块伪空白。现在已改为内容自适应宽度，短节点右侧不会再被整行铺满 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/remote-file/RemoteDirectoryTree.vue:9-16, src/components/remote-file/RemoteDirectoryTree.vue:507-514
+
+- **[workspace-ui]**: 继续将嵌入式文件树间距压到更接近系统文件管理器的程度；在保留正常字号的前提下，进一步收窄 aggressive 模式下的树宽、缩进、节点高度和左右内边距，让左侧树区更贴近你最后给的参考图 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/RemoteFileWorkbench.vue:919-942
+
+- **[workspace-ui]**: 修正嵌入式文件树“看起来是字体变小而不是间距变小”的观感；在保留紧凑树宽与间距压缩的前提下，将 aggressive 模式下的树节点字号恢复为正常大小，并同步把目录图标恢复一档，避免文件树因字太小而显得单薄 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/RemoteFileWorkbench.vue:935-941
+
+- **[workspace-ui]**: 继续压缩嵌入式文件树与文件表格之间的横向留白；aggressive 模式下进一步收窄左侧树栏宽度，并把树区左右内边距再收一档，减少根目录和短文件名场景下树栏右侧的大块空白 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/RemoteFileWorkbench.vue:918-927
+
+- **[workspace-ui]**: 继续将嵌入式文件树压缩到更接近系统文件管理器的密度；aggressive 模式下进一步缩窄树宽、缩进、图标尺寸与节点内边距，减少左侧树区的空白感，更贴近你给的第二张参考图 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/RemoteFileWorkbench.vue:887-941, src/components/remote-file/RemoteDirectoryTree.vue:430-514
+
 ## [0.0.27] - 2026-03-22
 
 ### 变更

@@ -123,6 +123,7 @@
           :edit-mode="sshEditMode"
           :edit-profile="editingProfile"
           :groups="groups"
+          :profiles="profiles"
           @submit="submitSsh" 
         />
         
@@ -160,9 +161,9 @@ import type {
 
 // 导入组件
 import TabManager from './components/TabManager.vue'
-import SshModal from './components/SshModal.vue'
-import SettingsModal from './components/SettingsModal.vue'
 import StatusBar from './components/StatusBar.vue'
+const SshModal = defineAsyncComponent(() => import('./components/SshModal.vue'))
+const SettingsModal = defineAsyncComponent(() => import('./components/SettingsModal.vue'))
 const Terminal = defineAsyncComponent(() => import('./components/Terminal.vue'))
 const RightPanel = defineAsyncComponent(() => import('./components/RightPanel.vue'))
 const ConnectionHub = defineAsyncComponent(() => import('./components/ConnectionHub.vue'))

@@ -31,23 +31,6 @@ fn build_local_conflict_path(path: &Path, index: u32) -> PathBuf {
     parent.join(file_name)
 }
 
-// 选择下载位置
-#[command]
-pub async fn select_download_location(file_name: String) -> Result<Option<String>, String> {
-    // 暂时使用用户的下载目录作为默认位置
-    // 在实际应用中，可以使用rfd crate或其他文件对话框库
-    if let Some(downloads_dir) = dirs::download_dir() {
-        let file_path = downloads_dir.join(&file_name);
-        Ok(Some(file_path.to_string_lossy().to_string()))
-    } else {
-        // 如果找不到下载目录，使用当前目录
-        let current_dir =
-            std::env::current_dir().map_err(|e| format!("无法获取当前目录: {}", e))?;
-        let file_path = current_dir.join(&file_name);
-        Ok(Some(file_path.to_string_lossy().to_string()))
-    }
-}
-
 #[command]
 pub async fn resolve_local_target_path(path: String) -> Result<String, String> {
     let desired_path = PathBuf::from(&path);

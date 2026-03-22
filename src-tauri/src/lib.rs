@@ -60,6 +60,10 @@ pub fn run() {
             fs::get_home_dir,
             fs::get_parent_dir,
             fs::open_file_explorer,
+            fs::read_default_ssh_config,
+            fs::parse_default_ssh_config,
+            fs::select_download_location,
+            fs::select_local_file,
             // SFTP commands
             sftp_russh::list_sftp_files,
             sftp_russh::resolve_sftp_target_path,
@@ -85,7 +89,6 @@ pub fn run() {
             system_monitor::get_all_system_info_batch,
             system_monitor::get_dynamic_system_info_batch,
             // Download manager commands
-            download_manager::select_download_location,
             download_manager::resolve_local_target_path,
             download_manager::get_sftp_file_info,
             download_manager::download_sftp_file_with_progress,

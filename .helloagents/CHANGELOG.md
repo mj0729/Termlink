@@ -1,5 +1,19 @@
 # 变更记录
 
+## [0.0.26] - 2026-03-22
+
+### 变更
+
+- **[ssh-workspace]**: 补齐高级 SSH 与多会话工作台底座；前端 SSH 配置现已支持 `ProxyJump`、端口转发与 `SSH config` 来源字段，设置页可直接导入 `~/.ssh/config`，Rust 侧新增真实文件选择器、SSH config 解析命令与通过跳板机 `direct-tcpip` 建连目标主机的运行时链路，SSH 工作区支持新增分屏 pane 与广播输入，且新增 `pnpm run test:regression` 以及 Rust 单元测试覆盖核心回归；已通过 `pnpm run test:regression`、`cargo test --manifest-path src-tauri/Cargo.toml`、`cargo check --manifest-path src-tauri/Cargo.toml` 与 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603221015_advanced-ssh-workflow-foundation](plan/202603221015_advanced-ssh-workflow-foundation/)
+  - 决策: advanced-ssh-workflow-foundation#D001(先统一连接与工作区状态模型，再挂载功能)
+
+### 快速修改
+
+- **[build-optimization]**: 将 `vxe-table` 从应用入口全局注册改为仅在远程文件表格组件中局部引入，成功把主入口 chunk 从约 `511 kB` 收敛到约 `36 kB`；当前主要重量已转移到按需加载的 `SshWorkspace` chunk，首屏冷启动压力明显下降 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/main.ts:1-2, src/components/remote-file/RemoteFileTable.vue:95-97
+
 ## [0.0.25] - 2026-03-22
 
 ### 快速修改

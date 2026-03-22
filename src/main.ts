@@ -1,7 +1,5 @@
 import { createApp } from 'vue'
 import 'antdv-next/dist/reset.css'
-import VxeTable from 'vxe-table'
-import 'vxe-table/lib/style.css'
 import App from './App.vue'
 import './style.css'
 
@@ -75,7 +73,6 @@ app.config.errorHandler = (error, _instance, info) => {
 }
 
 try {
-  app.use(VxeTable)
   app.mount('#app')
 } catch (error) {
   renderFatalError('mount', error)

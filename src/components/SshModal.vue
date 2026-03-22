@@ -117,6 +117,62 @@
           <a-button @click="selectPrivateKey" style="width: 80px">浏览</a-button>
         </a-space-compact>
       </a-form-item>
+
+      <a-divider>高级 SSH</a-divider>
+
+      <a-form-item label="堡垒机 / ProxyJump">
+        <a-select
+          v-model:value="form.proxyJumpId"
+          :options="proxyJumpOptions"
+          placeholder="不使用堡垒机"
+          allow-clear
+          show-search
+          option-filter-prop="label"
+          @change="handleProxyJumpChange"
+        />
+        <div style="margin-top: 6px; color: var(--muted-color); font-size: 12px;">
+          选择已保存连接作为跳板机。建立连接时会先经过该主机。
+        </div>
+      </a-form-item>
+
+      <a-form-item label="本地端口转发">
+        <div class="ssh-forward-list">
+          <div
+            v-for="(forward, index) in form.portForwards"
+            :key="forward.id"
+            class="ssh-forward-item"
+          >
+            <a-input-number
+              v-model:value="forward.localPort"
+              :min="1"
+              :max="65535"
+              placeholder="本地端口"
+            />
+            <span class="ssh-forward-arrow">→</span>
+            <a-input
+              v-model:value="forward.remoteHost"
+              placeholder="目标主机"
+            />
+            <a-input-number
+              v-model:value="forward.remotePort"
+              :min="1"
+              :max="65535"
+              placeholder="目标端口"
+            />
+            <a-button danger @click="removePortForward(index)">删除</a-button>
+          </div>
+        </div>
+        <a-button type="dashed" block @click="addPortForward">
+          新增本地端口转发
+        </a-button>
+      </a-form-item>
+
+      <a-form-item v-if="form.sshConfigSource || form.sshConfigHost" label="SSH Config 来源">
+        <div class="ssh-config-meta">
+          <span v-if="form.sshConfigHost">Host {{ form.sshConfigHost }}</span>
+          <span v-if="form.sshConfigSource">来自 {{ form.sshConfigSource }}</span>
+        </div>
+      </a-form-item>
       
     <a-form-item>
         <a-checkbox v-model:checked="form.savePassword">
@@ -147,8 +203,9 @@
 
 <script setup lang="ts">
 import { computed, h, ref, watch } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import { CloseOutlined } from '@antdv-next/icons'
-import type { SelectOption, SshModalForm, SshProfile } from '../types/app'
+import type { SelectOption, SshModalForm, SshPortForward, SshProfile } from '../types/app'
 import { PROFILE_TAG_PRESETS } from '../constants/profileTags'
 
 const props = withDefaults(defineProps<{
@@ -156,11 +213,13 @@ const props = withDefaults(defineProps<{
   editMode?: boolean
   editProfile?: SshProfile | null
   groups?: string[]
+  profiles?: SshProfile[]
 }>(), {
   visible: false,
   editMode: false,
   editProfile: null,
-  groups: () => []
+  groups: () => [],
+  profiles: () => []
 })
 
 const emit = defineEmits(['update:visible', 'submit'])
@@ -217,7 +276,16 @@ const createInitialForm = (): SshModalForm => ({
   usePrivateKey: false,
   savePassword: true,
   group: '',
-  tags: []
+  tags: [],
+  proxyJumpId: null,
+  proxyJumpName: null,
+  proxyJumpHost: null,
+  proxyJumpPort: null,
+  proxyJumpUsername: null,
+  proxyJumpPrivateKey: null,
+  sshConfigSource: null,
+  sshConfigHost: null,
+  portForwards: [],
 })
 
 const form = ref<SshModalForm>(createInitialForm())
@@ -253,6 +321,15 @@ const tagOptions = computed(() => {
   return Array.from(values.values())
 })
 
+const proxyJumpOptions = computed<SelectOption[]>(() => (
+  props.profiles
+    .filter((profile) => profile.id !== props.editProfile?.id)
+    .map((profile) => ({
+      value: profile.id,
+      label: profile.name || `${profile.username}@${profile.host}:${profile.port}`,
+    }))
+))
+
 // 重置表单
 function resetForm() {
   if (props.editMode && props.editProfile) {
@@ -268,13 +345,33 @@ function resetForm() {
       usePrivateKey: Boolean(props.editProfile.private_key),
       savePassword: true,
       group: props.editProfile.group || '',
-      tags: props.editProfile.tags || []
+      tags: props.editProfile.tags || [],
+      proxyJumpId: props.editProfile.proxy_jump_id || null,
+      proxyJumpName: props.editProfile.proxy_jump_name || null,
+      proxyJumpHost: props.editProfile.proxy_jump_host || null,
+      proxyJumpPort: props.editProfile.proxy_jump_port || null,
+      proxyJumpUsername: props.editProfile.proxy_jump_username || null,
+      proxyJumpPrivateKey: props.editProfile.proxy_jump_private_key || null,
+      sshConfigSource: props.editProfile.ssh_config_source || null,
+      sshConfigHost: props.editProfile.ssh_config_host || null,
+      portForwards: props.editProfile.port_forwards?.map((item) => ({ ...item })) || [],
     }
   } else {
     // 新建模式
     form.value = createInitialForm()
   }
   formRef.value?.resetFields()
+}
+
+function createEmptyPortForward(): SshPortForward {
+  return {
+    id: `forward-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    type: 'local',
+    localPort: 8080,
+    remoteHost: '127.0.0.1',
+    remotePort: 80,
+    label: '',
+  }
 }
 
 function getTagColor(tag: string) {
@@ -301,6 +398,22 @@ async function handleSubmit() {
     loading.value = true
     
     const submitData: SshModalForm = { ...form.value }
+    if (submitData.proxyJumpId) {
+      const proxyProfile = props.profiles.find((item) => item.id === submitData.proxyJumpId)
+      if (proxyProfile) {
+        submitData.proxyJumpName = proxyProfile.name || `${proxyProfile.username}@${proxyProfile.host}:${proxyProfile.port}`
+        submitData.proxyJumpHost = proxyProfile.host
+        submitData.proxyJumpPort = proxyProfile.port
+        submitData.proxyJumpUsername = proxyProfile.username
+        submitData.proxyJumpPrivateKey = proxyProfile.private_key || null
+      }
+    } else {
+      submitData.proxyJumpName = null
+      submitData.proxyJumpHost = null
+      submitData.proxyJumpPort = null
+      submitData.proxyJumpUsername = null
+      submitData.proxyJumpPrivateKey = null
+    }
     if (props.editMode) {
       submitData.isEdit = true
     }
@@ -324,22 +437,48 @@ function handleCancel() {
   resetForm()
 }
 
+function handleProxyJumpChange(proxyJumpId: string | null) {
+  if (!proxyJumpId) {
+    form.value.proxyJumpId = null
+    form.value.proxyJumpName = null
+    form.value.proxyJumpHost = null
+    form.value.proxyJumpPort = null
+    form.value.proxyJumpUsername = null
+    form.value.proxyJumpPrivateKey = null
+    return
+  }
+
+  const proxyProfile = props.profiles.find((item) => item.id === proxyJumpId)
+  if (!proxyProfile) {
+    return
+  }
+
+  form.value.proxyJumpId = proxyProfile.id
+  form.value.proxyJumpName = proxyProfile.name || `${proxyProfile.username}@${proxyProfile.host}:${proxyProfile.port}`
+  form.value.proxyJumpHost = proxyProfile.host
+  form.value.proxyJumpPort = proxyProfile.port
+  form.value.proxyJumpUsername = proxyProfile.username
+  form.value.proxyJumpPrivateKey = proxyProfile.private_key || null
+}
+
+function addPortForward() {
+  form.value.portForwards.push(createEmptyPortForward())
+}
+
+function removePortForward(index: number) {
+  form.value.portForwards.splice(index, 1)
+}
+
 // 选择私钥文件
 async function selectPrivateKey() {
   try {
-    // 使用浏览器的文件选择
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = '.pem,.key,.ppk,*'
-    input.onchange = (e) => {
-      const target = e.target as HTMLInputElement | null
-      const file = target?.files?.[0]
-      if (file) {
-        // 获取文件路径（在桌面应用中这会是完整路径）
-        form.value.privateKey = file.name
-      }
+    const selected = await invoke<string | null>('select_local_file', {
+      title: '选择 SSH 私钥文件',
+      defaultPath: form.value.privateKey || null,
+    })
+    if (selected) {
+      form.value.privateKey = selected
     }
-    input.click()
   } catch (error) {
     console.error('选择文件失败:', error)
   }
@@ -529,6 +668,39 @@ watch(() => props.editProfile, () => {
   line-height: 1;
 }
 
+.ssh-forward-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.ssh-forward-item {
+  display: grid;
+  grid-template-columns: 128px 24px minmax(0, 1fr) 128px auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.ssh-forward-arrow {
+  color: var(--muted-color);
+  text-align: center;
+}
+
+.ssh-config-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted-color);
+  font-size: 12px;
+}
+
+.ssh-config-meta span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--hover-bg);
+}
+
 :deep(.ant-select-selection-item) {
   font-weight: 600;
 }
@@ -560,5 +732,15 @@ watch(() => props.editProfile, () => {
   background: linear-gradient(135deg, var(--primary-color), #7db7ff) !important;
   border-color: transparent !important;
   color: #fff !important;
+}
+
+@media (max-width: 720px) {
+  .ssh-forward-item {
+    grid-template-columns: 1fr;
+  }
+
+  .ssh-forward-arrow {
+    display: none;
+  }
 }
 </style>

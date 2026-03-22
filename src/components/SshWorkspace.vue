@@ -19,19 +19,135 @@
       :style="workspaceStyle"
     >
       <section class="ssh-workspace__terminal">
-        <Terminal
-          :id="id"
-          :active="active"
-          :theme="theme"
-          :config="config"
-          :auto-password="autoPassword"
-          :ssh-user="profile?.username || ''"
-          :ssh-state="sshState"
-          type="ssh"
-          @close="$emit('close')"
-          @current-directory-change="handleTerminalDirectoryChange"
-          @reconnect="$emit('reconnect')"
-        />
+        <div class="ssh-workspace__toolbar">
+          <div class="ssh-workspace__toolbar-copy">
+            <strong>{{ workspaceTitle }}</strong>
+            <span>{{ workspacePanes.length }} 个会话 pane</span>
+            <span class="ssh-workspace__toolbar-chip">
+              {{ broadcastEnabled ? '广播输入已开启' : '广播输入已关闭' }}
+            </span>
+            <span v-if="broadcastEnabled" class="ssh-workspace__toolbar-chip ssh-workspace__toolbar-chip--accent">
+              {{ broadcastTargetCount }} 个目标会话
+            </span>
+            <span v-if="isPaneSplitActive" class="ssh-workspace__toolbar-chip ssh-workspace__toolbar-chip--warning">
+              分屏时已自动收起监控
+            </span>
+            <span v-if="isPaneSplitActive && isStackedPaneLayout" class="ssh-workspace__toolbar-chip">
+              当前为上下分屏
+            </span>
+          </div>
+
+          <div class="ssh-workspace__toolbar-actions">
+            <a-button
+              v-if="hasAdvancedSshDetails"
+              size="small"
+              @click="showConnectionDetails = !showConnectionDetails"
+            >
+              {{ showConnectionDetails ? '收起连接详情' : '查看连接详情' }}
+            </a-button>
+            <a-button size="small" @click="toggleBroadcast" :type="broadcastEnabled ? 'primary' : 'default'">
+              {{ broadcastEnabled ? '关闭广播' : '开启广播' }}
+            </a-button>
+            <a-button size="small" @click="addPane" :disabled="!profile">
+              新增分屏
+            </a-button>
+          </div>
+        </div>
+
+        <div v-if="showConnectionDetails && hasAdvancedSshDetails" class="ssh-workspace__details">
+          <div v-if="profile?.proxy_jump_host" class="ssh-workspace__detail-card">
+            <div class="ssh-workspace__detail-head">
+              <strong>堡垒机 / ProxyJump</strong>
+              <span class="ssh-workspace__detail-pill">已启用</span>
+            </div>
+            <div class="ssh-workspace__detail-body">
+              <span>{{ profile.proxy_jump_username || '未知用户' }}@{{ profile.proxy_jump_host }}:{{ profile.proxy_jump_port || 22 }}</span>
+              <span v-if="profile.proxy_jump_name" class="ssh-workspace__detail-muted">引用连接：{{ profile.proxy_jump_name }}</span>
+            </div>
+          </div>
+
+          <div v-if="portForwardEntries.length" class="ssh-workspace__detail-card">
+            <div class="ssh-workspace__detail-head">
+              <strong>本地端口转发</strong>
+              <span class="ssh-workspace__detail-pill">{{ portForwardEntries.length }} 条</span>
+            </div>
+            <div class="ssh-workspace__forward-list">
+              <div
+                v-for="forward in portForwardEntries"
+                :key="forward.id"
+                class="ssh-workspace__forward-item"
+              >
+                <div class="ssh-workspace__forward-copy">
+                  <span class="ssh-workspace__forward-main">
+                    localhost:{{ forward.localPort }} → {{ forward.remoteHost }}:{{ forward.remotePort }}
+                  </span>
+                  <span class="ssh-workspace__detail-muted">
+                    {{ primaryPane.sshState === 'connected' ? '监听中' : '连接建立后自动监听' }}
+                  </span>
+                </div>
+                <a-button size="small" type="text" @click="copyForwardAddress(forward.localPort)">
+                  复制地址
+                </a-button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ssh-pane-grid" :style="paneGridStyle">
+          <article
+            v-for="pane in workspacePanes"
+            :key="pane.id"
+            class="ssh-pane-card"
+            :class="{ 'is-active': activePaneId === pane.id }"
+            @mousedown="activePaneId = pane.id"
+          >
+            <div class="ssh-pane-card__head">
+              <div class="ssh-pane-card__title">
+                <strong>{{ pane.title }}</strong>
+                <span class="ssh-pane-card__status" :class="`is-${pane.sshState}`">
+                  {{ paneStatusLabel[pane.sshState] }}
+                </span>
+              </div>
+
+              <div class="ssh-pane-card__actions">
+                <a-button
+                  v-if="pane.sshState === 'disconnected'"
+                  size="small"
+                  type="text"
+                  @click="reconnectPane(pane)"
+                >
+                  重连
+                </a-button>
+                <a-button
+                  v-if="!pane.isPrimary"
+                  size="small"
+                  type="text"
+                  danger
+                  @click="removePane(pane.id)"
+                >
+                  关闭
+                </a-button>
+              </div>
+            </div>
+
+            <div class="ssh-pane-card__body">
+              <Terminal
+                :id="pane.id"
+                :active="active"
+                :theme="theme"
+                :config="config"
+                :auto-password="pane.autoPassword"
+                :ssh-user="pane.profile?.username || profile?.username || ''"
+                :ssh-state="pane.sshState"
+                type="ssh"
+                @close="pane.isPrimary ? $emit('close') : removePane(pane.id)"
+                @current-directory-change="handlePaneDirectoryChange(pane.id, $event)"
+                @reconnect="pane.isPrimary ? $emit('reconnect') : reconnectPane(pane)"
+                @terminal-input="handlePaneInput(pane.id, $event)"
+              />
+            </div>
+          </article>
+        </div>
       </section>
 
       <div
@@ -43,12 +159,12 @@
 
       <section class="ssh-workspace__files">
         <RemoteFileWorkbench
-          :connection-id="connectionId"
+          :connection-id="activeWorkbenchConnectionId"
           :active="active"
           :sync-path="terminalPath"
           :density="workspaceDensity"
           :font-family="config.fontFamily"
-          :ssh-state="sshState"
+          :ssh-state="activeWorkbenchState"
           :title="workspaceTitle"
           @open-file-preview="$emit('openFilePreview', $event)"
           @start-download="$emit('startDownload', $event)"
@@ -65,6 +181,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Terminal from './Terminal.vue'
 import RemoteFileWorkbench from './RemoteFileWorkbench.vue'
 import RightPanel from './RightPanel.vue'
+import SshService from '../services/SshService'
+import { getBroadcastTargetPaneIds } from '../utils/sshWorkspace'
 import type {
   ConnectionTab,
   DownloadRequest,
@@ -75,6 +193,15 @@ import type {
   UploadRequest,
   WorkspaceDensity,
 } from '../types/app'
+
+type WorkspacePane = {
+  id: string
+  title: string
+  sshState: NonNullable<ConnectionTab['sshState']>
+  autoPassword: string | null
+  isPrimary: boolean
+  profile: SshProfile | null
+}
 
 const props = withDefaults(defineProps<{
   id: string
@@ -115,17 +242,83 @@ defineEmits<{
 }>()
 
 const workspaceRef = ref<HTMLElement | null>(null)
+const workspaceWidth = ref(0)
 const terminalHeight = ref(0)
 const isResizing = ref(false)
 const terminalPath = ref('')
 const splitterHeight = 8
 const terminalRatio = ref(0.4)
-const showEmbeddedMonitor = computed(() => props.embeddedMonitorVisible && !props.embeddedMonitorCollapsed)
-const monitorConnectionId = computed(() => props.sshState === 'connected' ? (props.connectionId || '') : '')
+const activePaneId = ref(props.id)
+const broadcastEnabled = ref(false)
+const showConnectionDetails = ref(false)
+const extraPanes = ref<WorkspacePane[]>([])
+const paneStatusLabel: Record<NonNullable<ConnectionTab['sshState']>, string> = {
+  connecting: '连接中',
+  connected: '已连接',
+  disconnected: '已断开',
+}
+const showEmbeddedMonitor = computed(() => (
+  props.embeddedMonitorVisible
+  && !props.embeddedMonitorCollapsed
+  && !isPaneSplitActive.value
+))
 let resizeFrame = 0
 let activateSyncFrame = 0
 let resizeObserver: ResizeObserver | null = null
 const workspaceDensity = computed<WorkspaceDensity>(() => props.config.density || 'balanced')
+
+const primaryPane = computed<WorkspacePane>(() => ({
+  id: props.id,
+  title: '主会话',
+  sshState: props.sshState || 'connected',
+  autoPassword: props.autoPassword || null,
+  isPrimary: true,
+  profile: props.profile || null,
+}))
+
+const workspacePanes = computed(() => [primaryPane.value, ...extraPanes.value])
+const isPaneSplitActive = computed(() => workspacePanes.value.length > 1)
+const isStackedPaneLayout = computed(() => isPaneSplitActive.value && workspaceWidth.value > 0 && workspaceWidth.value < 1180)
+const portForwardEntries = computed(() => props.profile?.port_forwards || [])
+const hasAdvancedSshDetails = computed(() => Boolean(props.profile?.proxy_jump_host || portForwardEntries.value.length))
+const broadcastTargetCount = computed(() => (
+  getBroadcastTargetPaneIds(workspacePanes.value, activePaneId.value, broadcastEnabled.value).length
+))
+
+const paneGridStyle = computed(() => ({
+  gridTemplateColumns: isPaneSplitActive.value && !isStackedPaneLayout.value
+    ? 'repeat(2, minmax(0, 1fr))'
+    : 'minmax(0, 1fr)',
+}))
+
+const activePane = computed(() => (
+  workspacePanes.value.find((pane) => pane.id === activePaneId.value)
+  || primaryPane.value
+))
+
+const activeWorkbenchConnectionId = computed(() => {
+  if (activePane.value.sshState === 'connected') {
+    return activePane.value.id
+  }
+
+  if (primaryPane.value.sshState === 'connected') {
+    return primaryPane.value.id
+  }
+
+  return props.connectionId || ''
+})
+
+const activeWorkbenchState = computed(() => {
+  if (activePane.value.sshState === 'connected') {
+    return 'connected'
+  }
+
+  return primaryPane.value.sshState
+})
+
+const monitorConnectionId = computed(() => (
+  primaryPane.value.sshState === 'connected' ? primaryPane.value.id : ''
+))
 
 function getDefaultTerminalRatio(density: WorkspaceDensity) {
   if (density === 'comfortable') return 0.4
@@ -252,13 +445,95 @@ function startResize(event: PointerEvent) {
   event.preventDefault()
 }
 
-function handleTerminalDirectoryChange(path: string) {
-  terminalPath.value = path
+function handlePaneDirectoryChange(paneId: string, path: string) {
+  if (paneId === activePaneId.value) {
+    terminalPath.value = path
+  }
+}
+
+function toggleBroadcast() {
+  broadcastEnabled.value = !broadcastEnabled.value
+}
+
+async function copyForwardAddress(localPort: number) {
+  const value = `127.0.0.1:${localPort}`
+  try {
+    await navigator.clipboard.writeText(value)
+    message.success(`已复制 ${value}`)
+  } catch {
+    message.error('复制端口地址失败')
+  }
+}
+
+function handlePaneInput(sourcePaneId: string, data: string) {
+  getBroadcastTargetPaneIds(workspacePanes.value, sourcePaneId, broadcastEnabled.value)
+    .forEach((paneId) => {
+      SshService.writeTerminal(paneId, data)
+    })
+}
+
+async function addPane() {
+  if (!props.profile) {
+    return
+  }
+
+  const paneId = `ssh-pane-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
+  const nextPane: WorkspacePane = {
+    id: paneId,
+    title: `分屏 ${workspacePanes.value.length + 1}`,
+    sshState: 'connecting',
+    autoPassword: null,
+    isPrimary: false,
+    profile: props.profile,
+  }
+
+  extraPanes.value.push(nextPane)
+  activePaneId.value = paneId
+  scheduleLayoutRecovery()
+
+  try {
+    const autoPassword = await SshService.openSavedProfile(paneId, props.profile)
+    const pane = extraPanes.value.find((item) => item.id === paneId)
+    if (!pane) return
+    pane.autoPassword = autoPassword
+    pane.sshState = 'connected'
+  } catch (error) {
+    const pane = extraPanes.value.find((item) => item.id === paneId)
+    if (!pane) return
+    pane.sshState = 'disconnected'
+    message.error(String(error))
+  }
+}
+
+async function reconnectPane(pane: WorkspacePane) {
+  if (!pane.profile) return
+
+  pane.sshState = 'connecting'
+  try {
+    await SshService.reconnect(pane.id, pane.profile)
+    pane.sshState = 'connected'
+  } catch (error) {
+    pane.sshState = 'disconnected'
+    message.error(String(error))
+  }
+}
+
+async function removePane(paneId: string) {
+  const index = extraPanes.value.findIndex((pane) => pane.id === paneId)
+  if (index === -1) return
+
+  const [pane] = extraPanes.value.splice(index, 1)
+  await SshService.closeConnection(pane.id)
+  if (activePaneId.value === paneId) {
+    activePaneId.value = props.id
+  }
+  scheduleLayoutRecovery()
 }
 
 onMounted(async () => {
   await nextTick()
   terminalRatio.value = getDefaultTerminalRatio(workspaceDensity.value)
+  workspaceWidth.value = workspaceRef.value?.clientWidth || 0
   syncSplitFromRatio(true)
   if (props.active) {
     scheduleLayoutRecovery(true)
@@ -266,6 +541,7 @@ onMounted(async () => {
 
   if (workspaceRef.value) {
     resizeObserver = new ResizeObserver(() => {
+      workspaceWidth.value = workspaceRef.value?.clientWidth || 0
       if (!isResizing.value) {
         syncSplitFromRatio()
       }
@@ -285,17 +561,30 @@ watch(() => props.active, (isActive) => {
   }
 })
 
-onBeforeUnmount(() => {
+watch(isPaneSplitActive, (isSplitActive) => {
+  if (isSplitActive) {
+    showConnectionDetails.value = false
+  }
+})
+
+watch(() => props.id, (nextId) => {
+  activePaneId.value = nextId
+})
+
+onBeforeUnmount(async () => {
   if (resizeFrame) cancelAnimationFrame(resizeFrame)
   if (activateSyncFrame) cancelAnimationFrame(activateSyncFrame)
   resizeObserver?.disconnect()
   document.body.style.cursor = ''
   document.body.style.userSelect = ''
+
+  await Promise.all(extraPanes.value.map((pane) => SshService.closeConnection(pane.id)))
 })
 </script>
 
 <style scoped>
 .ssh-workspace-shell {
+  --ssh-monitor-width: 20%;
   display: flex;
   height: 100%;
   min-height: 0;
@@ -303,10 +592,10 @@ onBeforeUnmount(() => {
 }
 
 .ssh-workspace__monitor {
-  flex: 0 0 clamp(420px, 30%, 620px);
-  width: clamp(420px, 30%, 620px);
-  max-width: clamp(420px, 30%, 620px);
-  min-width: 0;
+  flex: 0 0 var(--ssh-monitor-width);
+  width: var(--ssh-monitor-width);
+  max-width: var(--ssh-monitor-width);
+  min-width: 256px;
   min-height: 0;
   opacity: 1;
   transform: translateX(0);
@@ -349,9 +638,197 @@ onBeforeUnmount(() => {
 }
 
 .ssh-workspace__terminal {
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 0 0;
+}
+
+.ssh-workspace__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px;
+}
+
+.ssh-workspace__toolbar-copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted-color);
+  font-size: 12px;
+}
+
+.ssh-workspace__toolbar-copy strong {
+  color: var(--text-color);
+  font-size: 13px;
+}
+
+.ssh-workspace__toolbar-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-1);
+}
+
+.ssh-workspace__toolbar-chip--accent {
+  color: var(--primary-color);
+  border-color: color-mix(in srgb, var(--primary-color) 35%, var(--border-color));
+}
+
+.ssh-workspace__toolbar-chip--warning {
+  color: #9a6700;
+  border-color: rgba(245, 158, 11, 0.32);
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.ssh-workspace__toolbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ssh-workspace__details {
+  display: grid;
+  gap: 10px;
+  padding: 0 10px 2px;
+}
+
+.ssh-workspace__detail-card {
+  border: 1px solid color-mix(in srgb, var(--border-color) 88%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-1) 90%, transparent);
+  padding: 12px;
+}
+
+.ssh-workspace__detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ssh-workspace__detail-head strong {
+  color: var(--text-color);
+  font-size: 12px;
+}
+
+.ssh-workspace__detail-pill {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(45, 125, 255, 0.12);
+  color: var(--primary-color);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ssh-workspace__detail-body,
+.ssh-workspace__forward-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.ssh-workspace__detail-muted {
+  color: var(--muted-color);
+  font-size: 12px;
+}
+
+.ssh-workspace__forward-list {
+  display: grid;
+  gap: 8px;
+}
+
+.ssh-workspace__forward-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--workspace-terminal-bg) 86%, var(--surface-1));
+}
+
+.ssh-workspace__forward-main {
+  color: var(--text-color);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ssh-pane-grid {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+  padding: 0 10px 10px;
+}
+
+.ssh-pane-card {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 92%, transparent);
+  background: color-mix(in srgb, var(--workspace-terminal-bg) 88%, var(--surface-1));
+  overflow: hidden;
+}
+
+.ssh-pane-card.is-active {
+  border-color: color-mix(in srgb, var(--primary-color) 64%, var(--border-color));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary-color) 30%, transparent);
+}
+
+.ssh-pane-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 85%, transparent);
+  background: color-mix(in srgb, var(--surface-1) 86%, transparent);
+}
+
+.ssh-pane-card__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ssh-pane-card__title strong {
+  color: var(--text-color);
+  font-size: 12px;
+}
+
+.ssh-pane-card__status {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ssh-pane-card__status.is-connected {
+  color: #0f766e;
+  background: rgba(16, 185, 129, 0.16);
+}
+
+.ssh-pane-card__status.is-connecting {
+  color: #9a6700;
+  background: rgba(245, 158, 11, 0.18);
+}
+
+.ssh-pane-card__status.is-disconnected {
+  color: #b42318;
+  background: rgba(239, 68, 68, 0.16);
+}
+
+.ssh-pane-card__actions {
+  display: flex;
+  gap: 4px;
+}
+
+.ssh-pane-card__body {
+  min-height: 0;
 }
 
 .ssh-workspace__files {
@@ -392,14 +869,8 @@ onBeforeUnmount(() => {
   background: var(--primary-color);
 }
 
-.ssh-workspace--comfortable {
-  padding: 0;
-}
-
-.ssh-workspace--balanced {
-  padding: 0;
-}
-
+.ssh-workspace--comfortable,
+.ssh-workspace--balanced,
 .ssh-workspace--compact {
   padding: 0;
 }
@@ -419,6 +890,20 @@ onBeforeUnmount(() => {
   .ssh-workspace {
     grid-template-rows: minmax(170px, 0.8fr) 8px minmax(200px, 1.2fr);
     padding: 4px;
+  }
+
+  .ssh-pane-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .ssh-workspace__toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .ssh-workspace__forward-item {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>

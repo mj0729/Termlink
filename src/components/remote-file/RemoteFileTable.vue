@@ -94,6 +94,8 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { VxeColumn, VxeTable } from 'vxe-table'
+import 'vxe-table/lib/style.css'
 import {
   CloudUploadOutlined,
 } from '@antdv-next/icons'

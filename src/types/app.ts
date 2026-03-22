@@ -3,6 +3,7 @@ export type TabType = 'ssh' | 'local' | 'file' | 'connections'
 export type TerminalCursorStyle = 'block' | 'underline' | 'bar'
 export type WorkspaceDensity = 'comfortable' | 'balanced' | 'compact'
 export type ConnectionHubViewMode = 'list' | 'grid'
+export type PortForwardType = 'local'
 
 export interface ThemeConfig {
   background: string
@@ -36,6 +37,15 @@ export interface TerminalConfig {
   connectionHubViewMode: ConnectionHubViewMode
 }
 
+export interface SshPortForward {
+  id: string
+  type: PortForwardType
+  localPort: number
+  remoteHost: string
+  remotePort: number
+  label?: string
+}
+
 export interface SshProfile {
   id: string
   host: string
@@ -47,6 +57,15 @@ export interface SshProfile {
   password?: string | null
   save_password?: boolean
   private_key?: string | null
+  proxy_jump_id?: string | null
+  proxy_jump_name?: string | null
+  proxy_jump_host?: string | null
+  proxy_jump_port?: number | null
+  proxy_jump_username?: string | null
+  proxy_jump_private_key?: string | null
+  ssh_config_source?: string | null
+  ssh_config_host?: string | null
+  port_forwards?: SshPortForward[]
 }
 
 export interface SshConnectionPayload {
@@ -61,6 +80,15 @@ export interface SshConnectionPayload {
   tags?: string[]
   usePrivateKey?: boolean
   privateKey?: string
+  proxyJumpId?: string | null
+  proxyJumpName?: string | null
+  proxyJumpHost?: string | null
+  proxyJumpPort?: number | string | null
+  proxyJumpUsername?: string | null
+  proxyJumpPrivateKey?: string | null
+  sshConfigSource?: string | null
+  sshConfigHost?: string | null
+  portForwards?: SshPortForward[]
   isEdit?: boolean
 }
 
@@ -281,10 +309,12 @@ export interface SshModalForm extends SshConnectionPayload {
   port: number
   password: string
   privateKey: string
+  proxyJumpPort: number | null
   usePrivateKey: boolean
   savePassword: boolean
   group: string
   tags: string[]
+  portForwards: SshPortForward[]
 }
 
 export interface ImportPreviewItem {
@@ -304,6 +334,17 @@ export interface ImportResult {
   importedCount: number
   skippedCount: number
   overwrittenCount: number
+}
+
+export interface ParsedSshConfigHost {
+  alias: string
+  name: string
+  host: string
+  port: number
+  username: string
+  privateKey?: string | null
+  proxyJumpAlias?: string | null
+  portForwards: SshPortForward[]
 }
 
 export interface SftpDetailedEntry {

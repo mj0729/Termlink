@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": ".regression-dist",
+    "rootDir": ".",
+    "noEmit": false,
+    "strict": false,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": [
+    "tests/regression/**/*.ts",
+    "src/utils/**/*.ts",
+    "src/types/app.ts"
+  ]
+}

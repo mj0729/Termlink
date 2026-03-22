@@ -14,6 +14,29 @@ pub enum AuthMethod {
     PrivateKey,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProxyJumpRequest {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub password: Option<String>,
+    pub private_key_path: Option<String>,
+    pub passphrase: Option<String>,
+    #[serde(default = "default_strict_checking")]
+    pub strict_host_key_checking: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PortForwardRequest {
+    pub id: String,
+    #[serde(default)]
+    pub r#type: String,
+    pub local_port: u16,
+    pub remote_host: String,
+    pub remote_port: u16,
+    pub label: Option<String>,
+}
+
 /// SSH 认证请求
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SshAuthRequest {
@@ -27,6 +50,10 @@ pub struct SshAuthRequest {
     pub passphrase: Option<String>,
     #[serde(default = "default_strict_checking")]
     pub strict_host_key_checking: bool,
+    #[serde(default)]
+    pub proxy_jump: Option<ProxyJumpRequest>,
+    #[serde(default)]
+    pub port_forwards: Vec<PortForwardRequest>,
 }
 
 fn default_strict_checking() -> bool {
@@ -81,6 +108,11 @@ pub struct HostKeyDecision {
     pub public_key_base64: String,
     pub action: HostKeyDecisionAction,
     pub profile_id: Option<String>,
+}
+
+pub struct AuthenticatedSession {
+    pub session: client::Handle<Client>,
+    pub jump_session: Option<client::Handle<Client>>,
 }
 
 /// SSH 客户端处理器
@@ -284,11 +316,59 @@ pub fn save_host_key_decision(app: AppHandle, decision: HostKeyDecision) -> Resu
 pub async fn connect_authenticated_session(
     app: &AppHandle,
     request: &SshAuthRequest,
-) -> Result<client::Handle<Client>, String> {
+) -> Result<AuthenticatedSession, String> {
     clear_pending_host_key_verification(&request.connection_id);
+    if let Some(proxy_jump) = request.proxy_jump.as_ref() {
+        let jump_request = SshAuthRequest {
+            connection_id: request.connection_id.clone(),
+            profile_id: None,
+            host: proxy_jump.host.clone(),
+            port: proxy_jump.port,
+            username: proxy_jump.username.clone(),
+            password: proxy_jump.password.clone(),
+            private_key_path: proxy_jump.private_key_path.clone(),
+            passphrase: proxy_jump.passphrase.clone(),
+            strict_host_key_checking: proxy_jump.strict_host_key_checking,
+            proxy_jump: None,
+            port_forwards: Vec::new(),
+        };
+
+        let jump_session = connect_authenticated_handle(app, &jump_request).await?;
+        let channel = jump_session
+            .channel_open_direct_tcpip(
+                request.host.clone(),
+                request.port as u32,
+                "127.0.0.1",
+                0,
+            )
+            .await
+            .map_err(|e| format!("通过跳板机打开目标通道失败: {}", e))?;
+
+        let stream = channel.into_stream();
+        let session = connect_authenticated_stream(app, request, stream).await?;
+        clear_pending_host_key_verification(&request.connection_id);
+
+        return Ok(AuthenticatedSession {
+            session,
+            jump_session: Some(jump_session),
+        });
+    }
+
+    let session = connect_authenticated_handle(app, request).await?;
+    clear_pending_host_key_verification(&request.connection_id);
+
+    Ok(AuthenticatedSession {
+        session,
+        jump_session: None,
+    })
+}
+
+async fn connect_authenticated_handle(
+    app: &AppHandle,
+    request: &SshAuthRequest,
+) -> Result<client::Handle<Client>, String> {
     let verification = Arc::new(StdMutex::new(None));
 
-    // 创建连接
     let config = client::Config {
         inactivity_timeout: Some(std::time::Duration::from_secs(300)),
         ..<_>::default()
@@ -302,27 +382,57 @@ pub async fn connect_authenticated_session(
 
     let mut session = client::connect(Arc::new(config), (&request.host[..], request.port), client)
         .await
-        .map_err(|e| {
-            if request.strict_host_key_checking {
-                if let Some(verification) = verification.lock().unwrap().clone() {
-                    if verification.requires_user_confirmation {
-                        cache_pending_host_key_verification(
-                            &request.connection_id,
-                            verification.clone(),
-                        );
-                        return format!("主机密钥需要确认 (状态: {:?})", verification.state);
-                    }
-                }
-            }
+        .map_err(|e| map_connect_error(request, &verification, format!("SSH 连接失败: {}", e)))?;
 
-            format!("SSH 连接失败: {}", e)
-        })?;
-
-    // 执行认证
     authenticate_session(&mut session, request).await?;
-    clear_pending_host_key_verification(&request.connection_id);
+    Ok(session)
+}
+
+async fn connect_authenticated_stream<R>(
+    app: &AppHandle,
+    request: &SshAuthRequest,
+    stream: R,
+) -> Result<client::Handle<Client>, String>
+where
+    R: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    let verification = Arc::new(StdMutex::new(None));
+
+    let config = client::Config {
+        inactivity_timeout: Some(std::time::Duration::from_secs(300)),
+        ..<_>::default()
+    };
+
+    let client = Client {
+        app: app.clone(),
+        request: request.clone(),
+        verification: verification.clone(),
+    };
+
+    let mut session = client::connect_stream(Arc::new(config), stream, client)
+        .await
+        .map_err(|e| map_connect_error(request, &verification, format!("SSH 连接失败: {}", e)))?;
+
+    authenticate_session(&mut session, request).await?;
 
     Ok(session)
+}
+
+fn map_connect_error(
+    request: &SshAuthRequest,
+    verification: &Arc<StdMutex<Option<HostKeyVerification>>>,
+    fallback: String,
+) -> String {
+    if request.strict_host_key_checking {
+        if let Some(verification) = verification.lock().unwrap().clone() {
+            if verification.requires_user_confirmation {
+                cache_pending_host_key_verification(&request.connection_id, verification.clone());
+                return format!("主机密钥需要确认 (状态: {:?})", verification.state);
+            }
+        }
+    }
+
+    fallback
 }
 
 /// 对会话执行认证
@@ -432,6 +542,8 @@ mod tests {
             private_key_path: None,
             passphrase: None,
             strict_host_key_checking: true,
+            proxy_jump: None,
+            port_forwards: Vec::new(),
         };
 
         let json = serde_json::to_string(&request).unwrap();

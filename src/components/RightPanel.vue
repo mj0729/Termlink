@@ -10,7 +10,7 @@
               <div class="dashboard-hero__copy">
                 <div class="dashboard-hero__title-row">
                   <h3>{{ monitorHostTitle }}</h3>
-                  <span class="dashboard-health-pill" :class="`is-${monitorHealthTone}`">
+                  <span v-if="!isEmbeddedMonitor" class="dashboard-health-pill" :class="`is-${monitorHealthTone}`">
                     {{ monitorHealthLabel }}
                   </span>
                 </div>
@@ -19,9 +19,6 @@
 
               <div class="dashboard-hero__toolbar">
                 <div class="dashboard-hero__toolbar-actions">
-                  <a-button type="primary" size="small" title="手动刷新" :disabled="!canRefreshMonitor" @click="refreshData">
-                    <ReloadOutlined />
-                  </a-button>
                   <a-button
                     type="text"
                     size="small"
@@ -31,6 +28,9 @@
                   >
                     <LeftOutlined v-if="placement === 'left'" />
                     <RightOutlined v-else />
+                  </a-button>
+                  <a-button type="primary" size="small" class="hero-refresh-btn" title="手动刷新" :disabled="!canRefreshMonitor" @click="refreshData">
+                    <ReloadOutlined />
                   </a-button>
                 </div>
                 <div class="dashboard-hero__toolbar-meta">
@@ -53,7 +53,7 @@
                   :suffix="item.suffix"
                   :value-style="item.valueStyle"
                 />
-                <span class="dashboard-kpi__meta">{{ item.meta }}</span>
+                <span v-if="!isEmbeddedMonitor" class="dashboard-kpi__meta">{{ item.meta }}</span>
               </div>
             </div>
 
@@ -62,7 +62,26 @@
                 <span>内存构成</span>
                 <strong>{{ formatSize(memoryInfo.used) }} / {{ formatSize(memoryInfo.total) }}</strong>
               </div>
-              <div class="memory-composition__bar">
+              <a-tooltip v-if="isEmbeddedMonitor" placement="topLeft" overlay-class-name="memory-composition-tooltip">
+                <template #title>
+                  <div class="memory-composition__tooltip">
+                    <div v-for="segment in memorySegments" :key="`${segment.label}-tooltip`" class="memory-composition__tooltip-item">
+                      <span class="memory-legend-item__dot" :style="{ background: segment.color }"></span>
+                      <span>{{ segment.label }}</span>
+                      <strong>{{ segment.value }}</strong>
+                    </div>
+                  </div>
+                </template>
+                <div class="memory-composition__bar memory-composition__bar--interactive">
+                  <span
+                    v-for="segment in memorySegments"
+                    :key="segment.label"
+                    class="memory-composition__segment"
+                    :style="{ width: `${segment.percent}%`, background: segment.color }"
+                  ></span>
+                </div>
+              </a-tooltip>
+              <div v-else class="memory-composition__bar">
                 <span
                   v-for="segment in memorySegments"
                   :key="segment.label"
@@ -70,11 +89,16 @@
                   :style="{ width: `${segment.percent}%`, background: segment.color }"
                 ></span>
               </div>
-              <div class="hero-summary-memory__legend">
-                <div v-for="segment in memorySegments" :key="segment.label" class="hero-summary-memory__legend-item">
+              <div v-if="!isEmbeddedMonitor" class="hero-summary-memory__legend">
+                <div
+                  v-for="segment in memorySegments"
+                  :key="segment.label"
+                  class="hero-summary-memory__legend-item"
+                  :style="{ '--memory-segment-color': segment.color }"
+                >
                   <span class="memory-legend-item__dot" :style="{ background: segment.color }"></span>
                   <span>{{ segment.label }}</span>
-                  <strong>{{ segment.value }}</strong>
+                  <strong v-if="!isEmbeddedMonitor">{{ segment.value }}</strong>
                 </div>
               </div>
             </div>
@@ -119,13 +143,15 @@
                         <component :is="metric.icon" class="resource-highlight-row__icon" />
                         {{ metric.label }}
                       </span>
-                      <span class="resource-highlight-row__tone" :class="`is-${metric.tone}`">
-                        {{ metric.state }}
-                      </span>
-                      <span class="resource-highlight-row__meta">{{ metric.meta }}</span>
+                      <template v-if="!isEmbeddedMonitor">
+                        <span class="resource-highlight-row__tone" :class="`is-${metric.tone}`">
+                          {{ metric.state }}
+                        </span>
+                        <span class="resource-highlight-row__meta">{{ metric.meta }}</span>
+                      </template>
                     </div>
 
-                    <div class="resource-highlight-row__value">
+                    <div v-if="!isEmbeddedMonitor" class="resource-highlight-row__value">
                       <a-statistic
                         :value="metric.value"
                         :precision="metric.precision"
@@ -135,8 +161,24 @@
                     </div>
                   </div>
 
-                  <div class="resource-highlight-row__footer">
+                  <div class="resource-highlight-row__footer" :class="{ 'resource-highlight-row__footer--compact': isEmbeddedMonitor }">
+                    <template v-if="isEmbeddedMonitor">
+                      <div class="resource-highlight-row__inline-progress">
+                        <a-progress
+                          class="resource-highlight-row__progress resource-highlight-row__progress--compact"
+                          :percent="metric.percent"
+                          :show-info="false"
+                          :stroke-color="metric.color"
+                          :stroke-width="14"
+                        />
+                        <div class="resource-highlight-row__inline-meta">
+                          <span class="resource-highlight-row__inline-percent">{{ formatPercent(metric.value) }}</span>
+                          <span class="resource-highlight-row__inline-detail">{{ formatResourceInlineText(metric.meta) }}</span>
+                        </div>
+                      </div>
+                    </template>
                     <a-progress
+                      v-else
                       class="resource-highlight-row__progress"
                       :percent="metric.percent"
                       :show-info="false"
@@ -149,7 +191,7 @@
             </a-card>
 
             <a-card :bordered="false" class="dashboard-card">
-              <div class="dashboard-section-head">
+              <div class="dashboard-section-head dashboard-section-head--inline-meta">
                 <div>
                   <h4>Top 进程</h4>
                 </div>
@@ -186,7 +228,7 @@
 
           <div class="dashboard-bottom-grid">
             <a-card :bordered="false" class="dashboard-card">
-              <div class="dashboard-section-head">
+              <div class="dashboard-section-head dashboard-section-head--with-action">
                 <div>
                   <h4>磁盘容量</h4>
                 </div>
@@ -207,7 +249,21 @@
                   :key="`${disk.device}-${disk.mountpoint}`"
                   class="disk-card"
                 >
-                  <div class="disk-card__row">
+                  <div v-if="isEmbeddedMonitor" class="disk-card__compact">
+                    <div class="disk-card__compact-head">
+                      <strong class="disk-card__mountpoint" :title="disk.mountpoint || '-'">{{ disk.mountpoint || '-' }}</strong>
+                      <span class="disk-card__percent" :style="{ color: getProgressColor(disk.usage || 0) }">
+                        {{ formatPercent(disk.usage) }}
+                      </span>
+                    </div>
+                    <div class="disk-card__compact-meta">
+                      <span class="disk-card__device" :title="disk.device">{{ disk.device }}</span>
+                      <span class="disk-card__summary" :title="`已用 ${formatSize(disk.used)} · 可用 ${formatSize(disk.available)} · ${disk.filesystem || '-'}`">
+                        已用 {{ formatSize(disk.used) }} · 可用 {{ formatSize(disk.available) }} · {{ disk.filesystem || '-' }}
+                      </span>
+                    </div>
+                  </div>
+                  <div v-else class="disk-card__row">
                     <div class="disk-card__identity">
                       <strong>{{ disk.mountpoint || '-' }}</strong>
                       <span>{{ disk.device }}</span>
@@ -234,7 +290,7 @@
             </a-card>
 
             <a-card :bordered="false" class="dashboard-card">
-              <div class="dashboard-section-head">
+              <div class="dashboard-section-head dashboard-section-head--inline-meta">
                 <div>
                   <h4>网络接口</h4>
                 </div>
@@ -519,6 +575,7 @@ const historyLimit = 18
 
 // 下载管理状态
 const activeTab = ref<MonitorTab>(props.activeTab)
+const isEmbeddedMonitor = computed(() => props.embedded && activeTab.value === 'monitor')
 const transfers = ref<TransferTask[]>([])
 const transferFilter = ref<TransferFilter>('all')
 let transferIdCounter = 0
@@ -647,7 +704,7 @@ const lastUpdateText = computed(() => (
 const heroStatistics = computed(() => ([
   {
     key: 'uptime',
-    label: '系统运行时间',
+    label: isEmbeddedMonitor.value ? '运行' : '系统运行时间',
     value: formatUptime(systemInfo.value.uptime),
     precision: undefined,
     suffix: undefined,
@@ -656,7 +713,7 @@ const heroStatistics = computed(() => ([
   },
   {
     key: 'rx',
-    label: '下行吞吐',
+    label: isEmbeddedMonitor.value ? '下行' : '下行吞吐',
     value: formatNetworkSpeed(networkAggregate.value.rx),
     precision: undefined,
     suffix: undefined,
@@ -665,7 +722,7 @@ const heroStatistics = computed(() => ([
   },
   {
     key: 'tx',
-    label: '上行吞吐',
+    label: isEmbeddedMonitor.value ? '上行' : '上行吞吐',
     value: formatNetworkSpeed(networkAggregate.value.tx),
     precision: undefined,
     suffix: undefined,
@@ -737,12 +794,21 @@ const topProcesses = computed<ProcessTableRow[]>(() => (
     }))
 ))
 
-const processColumns = [
-  { title: '#', dataIndex: 'rank', key: 'rank', width: 56, align: 'center' as const },
-  { title: '进程命令', dataIndex: 'command', key: 'command', ellipsis: true },
-  { title: 'CPU', dataIndex: 'cpuPercent', key: 'cpu', width: 100, align: 'right' as const },
-  { title: '内存', dataIndex: 'memoryKb', key: 'memory', width: 128, align: 'right' as const },
-]
+const processColumns = computed(() => (
+  isEmbeddedMonitor.value
+    ? [
+        { title: '#', dataIndex: 'rank', key: 'rank', width: 44, align: 'center' as const },
+        { title: '进程命令', dataIndex: 'command', key: 'command', ellipsis: true },
+        { title: 'CPU', dataIndex: 'cpuPercent', key: 'cpu', width: 64, align: 'right' as const },
+        { title: '内存', dataIndex: 'memoryKb', key: 'memory', width: 88, align: 'right' as const },
+      ]
+    : [
+        { title: '#', dataIndex: 'rank', key: 'rank', width: 56, align: 'center' as const },
+        { title: '进程命令', dataIndex: 'command', key: 'command', ellipsis: true },
+        { title: 'CPU', dataIndex: 'cpuPercent', key: 'cpu', width: 100, align: 'right' as const },
+        { title: '内存', dataIndex: 'memoryKb', key: 'memory', width: 128, align: 'right' as const },
+      ]
+))
 
 const dashboardAlerts = computed<MonitorAlert[]>(() => {
   if (monitorDisconnected.value) {
@@ -1028,6 +1094,10 @@ function formatNetworkSpeed(bytesPerSecond?: number) {
 
 function formatPercent(value?: number) {
   return `${roundMetric(value)}%`
+}
+
+function formatResourceInlineText(meta: string) {
+  return meta.replace(/\s+/g, ' ').trim()
 }
 
 function roundMetric(value?: number) {
@@ -2023,6 +2093,47 @@ defineExpose({
   margin-top: 4px;
 }
 
+.resource-highlight-row__inline-progress {
+  position: relative;
+}
+
+.resource-highlight-row__inline-meta {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: nowrap;
+  gap: 8px;
+  padding: 0 8px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.resource-highlight-row__inline-percent,
+.resource-highlight-row__inline-detail {
+  color: #203044;
+  font-family: "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.38);
+  min-width: 0;
+}
+
+.resource-highlight-row__inline-percent {
+  flex: 0 0 auto;
+}
+
+.resource-highlight-row__inline-detail {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  text-align: right;
+}
+
 .resource-highlight-row__progress :deep(.ant-progress) {
   margin: 0;
 }
@@ -2181,6 +2292,7 @@ defineExpose({
 }
 
 .memory-composition__bar {
+  position: relative;
   display: flex;
   width: 100%;
   height: 10px;
@@ -2191,6 +2303,30 @@ defineExpose({
 
 .memory-composition__segment {
   min-width: 2%;
+}
+
+.memory-composition__bar--interactive {
+  cursor: help;
+}
+
+.memory-composition__tooltip {
+  display: grid;
+  gap: 6px;
+  min-width: 160px;
+}
+
+.memory-composition__tooltip-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+}
+
+.memory-composition__tooltip-item strong {
+  font-family: "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
+  font-size: 12px;
 }
 
 .memory-composition__legend {
@@ -2233,73 +2369,105 @@ defineExpose({
 }
 
 .right-panel--embedded.right-panel--monitor .monitor-content {
-  padding: 8px;
+  padding: 4px;
 }
 
 .right-panel--embedded.right-panel--monitor .monitor-dashboard,
 .right-panel--embedded.right-panel--monitor .dashboard-stack,
 .right-panel--embedded.right-panel--monitor .dashboard-main-grid,
 .right-panel--embedded.right-panel--monitor .dashboard-bottom-grid {
-  gap: 8px;
+  gap: 6px;
 }
 
 .right-panel--embedded.right-panel--monitor .dashboard-hero-card :deep(.ant-card-body),
 .right-panel--embedded.right-panel--monitor .dashboard-card :deep(.ant-card-body) {
-  padding: 12px !important;
+  padding: 8px !important;
 }
 
 .right-panel--embedded.right-panel--monitor .dashboard-hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "copy actions"
+    "meta actions";
   align-items: start;
-  gap: 8px 10px;
+  gap: 4px 8px;
 }
 
-.right-panel--embedded.right-panel--monitor .dashboard-hero__toolbar {
+.right-panel--embedded.right-panel--monitor .dashboard-hero__copy {
+  grid-area: copy;
   display: grid;
-  justify-items: end;
-  gap: 6px;
-}
-
-.right-panel--embedded.right-panel--monitor .dashboard-hero__toolbar-meta {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-.right-panel--embedded.right-panel--monitor .dashboard-hero__toolbar-actions {
-  flex-shrink: 0;
-  gap: 8px;
-}
-
-.right-panel--embedded.right-panel--monitor .dashboard-hero__title-row {
-  gap: 6px;
-  align-items: center;
-  flex-wrap: nowrap;
-}
-
-.right-panel--embedded.right-panel--monitor .dashboard-hero__title-row h3 {
-  font-size: 15px;
-  line-height: 1.2;
-  word-break: break-word;
+  gap: 2px;
   min-width: 0;
 }
 
+.right-panel--embedded.right-panel--monitor .dashboard-hero__toolbar {
+  display: contents;
+}
+
+.right-panel--embedded.right-panel--monitor .dashboard-hero__toolbar-meta {
+  grid-area: meta;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+}
+
+.right-panel--embedded.right-panel--monitor .dashboard-hero__toolbar-actions {
+  grid-area: actions;
+  width: auto;
+  display: grid;
+  justify-items: end;
+  margin-left: 0;
+  gap: 6px;
+}
+
+.right-panel--embedded.right-panel--monitor .dashboard-hero__title-row {
+  gap: 4px 6px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin-top: 0;
+}
+
+.right-panel--embedded.right-panel--monitor .dashboard-hero__title-row h3 {
+  display: -webkit-box;
+  font-size: 12px;
+  line-height: 1.15;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  min-width: 0;
+  max-width: 100%;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
 .right-panel--embedded.right-panel--monitor .dashboard-hero__copy p {
-  margin-top: 4px;
-  font-size: 11px;
-  line-height: 1.35;
+  margin-top: 0;
+  font-size: 9px;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 
 .right-panel--embedded.right-panel--monitor .dashboard-health-pill {
-  min-height: 20px;
-  padding: 0 8px;
-  font-size: 10px;
+  min-height: 18px;
+  padding: 0 6px;
+  font-size: 9px;
 }
 
+.right-panel--embedded.right-panel--monitor .hero-refresh-btn,
 .right-panel--embedded.right-panel--monitor .dashboard-hero__timestamp {
-  font-size: 10px;
+  font-size: 8px;
+}
+
+.right-panel--embedded.right-panel--monitor .hero-refresh-btn {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding-inline: 0;
 }
 
 .right-panel--embedded.right-panel--monitor .dashboard-kpi,
@@ -2309,51 +2477,150 @@ defineExpose({
 .right-panel--embedded.right-panel--monitor .disk-card,
 .right-panel--embedded.right-panel--monitor .interface-card,
 .right-panel--embedded.right-panel--monitor .memory-composition {
-  padding: 8px 10px;
+  padding: 6px 7px;
 }
 
 .right-panel--embedded.right-panel--monitor .dashboard-kpi-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-  margin-top: 8px;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.right-panel--embedded.right-panel--monitor .dashboard-kpi {
+  gap: 4px;
+  padding: 6px;
+  min-height: 0;
+}
+
+.right-panel--embedded.right-panel--monitor .dashboard-kpi--uptime :deep(.ant-statistic-content) {
+  font-size: 14px !important;
+}
+
+.right-panel--embedded.right-panel--monitor .dashboard-kpi--rx :deep(.ant-statistic-content),
+.right-panel--embedded.right-panel--monitor .dashboard-kpi--tx :deep(.ant-statistic-content) {
+  font-size: 13px !important;
+}
+
+.right-panel--embedded.right-panel--monitor .dashboard-kpi__label {
+  white-space: nowrap;
+}
+
+.right-panel--embedded.right-panel--monitor .dashboard-kpi :deep(.ant-statistic),
+.right-panel--embedded.right-panel--monitor .dashboard-kpi :deep(.ant-statistic-content),
+.right-panel--embedded.right-panel--monitor .dashboard-kpi :deep(.ant-statistic-content-value),
+.right-panel--embedded.right-panel--monitor .dashboard-kpi :deep(.ant-statistic-content-value-int),
+.right-panel--embedded.right-panel--monitor .dashboard-kpi :deep(.ant-statistic-content-value-decimal),
+.right-panel--embedded.right-panel--monitor .dashboard-kpi :deep(.ant-statistic-content-suffix) {
+  white-space: nowrap !important;
+  line-height: 1.05 !important;
+  letter-spacing: -0.03em;
 }
 
 .right-panel--embedded.right-panel--monitor .hero-summary-memory {
-  padding: 8px 10px;
+  padding: 6px 7px;
 }
 
 .right-panel--embedded.right-panel--monitor .hero-summary-memory {
-  gap: 6px;
+  gap: 4px;
+}
+
+.right-panel--embedded.right-panel--monitor .hero-summary-memory__head {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.right-panel--embedded.right-panel--monitor .hero-summary-memory__legend {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.right-panel--embedded.right-panel--monitor .hero-summary-memory__legend-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  padding: 3px 5px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--memory-segment-color) 10%, rgba(255, 255, 255, 0.92));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--memory-segment-color) 18%, rgba(177, 190, 206, 0.2));
 }
 
 .right-panel--embedded.right-panel--monitor .hero-alert-strip {
-  gap: 6px;
-  padding: 8px 10px;
+  gap: 4px;
+  padding: 6px 7px;
 }
 
 .right-panel--embedded.right-panel--monitor .hero-alert-strip__item {
   gap: 2px;
-  padding: 6px 8px;
+  padding: 5px 6px;
 }
 
 .right-panel--embedded.right-panel--monitor .hero-alert-strip__header strong,
 .right-panel--embedded.right-panel--monitor .hero-alert-strip__message {
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .right-panel--embedded.right-panel--monitor .hero-alert-strip__header span,
 .right-panel--embedded.right-panel--monitor .hero-alert-strip__description {
-  font-size: 10px;
+  font-size: 9px;
 }
 
 .right-panel--embedded.right-panel--monitor .hero-summary-memory__head span,
 .right-panel--embedded.right-panel--monitor .hero-summary-memory__legend-item span {
-  font-size: 10px;
+  font-size: 9px;
 }
 
 .right-panel--embedded.right-panel--monitor .hero-summary-memory__head strong,
 .right-panel--embedded.right-panel--monitor .hero-summary-memory__legend-item strong {
-  font-size: 11px;
+  font-size: 10px;
+}
+
+.right-panel--embedded.right-panel--monitor .hero-summary-memory__head span {
+  color: #6d8098;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.right-panel--embedded.right-panel--monitor .hero-summary-memory__head strong {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: inset 0 0 0 1px rgba(188, 204, 223, 0.38);
+}
+
+.right-panel--embedded.right-panel--monitor .memory-composition__bar {
+  height: 16px;
+  border-radius: 999px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 0 0 1px rgba(201, 214, 229, 0.3);
+}
+
+.right-panel--embedded.right-panel--monitor .memory-composition__segment {
+  min-width: 3%;
+}
+
+.right-panel--embedded.right-panel--monitor .memory-legend-item__dot {
+  width: 8px;
+  height: 8px;
+  margin-right: 0;
+}
+
+.right-panel--embedded.right-panel--monitor .hero-summary-memory__legend-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.right-panel--embedded.right-panel--monitor .hero-summary-memory__legend-item strong {
+  justify-self: end;
 }
 
 .right-panel--embedded.right-panel--monitor .dashboard-main-grid,
@@ -2372,15 +2639,32 @@ defineExpose({
 }
 
 .right-panel--embedded.right-panel--monitor .dashboard-section-head {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 4px;
+  margin-bottom: 4px;
 }
 
 .right-panel--embedded.right-panel--monitor .dashboard-section-head h4 {
-  white-space: nowrap;
+  white-space: normal;
+}
+
+.right-panel--embedded.right-panel--monitor .dashboard-section-head--with-action {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.right-panel--embedded.right-panel--monitor .dashboard-section-head--inline-meta {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.right-panel--embedded.right-panel--monitor .dashboard-section-head--inline-meta .process-summary-chips {
+  width: auto;
+  justify-content: flex-end;
 }
 
 .right-panel--embedded.right-panel--monitor .memory-composition__header {
@@ -2391,7 +2675,7 @@ defineExpose({
 
 .right-panel--embedded.right-panel--monitor .dashboard-section-head h4 {
   margin-top: 1px;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .right-panel--embedded.right-panel--monitor .dashboard-section-head__meta,
@@ -2405,40 +2689,84 @@ defineExpose({
 .right-panel--embedded.right-panel--monitor .disk-card__identity span,
 .right-panel--embedded.right-panel--monitor .interface-card__identity span,
 .right-panel--embedded.right-panel--monitor .interface-card__totals {
-  font-size: 10px;
+  font-size: 9px;
 }
 
 .right-panel--embedded.right-panel--monitor .dashboard-kpi :deep(.ant-statistic-content),
 .right-panel--embedded.right-panel--monitor .resource-highlight-row__value :deep(.ant-statistic-content) {
-  font-size: 16px !important;
+  font-size: 13px !important;
 }
 
 .right-panel--embedded.right-panel--monitor .resource-highlight-row {
-  gap: 3px;
-  padding: 6px 8px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 8px;
+  padding: 5px 6px;
 }
 
 .right-panel--embedded.right-panel--monitor .resource-highlight-row__main {
+  display: flex;
   align-items: center;
+  min-width: 0;
+}
+
+.right-panel--embedded.right-panel--monitor .resource-highlight-row__label {
+  display: inline-flex;
+  align-items: center;
+  width: auto;
+  min-width: 0;
 }
 
 .right-panel--embedded.right-panel--monitor .resource-highlight-row__name {
-  font-size: 12px;
-  gap: 4px;
+  font-size: 11px;
+  gap: 3px;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .right-panel--embedded.right-panel--monitor .resource-highlight-row__meta,
 .right-panel--embedded.right-panel--monitor .resource-highlight-row__trend {
-  font-size: 9px;
-}
-
-.right-panel--embedded.right-panel--monitor .resource-highlight-row__tone {
-  padding: 1px 5px;
-  font-size: 9px;
+  font-size: 8px;
+  grid-column: 1 / -1;
+  white-space: normal;
 }
 
 .right-panel--embedded.right-panel--monitor .resource-highlight-row__footer {
-  margin-top: 2px;
+  margin-top: 0;
+  min-width: 0;
+}
+
+.right-panel--embedded.right-panel--monitor .resource-highlight-row__footer--compact {
+  margin-top: 0;
+}
+
+.right-panel--embedded.right-panel--monitor .resource-highlight-row__inline-progress :deep(.ant-progress),
+.right-panel--embedded.right-panel--monitor .resource-highlight-row__inline-progress :deep(.ant-progress-outer) {
+  width: 100%;
+}
+
+.right-panel--embedded.right-panel--monitor .resource-highlight-row__progress--compact :deep(.ant-progress-inner) {
+  border-radius: 4px;
+  background: rgba(222, 230, 240, 0.72);
+}
+
+.right-panel--embedded.right-panel--monitor .resource-highlight-row__progress--compact :deep(.ant-progress-bg) {
+  border-radius: 4px;
+}
+
+.right-panel--embedded.right-panel--monitor .resource-highlight-row__inline-meta {
+  padding: 0 6px;
+  gap: 6px;
+}
+
+.right-panel--embedded.right-panel--monitor .resource-highlight-row__inline-percent,
+.right-panel--embedded.right-panel--monitor .resource-highlight-row__inline-detail {
+  font-size: 9px;
+}
+
+.right-panel--embedded.right-panel--monitor .resource-highlight-row__inline-detail {
+  text-align: right;
 }
 
 .right-panel--embedded.right-panel--monitor .resource-highlight-row__progress :deep(.ant-progress-bg) {
@@ -2447,18 +2775,38 @@ defineExpose({
 
 .right-panel--embedded.right-panel--monitor .process-summary-chips {
   width: 100%;
-  gap: 6px;
-  justify-content: flex-end;
+  gap: 4px;
+  justify-content: flex-start;
 }
 
 .right-panel--embedded.right-panel--monitor .process-summary-chip {
-  padding: 2px 7px;
-  font-size: 10px;
+  padding: 1px 6px;
+  font-size: 9px;
 }
 
 .right-panel--embedded.right-panel--monitor .process-table :deep(.ant-table-thead > tr > th),
 .right-panel--embedded.right-panel--monitor .process-table :deep(.ant-table-tbody > tr > td) {
-  padding: 6px 5px !important;
+  padding: 4px 3px !important;
+}
+
+.right-panel--embedded.right-panel--monitor .process-table :deep(.ant-table) {
+  table-layout: fixed;
+}
+
+.right-panel--embedded.right-panel--monitor .process-table :deep(.ant-table-thead > tr > th),
+.right-panel--embedded.right-panel--monitor .process-table :deep(.ant-table-tbody > tr > td) {
+  font-size: 9px;
+}
+
+.right-panel--embedded.right-panel--monitor .process-rank {
+  width: 22px;
+  height: 22px;
+  font-size: 10px;
+}
+
+.right-panel--embedded.right-panel--monitor .process-command,
+.right-panel--embedded.right-panel--monitor .process-value {
+  font-size: 10px;
 }
 
 .right-panel--embedded.right-panel--monitor .alert-stack {
@@ -2480,21 +2828,55 @@ defineExpose({
 }
 
 .right-panel--embedded.right-panel--monitor .memory-composition {
-  gap: 6px;
-  margin-top: 8px;
+  gap: 4px;
+  margin-top: 4px;
 }
 
 .right-panel--embedded.right-panel--monitor .disk-card,
 .right-panel--embedded.right-panel--monitor .interface-card {
-  gap: 4px;
+  gap: 3px;
+}
+
+.right-panel--embedded.right-panel--monitor .disk-card__compact {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.right-panel--embedded.right-panel--monitor .disk-card__compact-head,
+.right-panel--embedded.right-panel--monitor .disk-card__compact-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.right-panel--embedded.right-panel--monitor .disk-card__mountpoint,
+.right-panel--embedded.right-panel--monitor .disk-card__device {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.right-panel--embedded.right-panel--monitor .disk-card__mountpoint {
+  color: #162236;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.right-panel--embedded.right-panel--monitor .disk-card__device {
+  color: #7b8da3;
+  font-size: 8px;
 }
 
 .right-panel--embedded.right-panel--monitor .disk-card__row,
 .right-panel--embedded.right-panel--monitor .interface-card__row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 3px 8px;
 }
 
 .right-panel--embedded.right-panel--monitor .disk-card__identity,
@@ -2507,27 +2889,34 @@ defineExpose({
 .right-panel--embedded.right-panel--monitor .disk-card__usage {
   display: grid;
   justify-items: end;
-  gap: 2px;
-  flex-shrink: 0;
+  gap: 1px;
+  width: auto;
 }
 
 .right-panel--embedded.right-panel--monitor .disk-card__summary {
   color: #2f3d4f;
-  font-size: 9px;
+  font-size: 8px;
+  line-height: 1.2;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+  max-width: 148px;
 }
 
 .right-panel--embedded.right-panel--monitor .interface-card__live {
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
+  justify-content: flex-end;
+  gap: 2px 8px;
+  width: auto;
 }
 
 .right-panel--embedded.right-panel--monitor .interface-card__metric {
   color: #162236;
   font-family: "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -2535,7 +2924,9 @@ defineExpose({
 .right-panel--embedded.right-panel--monitor .interface-card__totals {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 10px;
+  gap: 2px 8px;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .right-panel--embedded.right-panel--monitor .network-summary-item,
@@ -3574,6 +3965,16 @@ defineExpose({
   color: #7f93ad !important;
 }
 
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row__inline-percent),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row__inline-detail) {
+  color: #eef4ff !important;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.28);
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row__progress--compact .ant-progress-inner) {
+  background: rgba(50, 67, 94, 0.82) !important;
+}
+
 :global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-kpi__label) {
   color: #a8b8cf !important;
 }
@@ -3590,6 +3991,16 @@ defineExpose({
 
 :global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .disk-card__summary) {
   color: #d6e2f1 !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-summary-memory__head strong) {
+  background: rgba(26, 39, 60, 0.9) !important;
+  box-shadow: inset 0 0 0 1px rgba(90, 114, 147, 0.4) !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-summary-memory__legend-item) {
+  background: color-mix(in srgb, var(--memory-segment-color) 14%, rgba(24, 35, 53, 0.96)) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--memory-segment-color) 18%, rgba(80, 98, 124, 0.28)) !important;
 }
 
 :global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row__progress .ant-progress-inner),

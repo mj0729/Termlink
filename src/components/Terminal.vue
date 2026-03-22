@@ -49,7 +49,7 @@ const props = withDefaults(defineProps<{
   type: 'local'
 })
 
-const emit = defineEmits(['close', 'reconnect', 'currentDirectoryChange'])
+const emit = defineEmits(['close', 'reconnect', 'currentDirectoryChange', 'terminalInput'])
 
 const container = ref<HTMLElement | null>(null)
 const terminal = ref<XTermTerminal | null>(null)
@@ -379,6 +379,7 @@ async function createTerminal() {
       if (props.id.startsWith('ssh-')) {
         trackTerminalInput(data)
       }
+      emit('terminalInput', data)
       if (props.id.startsWith('ssh-')) {
         // SSH终端
         SshService.writeTerminal(props.id, data).catch(() => {})

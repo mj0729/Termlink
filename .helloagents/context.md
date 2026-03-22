@@ -40,3 +40,5 @@
 - 当前前端构建链已升级到 `Vite 8.0.1` 与 `@vitejs/plugin-vue 6.0.5`，`pnpm run build` 和 `cargo check --manifest-path src-tauri/Cargo.toml` 已通过
 - 本轮升级后，构建产物中可见 `rolldown-runtime`，且 `monaco` / `antdv-next` 大块产物仍会触发 `>500 kB` 警告；这属于当前分包策略下的已知现象，不阻断构建
 - `@tailwindcss/vite@4.2.1` 目前仍声明 peer `vite@"^5.2.0 || ^6 || ^7"`，因此安装阶段会对 `Vite 8` 报出未满足 peer 警告；实际生产构建仍可通过，后续可关注 Tailwind 官方是否发布显式支持 `Vite 8` 的版本
+- 当前版本已补齐一轮高级 SSH 工作台底座：支持 `ProxyJump` 配置与运行时建连、`SSH config` 导入、本地端口转发、SSH 工作区分屏与广播输入，并新增 `pnpm run test:regression` 用于覆盖 SSH config 导入映射与分屏广播目标选择逻辑
+- 最新一轮构建体积治理已将 `vxe-table` 从应用入口全局注册改为仅在远程文件表格组件内局部引入，主入口 JS 已从约 `511 kB` 收敛到约 `36 kB`；当前新的大 chunk 主要集中在按需加载的 `SshWorkspace` 和既有的 `monaco-vendor / antdv-vendor`

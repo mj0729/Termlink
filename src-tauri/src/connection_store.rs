@@ -4,6 +4,23 @@ use std::fs;
 use std::path::PathBuf;
 use tauri::AppHandle;
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PortForward {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default = "default_port_forward_type")]
+    pub r#type: String,
+    pub local_port: u16,
+    pub remote_host: String,
+    pub remote_port: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+fn default_port_forward_type() -> String {
+    "local".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionProfile {
     pub id: String,
@@ -19,6 +36,24 @@ pub struct ConnectionProfile {
     pub group: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub tags: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proxy_jump_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proxy_jump_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proxy_jump_host: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proxy_jump_port: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proxy_jump_username: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proxy_jump_private_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssh_config_source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssh_config_host: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub port_forwards: Vec<PortForward>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

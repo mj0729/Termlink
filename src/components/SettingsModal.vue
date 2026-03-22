@@ -101,6 +101,7 @@
           <a-button @click="exportConnections(false)">导出连接配置</a-button>
           <a-button type="primary" @click="exportConnections(true)">导出连接和密码</a-button>
           <a-button @click="triggerImport">导入连接包</a-button>
+          <a-button @click="importFromSshConfig">导入 ~/.ssh/config</a-button>
         </div>
         <div style="margin-top: 4px; color: var(--muted-color); font-size: 12px;">
           导出文件格式为 .tlink。包含密码的导出包会额外要求设置导出密码。
@@ -132,7 +133,15 @@ import { computed, h, onMounted, ref, watch } from 'vue'
 import { CloseOutlined, ReloadOutlined } from '@antdv-next/icons'
 import { invoke } from '@tauri-apps/api/core'
 import ImportExportService from '../services/ImportExportService'
-import type { ImportPreview, SelectOption, SshProfile, TerminalConfig, ThemeName } from '../types/app'
+import { createImportedSshProfile } from '../utils/sshConfigImport.js'
+import type {
+  ImportPreview,
+  ParsedSshConfigHost,
+  SelectOption,
+  SshProfile,
+  TerminalConfig,
+  ThemeName
+} from '../types/app'
 
 const props = withDefaults(defineProps<{
   visible?: boolean
@@ -419,6 +428,61 @@ async function confirmImport(preview: ImportPreview, content: string) {
       }
     },
   })
+}
+
+async function importFromSshConfig() {
+  try {
+    const entries = await invoke<ParsedSshConfigHost[]>('parse_default_ssh_config')
+    if (!entries.length) {
+      message.warning('未找到 ~/.ssh/config')
+      return
+    }
+
+    const summary = entries
+      .slice(0, 6)
+      .map((item) => `- ${item.alias} (${item.username || '未设置用户'}@${item.host}:${item.port})`)
+      .join('\n')
+    const remaining = entries.length > 6 ? `\n- 以及另外 ${entries.length - 6} 条` : ''
+
+    Modal.confirm({
+      title: '导入 ~/.ssh/config',
+      content: h(
+        'div',
+        { style: 'white-space: pre-line; line-height: 1.6;' },
+        `检测到 ${entries.length} 条可导入 Host 记录。\n将以“SSH Config”分组导入，并保留 ProxyJump / LocalForward 关系。\n\n${summary}${remaining}`,
+      ),
+      okText: '导入',
+      cancelText: '取消',
+      onOk: async () => {
+        const aliasToId = new Map<string, string>()
+        const existingAliasMap = new Map<string, SshProfile>()
+        props.profiles.forEach((profile) => {
+          if (profile.ssh_config_host) {
+            existingAliasMap.set(profile.ssh_config_host, profile)
+          }
+        })
+
+        const profilesToImport = entries.map((entry) => {
+          const profile = createImportedSshProfile(entry, aliasToId, existingAliasMap, entries)
+          aliasToId.set(entry.alias, profile.id)
+          return profile
+        })
+
+        for (const profile of profilesToImport) {
+          await invoke('save_ssh_profile', {
+            profile,
+            password: null,
+          })
+        }
+
+        emit('refreshProfiles')
+        message.success(`已从 ~/.ssh/config 导入 ${profilesToImport.length} 条连接`)
+      },
+    })
+  } catch (error) {
+    console.error('导入 SSH config 失败:', error)
+    message.error(`导入 SSH config 失败: ${error}`)
+  }
 }
 
 // 组件挂载时获取配置目录

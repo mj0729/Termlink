@@ -3,9 +3,29 @@ import { Button } from 'antdv-next'
 import { h } from 'vue'
 import type {
   ConnectionTab,
+  SshPortForward,
   SshConnectionPayload,
   SshProfile,
 } from '../types/app'
+
+type SshJumpAuthRequestPayload = {
+  host: string
+  port: number
+  username: string
+  password: string | null
+  private_key_path: string | null
+  passphrase: string | null
+  strict_host_key_checking: boolean
+}
+
+type SshPortForwardPayload = {
+  id: string
+  type: 'local'
+  local_port: number
+  remote_host: string
+  remote_port: number
+  label: string | null
+}
 
 type SshAuthRequestPayload = {
   connection_id: string
@@ -17,6 +37,8 @@ type SshAuthRequestPayload = {
   private_key_path: string | null
   passphrase: string | null
   strict_host_key_checking: boolean
+  proxy_jump: SshJumpAuthRequestPayload | null
+  port_forwards: SshPortForwardPayload[]
 }
 
 type HostKeyVerification = {
@@ -109,6 +131,8 @@ class SshService {
     profile: Pick<SshProfile, 'host' | 'port' | 'username' | 'private_key'>,
     password: string | null = null,
     profileId: string | null = null,
+    proxyJump: SshJumpAuthRequestPayload | null = null,
+    portForwards: SshPortForwardPayload[] = [],
   ): SshAuthRequestPayload {
     return {
       connection_id: connectionId,
@@ -118,6 +142,46 @@ class SshService {
       username: profile.username,
       password,
       private_key_path: profile.private_key || null,
+      passphrase: null,
+      strict_host_key_checking: true,
+      proxy_jump: proxyJump,
+      port_forwards: portForwards,
+    }
+  }
+
+  normalizePortForwards(portForwards: SshPortForward[] | undefined): SshPortForwardPayload[] {
+    return (portForwards || [])
+      .filter((item) => item.type === 'local' && item.localPort && item.remoteHost && item.remotePort)
+      .map((item) => ({
+        id: item.id,
+        type: 'local',
+        local_port: Number(item.localPort),
+        remote_host: item.remoteHost,
+        remote_port: Number(item.remotePort),
+        label: item.label || null,
+      }))
+  }
+
+  async resolveProxyJumpAuth(profile: SshProfile): Promise<SshJumpAuthRequestPayload | null> {
+    if (!profile.proxy_jump_host || !profile.proxy_jump_username) {
+      return null
+    }
+
+    let password: string | null = null
+    if (profile.proxy_jump_id) {
+      try {
+        password = await invoke<string | null>('get_ssh_password', { id: profile.proxy_jump_id })
+      } catch (error) {
+        console.warn('获取跳板机密码失败:', error)
+      }
+    }
+
+    return {
+      host: profile.proxy_jump_host,
+      port: profile.proxy_jump_port || 22,
+      username: profile.proxy_jump_username,
+      password,
+      private_key_path: profile.proxy_jump_private_key || null,
       passphrase: null,
       strict_host_key_checking: true,
     }
@@ -330,9 +394,12 @@ class SshService {
       throw this.createCancelledError()
     }
 
+    const proxyJump = await this.resolveProxyJumpAuth(profile)
+    const portForwards = this.normalizePortForwards(profile.port_forwards)
+
     try {
       await this.startConnection(
-        this.buildAuthRequest(connectionId, profile, password, profileId),
+        this.buildAuthRequest(connectionId, profile, password, profileId, proxyJump, portForwards),
       )
       await this.persistPasswordIfNeeded(profile, password)
       return password
@@ -347,7 +414,7 @@ class SshService {
       }
 
       await this.startConnection(
-        this.buildAuthRequest(connectionId, profile, retryPassword, profileId),
+        this.buildAuthRequest(connectionId, profile, retryPassword, profileId, proxyJump, portForwards),
       )
       await this.persistPasswordIfNeeded(profile, retryPassword)
       return retryPassword
@@ -395,6 +462,15 @@ class SshService {
       group: sshData.group,
       tags: sshData.tags || [],
       private_key: sshData.usePrivateKey ? sshData.privateKey : null,
+      proxy_jump_id: sshData.proxyJumpId || null,
+      proxy_jump_name: sshData.proxyJumpName || null,
+      proxy_jump_host: sshData.proxyJumpHost || null,
+      proxy_jump_port: sshData.proxyJumpPort ? Number(sshData.proxyJumpPort) : null,
+      proxy_jump_username: sshData.proxyJumpUsername || null,
+      proxy_jump_private_key: sshData.proxyJumpPrivateKey || null,
+      ssh_config_source: sshData.sshConfigSource || null,
+      ssh_config_host: sshData.sshConfigHost || null,
+      port_forwards: sshData.portForwards || [],
     }
     const title = this.getConnectionTabTitle(profile)
 
@@ -474,6 +550,15 @@ class SshService {
         group: profileData.group,
         tags: profileData.tags || [],
         private_key: profileData.usePrivateKey ? profileData.privateKey : null,
+        proxy_jump_id: profileData.proxyJumpId || null,
+        proxy_jump_name: profileData.proxyJumpName || null,
+        proxy_jump_host: profileData.proxyJumpHost || null,
+        proxy_jump_port: profileData.proxyJumpPort ? Number(profileData.proxyJumpPort) : null,
+        proxy_jump_username: profileData.proxyJumpUsername || null,
+        proxy_jump_private_key: profileData.proxyJumpPrivateKey || null,
+        ssh_config_source: profileData.sshConfigSource || null,
+        ssh_config_host: profileData.sshConfigHost || null,
+        port_forwards: profileData.portForwards || [],
       }
 
       await invoke('save_ssh_profile', {

@@ -1,4 +1,4 @@
-use crate::ssh_auth::{self, Client, SshAuthRequest};
+use crate::ssh_auth::{self, Client, PortForwardRequest, SshAuthRequest};
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use russh::{client, Channel, ChannelMsg, Disconnect};
@@ -9,7 +9,10 @@ use std::{
     sync::Arc,
 };
 use tauri::{Emitter, Manager, Window};
+use tokio::io::AsyncWriteExt;
+use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinHandle;
 
 const TERMINAL_BUFFER_LIMIT_BYTES: usize = 256 * 1024;
 const TERMLINK_CWD_PROMPT_COMMAND: &str = r#"printf '\x1fTERMLINK_CWD:%s\x1f' "$PWD""#;
@@ -51,6 +54,7 @@ enum ConnectionCmd {
 struct ConnectionManager {
     connection_id: String,
     session: Arc<client::Handle<Client>>,
+    jump_session: Option<Arc<client::Handle<Client>>>,
     state: ConnectionState,
     terminal_channel: Option<Channel<client::Msg>>,
     sftp_session: Option<Arc<SftpSession>>,
@@ -62,6 +66,8 @@ struct ConnectionManager {
     cmd_rx: mpsc::UnboundedReceiver<ConnectionCmd>,
     cmd_tx: mpsc::UnboundedSender<ConnectionCmd>,
     window: Window,
+    port_forward_tasks: Vec<JoinHandle<()>>,
+    pending_port_forwards: Vec<PortForwardRequest>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -101,8 +107,8 @@ pub async fn start_connection(
         }
     }
 
-    let session = ssh_auth::connect_authenticated_session(&window.app_handle(), &auth).await?;
-    let channel = open_terminal_channel(&session, cols, rows).await?;
+    let authenticated = ssh_auth::connect_authenticated_session(&window.app_handle(), &auth).await?;
+    let channel = open_terminal_channel(&authenticated.session, cols, rows).await?;
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
 
     CONNECTION_MANAGERS
@@ -111,7 +117,7 @@ pub async fn start_connection(
 
     let manager = ConnectionManager {
         connection_id,
-        session: Arc::new(session),
+        session: Arc::new(authenticated.session),
         state: ConnectionState::Connecting,
         terminal_channel: Some(channel),
         sftp_session: None,
@@ -123,6 +129,9 @@ pub async fn start_connection(
         cmd_rx,
         cmd_tx,
         window,
+        jump_session: authenticated.jump_session.map(Arc::new),
+        port_forward_tasks: Vec::new(),
+        pending_port_forwards: auth.port_forwards.clone(),
     };
 
     tokio::spawn(async move {
@@ -234,6 +243,7 @@ async fn open_terminal_channel(
 impl ConnectionManager {
     async fn run(mut self) {
         self.state = ConnectionState::Connected;
+        self.start_port_forwards().await;
 
         loop {
             let event = if let Some(channel) = self.terminal_channel.as_mut() {
@@ -394,6 +404,7 @@ impl ConnectionManager {
         }
 
         self.state = ConnectionState::Disconnecting;
+        self.stop_port_forwards();
         let _ = self.handle_close_terminal().await;
         let _ = self.handle_close_sftp().await;
 
@@ -404,6 +415,12 @@ impl ConnectionManager {
         {
             self.state = ConnectionState::Error;
             return Err(format!("断开 SSH transport 失败: {}", err));
+        }
+
+        if let Some(jump_session) = &self.jump_session {
+            let _ = jump_session
+                .disconnect(Disconnect::ByApplication, "", "")
+                .await;
         }
 
         self.state = ConnectionState::Disconnected;
@@ -450,10 +467,108 @@ impl ConnectionManager {
     }
 
     async fn cleanup(&mut self) {
+        self.stop_port_forwards();
         CONNECTION_MANAGERS.write().remove(&self.connection_id);
         let _ = self
             .window
             .emit(&format!("ssh_exit://{}", self.connection_id), "");
+    }
+
+    async fn start_port_forwards(&mut self) {
+        for forward in self.pending_port_forwards.clone() {
+            if forward.r#type != "local" {
+                continue;
+            }
+
+            match TcpListener::bind(("127.0.0.1", forward.local_port)).await {
+                Ok(listener) => {
+                    let session = self.session.clone();
+                    let window = self.window.clone();
+                    let connection_id = self.connection_id.clone();
+                    let task = tokio::spawn(async move {
+                        loop {
+                            let (mut inbound, _) = match listener.accept().await {
+                                Ok(socket) => socket,
+                                Err(err) => {
+                                    let _ = window.emit(
+                                        "ssh_error",
+                                        format!("{connection_id}: 端口转发监听失败 {}: {}", forward.local_port, err),
+                                    );
+                                    break;
+                                }
+                            };
+
+                            let session = session.clone();
+                            let window = window.clone();
+                            let connection_id = connection_id.clone();
+                            let forward = forward.clone();
+
+                            tokio::spawn(async move {
+                                match session
+                                    .channel_open_direct_tcpip(
+                                        forward.remote_host.clone(),
+                                        forward.remote_port as u32,
+                                        "127.0.0.1",
+                                        forward.local_port as u32,
+                                    )
+                                    .await
+                                {
+                                    Ok(channel) => {
+                                        let mut stream = channel.into_stream();
+                                        if let Err(err) =
+                                            tokio::io::copy_bidirectional(&mut inbound, &mut stream)
+                                                .await
+                                        {
+                                            let _ = window.emit(
+                                                "ssh_error",
+                                                format!(
+                                                    "{connection_id}: 端口转发 {} -> {}:{} 失败: {}",
+                                                    forward.local_port,
+                                                    forward.remote_host,
+                                                    forward.remote_port,
+                                                    err
+                                                ),
+                                            );
+                                        }
+                                        let _ = stream.shutdown().await;
+                                    }
+                                    Err(err) => {
+                                        let _ = window.emit(
+                                            "ssh_error",
+                                            format!(
+                                                "{connection_id}: 打开端口转发通道 {} -> {}:{} 失败: {}",
+                                                forward.local_port,
+                                                forward.remote_host,
+                                                forward.remote_port,
+                                                err
+                                            ),
+                                        );
+                                    }
+                                }
+                            });
+                        }
+                    });
+                    self.port_forward_tasks.push(task);
+                }
+                Err(err) => {
+                    let _ = self.window.emit(
+                        "ssh_error",
+                        format!(
+                            "{}: 无法绑定本地端口 {}，跳过端口转发到 {}:{} - {}",
+                            self.connection_id,
+                            forward.local_port,
+                            forward.remote_host,
+                            forward.remote_port,
+                            err
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
+    fn stop_port_forwards(&mut self) {
+        self.port_forward_tasks.drain(..).for_each(|task| task.abort());
     }
 }
 

@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test:regression": "tsc -p tsconfig.regression.json && node .regression-dist/tests/regression/all.js",
     "tauri": "tauri",
     "tauri:dev": "vite build && tauri dev",
     "tauri:build": "vite build && tauri build"

@@ -27,6 +27,7 @@ declare module 'vue' {
     AInputNumber: typeof import('antdv-next')['InputNumber']
     AInputPassword: typeof import('antdv-next')['InputPassword']
     AModal: typeof import('antdv-next')['Modal']
+    APopover: typeof import('antdv-next')['Popover']
     AProgress: typeof import('antdv-next')['Progress']
     ARadio: typeof import('antdv-next')['Radio']
     ARadioGroup: typeof import('antdv-next')['RadioGroup']

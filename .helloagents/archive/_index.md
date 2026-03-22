@@ -16,3 +16,5 @@
 
 | 202603201507 | monitor-collapse-button-edge | - | - | - | ✅完成 |
 | 202603201716 | vite8-upgrade | - | - | - | ✅完成 |
+
+| 202603221239 | network-interface-operstate-alert | - | - | - | ✅完成 |

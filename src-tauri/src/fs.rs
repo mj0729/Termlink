@@ -191,14 +191,14 @@ pub fn parse_default_ssh_config() -> Result<Vec<ParsedSshConfigHost>, String> {
     }
 
     let content = fs::read_to_string(&path).map_err(|e| format!("读取 SSH config 失败: {}", e))?;
-    Ok(parse_ssh_config_content(
-        &home.to_string_lossy(),
-        &content,
-    ))
+    Ok(parse_ssh_config_content(&home.to_string_lossy(), &content))
 }
 
 #[tauri::command]
-pub fn select_local_file(title: Option<String>, default_path: Option<String>) -> Result<Option<String>, String> {
+pub fn select_local_file(
+    title: Option<String>,
+    default_path: Option<String>,
+) -> Result<Option<String>, String> {
     #[cfg(target_os = "macos")]
     {
         let prompt = apple_script_string(title.as_deref().unwrap_or("选择文件"));
@@ -284,7 +284,8 @@ fn resolve_dialog_default_dir(path: &str) -> Option<String> {
         return Some(path.to_string_lossy().to_string());
     }
 
-    path.parent().map(|parent| parent.to_string_lossy().to_string())
+    path.parent()
+        .map(|parent| parent.to_string_lossy().to_string())
 }
 
 fn normalize_identity_path(value: &str, home_dir: &str) -> String {
@@ -338,7 +339,9 @@ fn parse_ssh_config_content(home_dir: &str, content: &str) -> Vec<ParsedSshConfi
     let mut aliases = Vec::<String>::new();
     let mut current = PendingHost::default();
 
-    let flush = |entries: &mut Vec<ParsedSshConfigHost>, aliases: &mut Vec<String>, current: &PendingHost| {
+    let flush = |entries: &mut Vec<ParsedSshConfigHost>,
+                 aliases: &mut Vec<String>,
+                 current: &PendingHost| {
         if aliases.is_empty() {
             return;
         }
@@ -362,11 +365,7 @@ fn parse_ssh_config_content(home_dir: &str, content: &str) -> Vec<ParsedSshConfi
     };
 
     for raw_line in content.lines() {
-        let line = raw_line
-            .split('#')
-            .next()
-            .unwrap_or("")
-            .trim();
+        let line = raw_line.split('#').next().unwrap_or("").trim();
         if line.is_empty() {
             continue;
         }
@@ -396,7 +395,8 @@ fn parse_ssh_config_content(home_dir: &str, content: &str) -> Vec<ParsedSshConfi
                 current.private_key = Some(normalize_identity_path(&value, home_dir))
             }
             "proxyjump" if !aliases.is_empty() => {
-                current.proxy_jump_alias = value.split(',').next().map(|item| item.trim().to_string())
+                current.proxy_jump_alias =
+                    value.split(',').next().map(|item| item.trim().to_string())
             }
             "localforward" if !aliases.is_empty() => {
                 if let Some(forward) = parse_local_forward(&value) {
@@ -426,7 +426,11 @@ fn run_macos_dialog(script: &str) -> Result<Option<String>, String> {
 
     if output.status.success() {
         let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        return if value.is_empty() { Ok(None) } else { Ok(Some(value)) };
+        return if value.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(value))
+        };
     }
 
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -451,7 +455,11 @@ fn run_windows_dialog(script: &str) -> Result<Option<String>, String> {
 
     if output.status.success() {
         let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        return if value.is_empty() { Ok(None) } else { Ok(Some(value)) };
+        return if value.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(value))
+        };
     }
 
     Err(format!(
@@ -461,7 +469,10 @@ fn run_windows_dialog(script: &str) -> Result<Option<String>, String> {
 }
 
 #[cfg(target_os = "linux")]
-fn run_linux_open_dialog(title: &str, default_path: Option<String>) -> Result<Option<String>, String> {
+fn run_linux_open_dialog(
+    title: &str,
+    default_path: Option<String>,
+) -> Result<Option<String>, String> {
     if let Ok(output) = Command::new("zenity")
         .args(["--file-selection", "--title", title])
         .output()
@@ -527,7 +538,11 @@ fn run_linux_save_dialog(file_name: &str) -> Result<Option<String>, String> {
 fn parse_linux_dialog_output(output: std::process::Output) -> Result<Option<String>, String> {
     if output.status.success() {
         let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        return if value.is_empty() { Ok(None) } else { Ok(Some(value)) };
+        return if value.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(value))
+        };
     }
 
     if output.status.code() == Some(1) {
@@ -568,7 +583,10 @@ Host app-prod
         assert_eq!(parsed[0].host, "bastion.example.com");
         assert_eq!(parsed[0].port, 2222);
         assert_eq!(parsed[0].username, "jump");
-        assert_eq!(parsed[0].private_key.as_deref(), Some("/Users/tester/.ssh/jump_id"));
+        assert_eq!(
+            parsed[0].private_key.as_deref(),
+            Some("/Users/tester/.ssh/jump_id")
+        );
 
         assert_eq!(parsed[1].alias, "app-prod");
         assert_eq!(parsed[1].host, "10.0.10.15");

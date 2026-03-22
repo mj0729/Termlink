@@ -1,5 +1,5 @@
 <template>
-  <div class="remote-status-bar">
+  <div class="remote-status-bar" :class="{ 'remote-status-bar--compact': compact }">
     <div class="remote-status-bar__left">
       <span class="remote-status-bar__item">{{ directoryCount }} 目录</span>
       <span class="remote-status-bar__sep">/</span>
@@ -12,7 +12,7 @@
       </span>
     </div>
     <div class="remote-status-bar__right">
-      <template v-if="diskUsage">
+      <template v-if="diskUsage && !compact">
         <span class="remote-status-bar__disk">
           磁盘: {{ diskUsage.used }} / {{ diskUsage.total }} (可用 {{ diskUsage.available }})
         </span>
@@ -43,6 +43,7 @@ defineProps<{
   showHidden: boolean
   filterSummary: string
   diskUsage?: { total: string; used: string; available: string } | null
+  compact?: boolean
 }>()
 
 defineEmits<{
@@ -88,5 +89,9 @@ defineEmits<{
 
 .remote-status-bar__disk {
   opacity: 0.7;
+}
+
+.remote-status-bar--compact {
+  gap: 8px;
 }
 </style>

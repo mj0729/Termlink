@@ -52,13 +52,25 @@
       >
         <DownloadOutlined />
       </a-button>
+      <a-button
+        v-if="showFileDrawerToggle"
+        class="status-panel-btn"
+        :class="{ 'is-active': fileDrawerOpen }"
+        @click="$emit('toggleFileDrawer')"
+        aria-label="文件区"
+        title="文件区"
+        type="text"
+        size="small"
+      >
+        <FolderOpenOutlined />
+      </a-button>
       <span class="status-hint">{{ tabCount }} 个工作区</span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { CopyOutlined, DesktopOutlined, DownloadOutlined, SettingOutlined } from '@antdv-next/icons'
+import { CopyOutlined, DesktopOutlined, DownloadOutlined, FolderOpenOutlined, SettingOutlined } from '@antdv-next/icons'
 import type { PropType } from 'vue'
 import type { MonitorTab } from '../types/app'
 
@@ -82,10 +94,18 @@ const props = defineProps({
   rightPanelCollapsed: {
     type: Boolean,
     default: false
+  },
+  showFileDrawerToggle: {
+    type: Boolean,
+    default: false
+  },
+  fileDrawerOpen: {
+    type: Boolean,
+    default: false
   }
 })
 
-defineEmits(['selectRightPanelTab', 'showSettings'])
+defineEmits(['selectRightPanelTab', 'showSettings', 'toggleFileDrawer'])
 
 async function copyActiveConnection() {
   if (!props.activeConnectionCopyText) return

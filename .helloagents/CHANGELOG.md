@@ -1,5 +1,13 @@
 # 变更记录
 
+## [0.0.27] - 2026-03-22
+
+### 变更
+
+- **[system-monitor]**: 修正系统监控的网卡告警来源；Rust 侧现在会批量采集接口真实 `operstate` 并返回接口类型，前端告警默认忽略 `docker0`、`veth*`、`br-*` 等常见虚拟接口，避免把容器/桥接网卡误报成异常，同时保留真实物理接口状态异常提示；已通过 `cargo check --manifest-path src-tauri/Cargo.toml` 与 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603221239_network-interface-operstate-alert](archive/2026-03/202603221239_network-interface-operstate-alert/)
+  - 决策: network-interface-operstate-alert#D001(以真实链路状态替代流量推断，并忽略常见虚拟接口告警)
+
 ## [0.0.26] - 2026-03-22
 
 ### 变更

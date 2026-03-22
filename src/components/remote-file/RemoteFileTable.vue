@@ -13,7 +13,7 @@
       ref="tableRef"
       :data="files"
       :loading="loading"
-      height="auto"
+      height="100%"
       :scroll-y="{ enabled: true, gt: 200 }"
       :row-config="{ height: 32, isCurrent: true, isHover: true }"
       :sort-config="{ trigger: 'cell', multiple: false }"

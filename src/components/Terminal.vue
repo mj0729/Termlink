@@ -42,6 +42,7 @@ const props = withDefaults(defineProps<{
     cursorBlink: true,
     cursorStyle: 'block',
     density: 'compact',
+    connectionHubViewMode: 'list',
   }),
   autoPassword: '',
   sshUser: '',

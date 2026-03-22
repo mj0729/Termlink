@@ -643,6 +643,32 @@ const networkAggregate = computed(() => (
   }), { rx: 0, tx: 0 })
 ))
 
+const ignoredAlertInterfacePatterns = [
+  /^docker0$/,
+  /^veth/,
+  /^br-/,
+  /^virbr/,
+  /^vmnet/,
+  /^vboxnet/,
+  /^zt/,
+  /^tailscale/,
+  /^tun/,
+  /^tap/,
+  /^wg/,
+  /^cni/,
+  /^flannel/,
+  /^kube-ipvs0$/,
+]
+
+function isAlertableInterface(interfaceInfo: NetworkInfo) {
+  const kind = interfaceInfo.kind?.toLowerCase()
+  if (kind === 'virtual' || kind === 'loopback') {
+    return false
+  }
+
+  return !ignoredAlertInterfacePatterns.some((pattern) => pattern.test(interfaceInfo.name))
+}
+
 const monitorHealthValue = computed(() => Math.max(
   cpuInfo.value.usage || 0,
   memoryInfo.value.usage || 0,
@@ -856,13 +882,18 @@ const dashboardAlerts = computed<MonitorAlert[]>(() => {
     })
   }
 
-  const downInterface = sortedNetworkInfo.value.find((item) => item.status && item.status !== 'up')
+  const downInterface = sortedNetworkInfo.value.find((item) => (
+    isAlertableInterface(item)
+    && item.status
+    && item.status !== 'up'
+    && item.status !== 'unknown'
+  ))
   if (downInterface) {
     alerts.push({
       key: `network-${downInterface.name}`,
       type: 'info',
       message: `接口 ${downInterface.name} 当前状态为 ${downInterface.status}`,
-      description: '如该接口应长期在线，建议检查链路或远程网络配置。',
+      description: '仅对需要关注的非虚拟接口告警；如该接口应长期在线，建议检查链路或远程网络配置。',
     })
   }
 

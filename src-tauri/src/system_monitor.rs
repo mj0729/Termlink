@@ -76,6 +76,7 @@ pub struct DiskInfo {
 pub struct NetworkInterface {
     pub name: String,
     pub status: String,
+    pub kind: String,
     pub ip: Option<String>,
     pub rx_bytes: u64,
     pub tx_bytes: u64,
@@ -273,6 +274,42 @@ fn calculate_network_speed(
     (0.0, 0.0)
 }
 
+fn infer_interface_kind(interface_name: &str) -> &'static str {
+    match interface_name {
+        "lo" => "loopback",
+        "docker0" | "kube-ipvs0" => "virtual",
+        _ if interface_name.starts_with("veth")
+            || interface_name.starts_with("br-")
+            || interface_name.starts_with("virbr")
+            || interface_name.starts_with("vmnet")
+            || interface_name.starts_with("vboxnet")
+            || interface_name.starts_with("zt")
+            || interface_name.starts_with("tailscale")
+            || interface_name.starts_with("tun")
+            || interface_name.starts_with("tap")
+            || interface_name.starts_with("wg")
+            || interface_name.starts_with("cni")
+            || interface_name.starts_with("flannel") =>
+        {
+            "virtual"
+        }
+        _ => "physical",
+    }
+}
+
+fn parse_network_state_info(content: &str) -> HashMap<String, (String, String)> {
+    content
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split_whitespace();
+            let name = parts.next()?.to_string();
+            let status = parts.next()?.to_string();
+            let kind = parts.next()?.to_string();
+            Some((name, (status, kind)))
+        })
+        .collect()
+}
+
 // 解析磁盘大小（如 "500G", "1.5T" 等）
 fn parse_size(size_str: &str) -> u64 {
     let size_str = size_str.trim();
@@ -328,6 +365,25 @@ cat /proc/net/dev | tail -n +3
 echo "===NETWORK_ADDR_INFO==="
 ip -o -4 addr show up scope global 2>/dev/null | awk '{print $2, $4}' || true
 
+echo "===NETWORK_STATE_INFO==="
+for iface in $(ls /sys/class/net 2>/dev/null); do
+state=$(cat "/sys/class/net/$iface/operstate" 2>/dev/null || echo unknown)
+kind=$(case "$iface" in
+  lo) echo loopback ;;
+  docker0|kube-ipvs0|veth*|br-*|virbr*|vmnet*|vboxnet*|zt*|tailscale*|tun*|tap*|wg*|cni*|flannel*)
+    echo virtual
+    ;;
+  *)
+    resolved=$(readlink -f "/sys/class/net/$iface" 2>/dev/null || true)
+    case "$resolved" in
+      */devices/virtual/net/*) echo virtual ;;
+      *) echo physical ;;
+    esac
+    ;;
+esac)
+printf '%s %s %s\n' "$iface" "$state" "$kind"
+done
+
 echo "===PROCESS_INFO==="
 ps axo stat --no-headers | sort | uniq -c
 
@@ -361,13 +417,17 @@ ps -eo rss=,pcpu=,comm= --sort=-rss | head -n 4
 
     // 解析各个section
     let system = parse_system_info(sections.get("SYSTEM_INFO").unwrap_or(&String::new()));
-    let cpu = parse_cpu_info(&connection_id, sections.get("CPU_INFO").unwrap_or(&String::new()));
+    let cpu = parse_cpu_info(
+        &connection_id,
+        sections.get("CPU_INFO").unwrap_or(&String::new()),
+    );
     let memory = parse_memory_info(sections.get("MEMORY_INFO").unwrap_or(&String::new()));
     let disk = parse_disk_info(sections.get("DISK_INFO").unwrap_or(&String::new()));
     let network = parse_network_info_batch(
         &connection_id,
         sections.get("NETWORK_INFO").unwrap_or(&String::new()),
         sections.get("NETWORK_ADDR_INFO").unwrap_or(&String::new()),
+        sections.get("NETWORK_STATE_INFO").unwrap_or(&String::new()),
     );
     let process = parse_process_info(
         sections.get("PROCESS_INFO").unwrap_or(&String::new()),
@@ -517,9 +577,11 @@ fn parse_network_info_batch(
     connection_id: &str,
     content: &str,
     addr_content: &str,
+    state_content: &str,
 ) -> Vec<NetworkInterface> {
     let mut interfaces = Vec::new();
     let mut interface_stats: HashMap<String, (u64, u64)> = HashMap::new();
+    let interface_states = parse_network_state_info(state_content);
 
     // 解析 IP 地址映射（来自 `ip -o -4 addr show` 输出）
     let interface_ips: HashMap<String, String> = addr_content
@@ -553,11 +615,15 @@ fn parse_network_info_batch(
             interface_ips.get(interface_name).cloned()
         };
 
-        let status = if interface_name == "lo" || *rx_bytes > 0 || *tx_bytes > 0 {
-            "up".to_string()
-        } else {
-            "down".to_string()
-        };
+        let (status, kind) = interface_states
+            .get(interface_name)
+            .cloned()
+            .unwrap_or_else(|| {
+                (
+                    "unknown".to_string(),
+                    infer_interface_kind(interface_name).to_string(),
+                )
+            });
 
         let (rx_speed, tx_speed) =
             calculate_network_speed(connection_id, interface_name, *rx_bytes, *tx_bytes);
@@ -565,6 +631,7 @@ fn parse_network_info_batch(
         interfaces.push(NetworkInterface {
             name: interface_name.clone(),
             status,
+            kind,
             ip,
             rx_bytes: *rx_bytes,
             tx_bytes: *tx_bytes,
@@ -577,6 +644,7 @@ fn parse_network_info_batch(
         interfaces.push(NetworkInterface {
             name: "eth0".to_string(),
             status: "up".to_string(),
+            kind: "physical".to_string(),
             ip: Some("192.168.1.100".to_string()),
             rx_bytes: 5 * 1024 * 1024 * 1024,
             tx_bytes: 3 * 1024 * 1024 * 1024,
@@ -689,6 +757,25 @@ cat /proc/net/dev | tail -n +3
 echo "===NETWORK_ADDR_INFO==="
 ip -o -4 addr show up scope global 2>/dev/null | awk '{print $2, $4}' || true
 
+echo "===NETWORK_STATE_INFO==="
+for iface in $(ls /sys/class/net 2>/dev/null); do
+state=$(cat "/sys/class/net/$iface/operstate" 2>/dev/null || echo unknown)
+kind=$(case "$iface" in
+  lo) echo loopback ;;
+  docker0|kube-ipvs0|veth*|br-*|virbr*|vmnet*|vboxnet*|zt*|tailscale*|tun*|tap*|wg*|cni*|flannel*)
+    echo virtual
+    ;;
+  *)
+    resolved=$(readlink -f "/sys/class/net/$iface" 2>/dev/null || true)
+    case "$resolved" in
+      */devices/virtual/net/*) echo virtual ;;
+      *) echo physical ;;
+    esac
+    ;;
+esac)
+printf '%s %s %s\n' "$iface" "$state" "$kind"
+done
+
 echo "===PROCESS_INFO==="
 ps axo stat --no-headers | sort | uniq -c
 
@@ -740,6 +827,7 @@ ps -eo rss=,pcpu=,comm= --sort=-rss | head -n 4
         &connection_id,
         sections.get("NETWORK_INFO").unwrap_or(&String::new()),
         sections.get("NETWORK_ADDR_INFO").unwrap_or(&String::new()),
+        sections.get("NETWORK_STATE_INFO").unwrap_or(&String::new()),
     );
     let process = parse_process_info(
         sections.get("PROCESS_INFO").unwrap_or(&String::new()),

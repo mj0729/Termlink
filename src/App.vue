@@ -1,118 +1,141 @@
 <template>
-  <a-config-provider :theme="antdvThemeConfig">
+  <a-config-provider :theme="antdThemeConfig">
     <a-app>
+      <div v-if="appMode === 'remote-files'" class="remote-files-window">
+        <div class="remote-files-window__body">
+          <RemoteFileWorkbench
+            aggressive
+            :connection-id="remoteFilesConnectionId"
+            :active="true"
+            :sync-path="remoteFilesInitialPath"
+            :density="terminalConfig.density"
+            :font-family="terminalConfig.fontFamily"
+            :ssh-state="'connected'"
+            :title="remoteFilesTitle"
+            @open-file-preview="handleStandaloneFilePreview"
+            @start-download="handleStartDownload"
+            @start-upload="handleStartUpload"
+          />
+        </div>
+      </div>
+
       <div
+        v-else
         class="app-shell min-h-screen bg-[var(--bg-color)] text-[var(--text-color)]"
         @contextmenu.capture="handleAppContextMenu"
       >
         <section class="workspace-shell flex h-full w-full">
           <div class="workspace-frame flex h-full w-full flex-col overflow-hidden">
-        <div class="main-container flex min-h-0 flex-1 overflow-hidden">
-          <div class="content-container flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--workspace-center-bg)]">
-            <TabManager 
-              :tabs="tabs" 
-              :active-id="activeId" 
-              :fresh-tab-id="freshTabId"
-              @change="activeId = $event"
-              @close="closeTab"
-              @menu-action="handleTabMenuAction"
-              @open-connection-center="openConnectionCenter"
-            />
-            
-            <div
-              class="terminals-container relative flex-1 overflow-hidden bg-[var(--workspace-terminal-bg)]"
-              :class="{
-                'terminals-container--ssh': isSshWorkspaceLayout
-              }"
-            >
-              <template v-for="tab in tabs" :key="tab.id">
+            <div class="main-container flex min-h-0 flex-1 overflow-hidden">
+              <div class="content-container flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--workspace-center-bg)]">
+                <TabManager 
+                  :tabs="tabs" 
+                  :active-id="activeId" 
+                  :fresh-tab-id="freshTabId"
+                  @change="activeId = $event"
+                  @close="closeTab"
+                  @menu-action="handleTabMenuAction"
+                  @open-connection-center="openConnectionCenter"
+                />
+                
                 <div
-                  class="workspace-view"
-                  :class="[
-                    `workspace-view--${tab.type}`,
-                    { 'is-activating': activatingWorkspaceId === tab.id },
-                  ]"
-                  v-show="activeId === tab.id"
+                  class="terminals-container relative flex-1 overflow-hidden bg-[var(--workspace-terminal-bg)]"
+                  :class="{
+                    'terminals-container--ssh': isSshWorkspaceLayout
+                  }"
                 >
-                  <SshWorkspace
-                    v-if="tab.type === 'ssh'" 
-                    :id="tab.id" 
-                    :active="activeId === tab.id" 
-                    :theme="theme"
-                    :config="terminalConfig"
-                    :auto-password="tab.autoPassword"
-                    :connection-id="tab.id"
-                    :profile="tab.profile"
-                    :ssh-state="tab.sshState"
-                    :embedded-monitor-visible="activeId === tab.id && shouldEmbedMonitorInSsh"
-                    :embedded-monitor-collapsed="embeddedMonitorCollapsed"
-                    @close="handleSshTabExit(tab.id)"
-                    @reconnect="reconnectSsh(tab)"
-                    @open-file-preview="openFilePreview"
-                    @start-download="handleStartDownload"
-                    @start-upload="handleStartUpload"
-                    @toggle-monitor="embeddedMonitorCollapsed = !embeddedMonitorCollapsed"
-                  />
-                  
-                  <Terminal 
-                    v-else-if="tab.type === 'local'" 
-                    :id="tab.id" 
-                    :active="activeId === tab.id" 
-                    :theme="theme"
-                    :config="terminalConfig"
-                    :type="'local'"
-                    @close="closeTab(tab.id)"
-                  />
-                  
-                  <FileEditor
-                    v-else-if="tab.type === 'file'"
-                    :id="tab.id"
-                    :active="activeId === tab.id"
-                    :file-info="tab.fileInfo"
-                    :connection-id="tab.connectionId"
-                    :theme="theme"
-                    @close="closeTab(tab.id)"
-                  />
+                  <template v-for="tab in tabs" :key="tab.id">
+                    <div
+                      class="workspace-view"
+                      :class="[
+                        `workspace-view--${tab.type}`,
+                        { 'is-activating': activatingWorkspaceId === tab.id },
+                      ]"
+                      v-show="activeId === tab.id"
+                    >
+                      <SshWorkspace
+                        v-if="tab.type === 'ssh'" 
+                        :id="tab.id" 
+                        :active="activeId === tab.id" 
+                        :theme="theme"
+                        :config="terminalConfig"
+                        :auto-password="tab.autoPassword"
+                        :connection-id="tab.id"
+                        :profile="tab.profile"
+                        :ssh-state="tab.sshState"
+                        :files-drawer-open="getWorkspaceFileDrawerState(tab.id)"
+                        :embedded-monitor-visible="activeId === tab.id && shouldEmbedMonitorInSsh"
+                        :embedded-monitor-collapsed="embeddedMonitorCollapsed"
+                        @close="handleSshTabExit(tab.id)"
+                        @reconnect="reconnectSsh(tab)"
+                        @open-file-preview="openFilePreview"
+                        @start-download="handleStartDownload"
+                        @start-upload="handleStartUpload"
+                        @update:files-drawer-open="setWorkspaceFileDrawerState(tab.id, $event)"
+                        @toggle-monitor="embeddedMonitorCollapsed = !embeddedMonitorCollapsed"
+                      />
+                      
+                      <Terminal 
+                        v-else-if="tab.type === 'local'" 
+                        :id="tab.id" 
+                        :active="activeId === tab.id" 
+                        :theme="theme"
+                        :config="terminalConfig"
+                        :type="'local'"
+                        @close="closeTab(tab.id)"
+                      />
+                      
+                      <FileEditor
+                        v-else-if="tab.type === 'file'"
+                        :id="tab.id"
+                        :active="activeId === tab.id"
+                        :file-info="tab.fileInfo"
+                        :connection-id="tab.connectionId"
+                        :theme="theme"
+                        @close="closeTab(tab.id)"
+                      />
 
-                  <ConnectionHub
-                    v-else-if="tab.type === 'connections'"
-                    :profiles="profiles"
-                    :groups="groups"
-                    :active-profile-id="getActiveProfileId()"
-                    :theme="theme"
-                    :view-mode="terminalConfig.connectionHubViewMode"
-                    @launch-profile="launchSavedProfile"
-                    @edit-profile="editProfile"
-                    @delete-profile="deleteProfile"
-                    @create-group="createGroup"
-                    @rename-group="renameGroup"
-                    @delete-group="deleteGroup"
-                    @new-ssh="newSsh"
-                  />
+                      <ConnectionHub
+                        v-else-if="tab.type === 'connections'"
+                        :profiles="profiles"
+                        :groups="groups"
+                        :active-profile-id="getActiveProfileId()"
+                        :theme="theme"
+                        :view-mode="terminalConfig.connectionHubViewMode"
+                        @launch-profile="launchSavedProfile"
+                        @edit-profile="editProfile"
+                        @delete-profile="deleteProfile"
+                        @create-group="createGroup"
+                        @rename-group="renameGroup"
+                        @delete-group="deleteGroup"
+                        @new-ssh="newSsh"
+                      />
+                    </div>
+                  </template>
                 </div>
-              </template>
-
+              </div>
+              
+              <RightPanel 
+                ref="rightPanelRef"
+                :collapsed="effectiveRightPanelCollapsed" 
+                @toggle="rightPanelCollapsed = !rightPanelCollapsed"
+                @tab-change="rightPanelTab = $event"
+                :connection-id="currentTab?.type === 'ssh' && currentTab?.sshState === 'connected' ? currentTab?.id : ''"
+                :ssh-profile="currentTab?.type === 'ssh' ? currentTab?.profile : null"
+                :active-tab="rightPanelTab"
+              />
             </div>
-          </div>
-          
-          <RightPanel 
-            ref="rightPanelRef"
-            :collapsed="effectiveRightPanelCollapsed" 
-            @toggle="rightPanelCollapsed = !rightPanelCollapsed"
-            @tab-change="rightPanelTab = $event"
-            :connection-id="currentTab?.type === 'ssh' && currentTab?.sshState === 'connected' ? currentTab?.id : ''"
-            :ssh-profile="currentTab?.type === 'ssh' ? currentTab?.profile : null"
-            :active-tab="rightPanelTab"
-          />
-        </div>
-        
+            
             <StatusBar
               :active-connection="activeConnection"
               :active-connection-copy-text="activeConnectionCopyText"
               :tab-count="tabs.length"
               :right-panel-tab="rightPanelTab"
               :right-panel-collapsed="effectiveRightPanelCollapsed"
+              :show-file-drawer-toggle="currentTab?.type === 'ssh'"
+              :file-drawer-open="currentTab?.type === 'ssh' ? getWorkspaceFileDrawerState(currentTab.id) : false"
               @select-right-panel-tab="handleRightPanelTabSelect"
+              @toggle-file-drawer="toggleCurrentWorkspaceFileDrawer"
               @show-settings="showSettings = true"
             />
           </div>
@@ -127,7 +150,6 @@
           @submit="submitSsh" 
         />
         
-        <!-- 设置模态框 -->
         <SettingsModal 
           v-model:visible="showSettings" 
           :terminal-config="terminalConfig"
@@ -169,10 +191,17 @@ const RightPanel = defineAsyncComponent(() => import('./components/RightPanel.vu
 const ConnectionHub = defineAsyncComponent(() => import('./components/ConnectionHub.vue'))
 const SshWorkspace = defineAsyncComponent(() => import('./components/SshWorkspace.vue'))
 const FileEditor = defineAsyncComponent(() => import('./components/FileEditor.vue'))
+const RemoteFileWorkbench = defineAsyncComponent(() => import('./components/RemoteFileWorkbench.vue'))
 
 // 导入服务
 import SshService from './services/SshService'
 import ThemeService from './services/ThemeService'
+
+const launchParams = new URLSearchParams(window.location.search)
+const appMode = launchParams.get('mode') || 'main'
+const remoteFilesConnectionId = launchParams.get('connectionId') || ''
+const remoteFilesTitle = launchParams.get('title') || '文件管理'
+const remoteFilesInitialPath = launchParams.get('path') || '/'
 
 // 响应式数据
 const tabs = ref<ConnectionTab[]>([createConnectionCenterTab()])
@@ -188,6 +217,7 @@ const rightPanelRef = ref<{
 const rightPanelCollapsed = ref(true)
 const embeddedMonitorCollapsed = ref(false)
 const rightPanelTab = ref<MonitorTab>('monitor')
+const workspaceFileDrawerState = ref<Record<string, boolean>>({})
 const sshEditMode = ref(false)
 const editingProfile = ref<SshProfile | null>(null)
 const manualDisconnectingIds = new Set<string>()
@@ -258,6 +288,28 @@ const effectiveRightPanelCollapsed = computed(() => (
     ? true
     : rightPanelCollapsed.value
 ))
+
+function setWorkspaceFileDrawerState(tabId: string, open: boolean) {
+  workspaceFileDrawerState.value = {
+    ...workspaceFileDrawerState.value,
+    [tabId]: open,
+  }
+}
+
+function getWorkspaceFileDrawerState(tabId: string) {
+  return workspaceFileDrawerState.value[tabId] ?? true
+}
+
+function toggleCurrentWorkspaceFileDrawer() {
+  if (currentTab.value?.type !== 'ssh') return
+  const tabId = currentTab.value.id
+  const nextOpen = !getWorkspaceFileDrawerState(tabId)
+  setWorkspaceFileDrawerState(tabId, nextOpen)
+}
+
+function handleStandaloneFilePreview() {
+  message.info('独立文件窗口暂不提供文件预览，请在主工作区内打开文件。')
+}
 
 watch(isSshWorkspaceLayout, (nextIsSsh, previousIsSsh) => {
   if (nextIsSsh && !previousIsSsh && rightPanelTab.value === 'monitor') {
@@ -454,6 +506,9 @@ async function launchSavedProfile(p: SshProfile) {
 
 // 处理开始下载
 function handleStartDownload(downloadInfo: DownloadRequest) {
+  if (appMode === 'remote-files') {
+    message.info('独立文件窗口暂不展示传输队列，请在主窗口查看下载进度。')
+  }
   rightPanelTab.value = 'download'
   rightPanelCollapsed.value = false
   if (rightPanelRef.value) {
@@ -467,6 +522,9 @@ function handleStartDownload(downloadInfo: DownloadRequest) {
 }
 
 function handleStartUpload(uploadInfo: UploadRequest) {
+  if (appMode === 'remote-files') {
+    message.info('独立文件窗口暂不展示传输队列，请在主窗口查看上传进度。')
+  }
   rightPanelTab.value = 'download'
   rightPanelCollapsed.value = false
   rightPanelRef.value?.addUpload(uploadInfo)
@@ -725,6 +783,11 @@ async function closeTab(id: string, options: { skipDisconnect?: boolean } = {}) 
   tabs.value.splice(index, 1)
   manualDisconnectingIds.delete(id)
   closingTabIds.delete(id)
+  if (workspaceFileDrawerState.value[id] !== undefined) {
+    const nextDrawerState = { ...workspaceFileDrawerState.value }
+    delete nextDrawerState[id]
+    workspaceFileDrawerState.value = nextDrawerState
+  }
 
   if (tabs.value.length === 0) {
     const tab = createConnectionCenterTab()
@@ -918,6 +981,32 @@ onBeforeUnmount(() => {
   height: 100vh;
   overflow: hidden;
   position: relative;
+}
+
+.remote-files-window {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top left, rgba(77, 136, 255, 0.1), transparent 16%),
+    linear-gradient(180deg, var(--bg-color) 0%, var(--surface-0) 100%);
+}
+
+.remote-files-window__body {
+  display: flex;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  gap: 6px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.remote-files-window__body > * {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
 }
 
 .workspace-shell {

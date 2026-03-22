@@ -848,8 +848,7 @@ pub async fn sftp_list_detailed(
             quoted_paths
         );
 
-        let stat_output =
-            run_remote_command(&connection_id, "读取目录详细信息", command).await;
+        let stat_output = run_remote_command(&connection_id, "读取目录详细信息", command).await;
 
         match stat_output {
             Ok(output) => {
@@ -870,9 +869,7 @@ pub async fn sftp_list_detailed(
                                 is_dir: *is_dir,
                                 size: *size,
                                 modified: *modified,
-                                permissions: permissions_from_octal(
-                                    &record.numeric_permissions,
-                                ),
+                                permissions: permissions_from_octal(&record.numeric_permissions),
                                 owner_user: record.owner_user,
                                 owner_group: record.owner_group,
                                 numeric_permissions: Some(record.numeric_permissions),
@@ -930,10 +927,7 @@ pub async fn sftp_list_detailed(
 }
 
 #[tauri::command]
-pub async fn sftp_stat(
-    connection_id: String,
-    path: String,
-) -> Result<SftpDetailedEntry, String> {
+pub async fn sftp_stat(connection_id: String, path: String) -> Result<SftpDetailedEntry, String> {
     let session = get_sftp_session(&connection_id).await?;
     let metadata = session
         .metadata(&path)
@@ -976,11 +970,7 @@ pub async fn sftp_stat(
 }
 
 #[tauri::command]
-pub async fn sftp_chmod(
-    connection_id: String,
-    path: String,
-    mode: String,
-) -> Result<(), String> {
+pub async fn sftp_chmod(connection_id: String, path: String, mode: String) -> Result<(), String> {
     validate_mode(&mode)?;
     run_remote_command(
         &connection_id,

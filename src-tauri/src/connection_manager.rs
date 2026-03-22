@@ -107,7 +107,8 @@ pub async fn start_connection(
         }
     }
 
-    let authenticated = ssh_auth::connect_authenticated_session(&window.app_handle(), &auth).await?;
+    let authenticated =
+        ssh_auth::connect_authenticated_session(&window.app_handle(), &auth).await?;
     let channel = open_terminal_channel(&authenticated.session, cols, rows).await?;
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
 
@@ -492,7 +493,10 @@ impl ConnectionManager {
                                 Err(err) => {
                                     let _ = window.emit(
                                         "ssh_error",
-                                        format!("{connection_id}: 端口转发监听失败 {}: {}", forward.local_port, err),
+                                        format!(
+                                            "{connection_id}: 端口转发监听失败 {}: {}",
+                                            forward.local_port, err
+                                        ),
                                     );
                                     break;
                                 }
@@ -568,7 +572,9 @@ impl ConnectionManager {
     }
 
     fn stop_port_forwards(&mut self) {
-        self.port_forward_tasks.drain(..).for_each(|task| task.abort());
+        self.port_forward_tasks
+            .drain(..)
+            .for_each(|task| task.abort());
     }
 }
 

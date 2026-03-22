@@ -1,5 +1,9 @@
 <template>
-  <div class="remote-workbench" :class="`remote-workbench--${density}`" :style="workbenchStyle">
+  <div
+    class="remote-workbench"
+    :class="[`remote-workbench--${density}`, { 'remote-workbench--aggressive': aggressive }]"
+    :style="workbenchStyle"
+  >
     <div v-if="connectionId" class="remote-workbench__body">
       <!-- 1. Path Bar & Toolbar -->
       <RemotePathBar
@@ -7,6 +11,7 @@
         :can-go-back="canGoBack"
         :can-go-forward="canGoForward"
         :is-loading="loading"
+        :compact="aggressive"
         v-model:searchText="searchText"
         :file-count="visibleFiles.length"
         @navigate="loadFiles"
@@ -70,8 +75,9 @@
 
       <!-- 4. Status Bar & Audit Log -->
       <div class="remote-workbench__footer">
-        <RemoteAuditLog :logs="auditLogs" />
+        <RemoteAuditLog v-if="!aggressive" :logs="auditLogs" />
         <RemoteStatusBar
+          :compact="aggressive"
           :file-count="visibleFiles.length - directories.length"
           :directory-count="directories.length"
           :selected-count="selectedPaths.length"
@@ -157,6 +163,7 @@ const props = withDefaults(defineProps<{
   density?: WorkspaceDensity
   fontFamily?: string
   sshState?: 'connecting' | 'connected' | 'disconnected'
+  aggressive?: boolean
 }>(), {
   connectionId: '',
   title: '远程工作区',
@@ -165,6 +172,7 @@ const props = withDefaults(defineProps<{
   density: 'compact',
   fontFamily: 'SFMono-Regular, Menlo, Monaco, Consolas, monospace',
   sshState: 'connected',
+  aggressive: false,
 })
 
 const emit = defineEmits<{
@@ -878,10 +886,18 @@ provide('connectionId', props.connectionId)
   --remote-file-accent-audio: #3e9bb0;
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
   background: var(--rw-bg-primary, #ffffff);
   font-family: var(--remote-file-font-family, inherit);
   overflow: hidden;
+}
+
+.remote-workbench--aggressive {
+  --remote-footer-bg: rgba(227, 233, 239, 0.86);
+  --remote-audit-bg: rgba(242, 245, 248, 0.9);
 }
 
 :global(body[data-theme="dark"] .remote-workbench) {
@@ -943,7 +959,10 @@ provide('connectionId', props.connectionId)
 .remote-workbench__body {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
 }
 
 .remote-workbench__content {
@@ -956,8 +975,33 @@ provide('connectionId', props.connectionId)
 
 .remote-workbench__footer {
   position: relative;
+  flex-shrink: 0;
   background: var(--remote-footer-bg);
   border-top: 1px solid var(--remote-footer-border);
+}
+
+.remote-workbench--aggressive .remote-workbench__content {
+  border-radius: 12px;
+}
+
+.remote-workbench--aggressive :deep(.remote-tree) {
+  width: 172px;
+  min-width: 140px;
+  max-width: 200px;
+  padding-inline: 4px;
+}
+
+.remote-workbench--aggressive :deep(.remote-file-table .vxe-header--column) {
+  font-size: 10px;
+}
+
+.remote-workbench--aggressive :deep(.remote-file-table .vxe-body--column) {
+  padding-block: 1px;
+}
+
+.remote-workbench--aggressive :deep(.remote-status-bar) {
+  min-height: 24px;
+  padding-block: 2px;
 }
 
 .remote-workbench__empty {

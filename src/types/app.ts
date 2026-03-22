@@ -240,6 +240,7 @@ export interface DiskInfo {
 export interface NetworkInfo {
   name: string
   status?: string
+  kind?: string
   ip?: string
   rx_speed?: number
   tx_speed?: number

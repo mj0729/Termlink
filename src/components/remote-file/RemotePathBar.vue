@@ -1,5 +1,5 @@
 <template>
-  <div class="remote-path-bar">
+  <div class="remote-path-bar" :class="{ 'remote-path-bar--compact': compact }">
     <a-space-compact class="remote-path-bar__nav">
       <a-tooltip title="返回">
         <a-button size="small" :disabled="!canGoBack" @click="$emit('goBack')">
@@ -50,7 +50,7 @@
         <template #prefix><SearchOutlined /></template>
       </a-input>
 
-      <a-tag v-if="fileCount !== undefined" :bordered="false">{{ fileCount }} 项</a-tag>
+      <a-tag v-if="fileCount !== undefined && !compact" :bordered="false">{{ fileCount }} 项</a-tag>
     </div>
   </div>
 </template>
@@ -73,6 +73,7 @@ const props = defineProps<{
   isLoading: boolean
   searchText: string
   fileCount?: number
+  compact?: boolean
 }>()
 
 defineEmits<{
@@ -152,5 +153,14 @@ const breadcrumbNodes = computed(() => {
 
 .remote-path-bar__search {
   width: 160px;
+}
+
+.remote-path-bar--compact {
+  padding: 4px 8px;
+  min-height: 32px;
+}
+
+.remote-path-bar--compact .remote-path-bar__search {
+  width: 132px;
 }
 </style>

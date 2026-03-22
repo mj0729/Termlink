@@ -335,12 +335,7 @@ pub async fn connect_authenticated_session(
 
         let jump_session = connect_authenticated_handle(app, &jump_request).await?;
         let channel = jump_session
-            .channel_open_direct_tcpip(
-                request.host.clone(),
-                request.port as u32,
-                "127.0.0.1",
-                0,
-            )
+            .channel_open_direct_tcpip(request.host.clone(), request.port as u32, "127.0.0.1", 0)
             .await
             .map_err(|e| format!("通过跳板机打开目标通道失败: {}", e))?;
 

@@ -1163,4 +1163,301 @@ watch(tagItems, (nextTags) => {
   background: rgba(255, 123, 125, 0.08);
   color: var(--error-color);
 }
+
+.connection-hub {
+  gap: 0;
+  padding: 0;
+  background: var(--bg-color);
+}
+
+.hub-workbench {
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 0;
+}
+
+.hub-sidebar {
+  gap: 20px;
+  padding: 18px 16px;
+  border-right: 1px solid var(--border-color);
+  background: var(--surface-1);
+}
+
+.hub-main {
+  gap: 0;
+  background: var(--surface-1);
+}
+
+.hub-sidebar__section,
+.hub-main__bar,
+.hub-content {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.hub-sidebar__section {
+  gap: 10px;
+  padding: 0 0 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.hub-sidebar__section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.hub-sidebar__title-row h2,
+.hub-content__head h2,
+.hub-list__head,
+.hub-toolbar__eyebrow,
+.hub-content__meta {
+  color: var(--muted-color);
+  letter-spacing: 0.08em;
+}
+
+.hub-nav-item {
+  min-height: 36px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 8px;
+  color: var(--muted-color);
+}
+
+.hub-nav-item:hover,
+.hub-nav-item.is-active {
+  background: var(--surface-2);
+  color: var(--text-color);
+}
+
+.hub-nav-item.is-active {
+  border: none;
+}
+
+.hub-main__bar {
+  gap: 12px;
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.hub-search {
+  min-height: 40px;
+  border-radius: 10px;
+  background: var(--surface-1);
+}
+
+.hub-search:focus-within,
+.hub-card:focus-visible,
+.hub-row:focus-visible,
+.hub-nav-item:focus-visible,
+.hub-icon-action:focus-visible {
+  border-color: var(--strong-border);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.hub-toolbar__actions :deep(.ant-btn) {
+  min-width: 96px;
+  height: 38px;
+  border-radius: 10px !important;
+}
+
+.hub-toolbar__actions :deep(.ant-btn-primary) {
+  background: var(--primary-color) !important;
+  border-color: var(--primary-color) !important;
+  box-shadow: none !important;
+}
+
+:global(body[data-theme="dark"] .hub-toolbar__actions) :deep(.ant-btn-primary) {
+  color: #111111 !important;
+}
+
+.hub-main__summary {
+  gap: 10px;
+}
+
+.hub-toolbar__count,
+.hub-badge {
+  min-height: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  color: var(--muted-color);
+  background: transparent;
+}
+
+.hub-content {
+  gap: 14px;
+  padding: 18px;
+}
+
+.hub-grid {
+  gap: 12px;
+}
+
+.hub-row,
+.hub-card {
+  padding: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--surface-1);
+  box-shadow: none;
+}
+
+.hub-row:hover,
+.hub-card:hover,
+.hub-row.is-active,
+.hub-card.is-active {
+  transform: none;
+  border-color: var(--strong-border);
+  background: var(--surface-1);
+}
+
+.hub-row__avatar,
+.hub-card__avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--text-color);
+  color: var(--surface-1);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+
+:global(body[data-theme="dark"] .hub-row__avatar),
+:global(body[data-theme="dark"] .hub-card__avatar) {
+  background: var(--surface-1) !important;
+  color: var(--text-color) !important;
+  border: 1px solid var(--border-color);
+}
+
+.hub-row__name,
+.hub-card__name {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.hub-row__sub,
+.hub-row__address,
+.hub-row__port,
+.hub-card__endpoint,
+.hub-row__placeholder,
+.hub-chip {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.hub-card__meta {
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.hub-chip {
+  min-height: 22px;
+  padding: 0 8px;
+  background: transparent;
+}
+
+.hub-chip--accent {
+  background: var(--text-color);
+  border-color: var(--text-color);
+  color: var(--surface-1);
+}
+
+:global(body[data-theme="dark"] .hub-chip--accent) {
+  color: #111111;
+}
+
+.hub-icon-action {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+}
+
+.hub-icon-action:hover {
+  border-color: var(--border-color);
+  background: var(--surface-2);
+}
+
+.hub-empty__icon {
+  border-color: var(--border-color);
+  border-radius: 12px;
+  color: var(--text-color);
+}
+
+.hub-icon-action :deep(.anticon) {
+  font-size: 12px;
+  color: currentColor;
+}
+
+:global(body[data-theme="dark"] .connection-hub) {
+  background: #111111;
+}
+
+:global(body[data-theme="dark"] .hub-sidebar) {
+  background: #171717;
+  border-right-color: #303030;
+}
+
+:global(body[data-theme="dark"] .hub-main) {
+  background: #171717;
+}
+
+:global(body[data-theme="dark"] .hub-sidebar__section) {
+  border-bottom-color: #303030;
+}
+
+:global(body[data-theme="dark"] .hub-main__bar) {
+  border-bottom-color: #303030;
+}
+
+:global(body[data-theme="dark"] .hub-search),
+:global(body[data-theme="dark"] .hub-row),
+:global(body[data-theme="dark"] .hub-card) {
+  background: #171717;
+  border-color: #303030;
+}
+
+:global(body[data-theme="dark"] .hub-nav-item:hover),
+:global(body[data-theme="dark"] .hub-nav-item.is-active) {
+  background: #1f1f1f;
+  color: #f5f5f5;
+}
+
+:global(body[data-theme="dark"] .hub-row:hover),
+:global(body[data-theme="dark"] .hub-card:hover),
+:global(body[data-theme="dark"] .hub-row.is-active),
+:global(body[data-theme="dark"] .hub-card.is-active) {
+  background: #171717;
+  border-color: #f5f5f5;
+}
+
+:global(body[data-theme="dark"] .hub-toolbar__actions .ant-btn-primary) {
+  background: #f5f5f5 !important;
+  border-color: #f5f5f5 !important;
+  box-shadow: none !important;
+  color: #111111 !important;
+}
+
+:global(body[data-theme="dark"] .hub-toolbar__actions .ant-btn-primary:hover) {
+  background: #ffffff !important;
+  border-color: #ffffff !important;
+}
+
+:global(body[data-theme="dark"] .hub-row__avatar),
+:global(body[data-theme="dark"] .hub-card__avatar) {
+  background: #1f1f1f !important;
+  border: 1px solid #303030;
+  color: #f5f5f5 !important;
+}
+
+:global(body[data-theme="dark"] .hub-chip--accent) {
+  background: #f5f5f5;
+  border-color: #f5f5f5;
+  color: #111111;
+}
+
+:global(body[data-theme="dark"] .hub-icon-action:hover) {
+  border-color: #303030;
+  background: #1f1f1f;
+}
 </style>

@@ -1,7 +1,10 @@
 <template>
   <div class="status-bar">
     <div class="status-bar__main">
-      <span class="status-dot" :class="{ 'is-active': activeConnection }"></span>
+      <span
+        class="status-dot"
+        :class="connectionStateClass || { 'is-active': activeConnection && !connectionState }"
+      ></span>
       <div class="status-connection-group">
         <span class="status-connection">
           {{ activeConnection || '从顶部连接带或连接中心开始' }}
@@ -71,7 +74,9 @@
 
 <script setup lang="ts">
 import { CopyOutlined, DesktopOutlined, DownloadOutlined, FolderOpenOutlined, SettingOutlined } from '@antdv-next/icons'
+import { computed } from 'vue'
 import type { PropType } from 'vue'
+import { getConnectionStatusMeta, type ConnectionStatus } from '../constants/connectionStatus'
 import type { MonitorTab } from '../types/app'
 
 const props = defineProps({
@@ -81,6 +86,10 @@ const props = defineProps({
   },
   activeConnectionCopyText: {
     type: String,
+    default: ''
+  },
+  connectionState: {
+    type: String as PropType<ConnectionStatus | ''>,
     default: ''
   },
   tabCount: {
@@ -106,6 +115,10 @@ const props = defineProps({
 })
 
 defineEmits(['selectRightPanelTab', 'showSettings', 'toggleFileDrawer'])
+
+const connectionStateClass = computed(() => (
+  getConnectionStatusMeta(props.connectionState || undefined)?.className || ''
+))
 
 async function copyActiveConnection() {
   if (!props.activeConnectionCopyText) return
@@ -160,6 +173,18 @@ async function copyActiveConnection() {
 .status-dot.is-active {
   background: var(--primary-color);
   box-shadow: 0 0 0 4px rgba(45, 125, 255, 0.1);
+}
+
+.status-dot.is-connected {
+  background: var(--connection-connected);
+}
+
+.status-dot.is-connecting {
+  background: var(--connection-connecting);
+}
+
+.status-dot.is-disconnected {
+  background: var(--connection-disconnected);
 }
 
 .status-connection-group {
@@ -260,5 +285,68 @@ async function copyActiveConnection() {
   .status-hint {
     display: none;
   }
+}
+
+.status-bar {
+  min-height: 38px;
+  padding: 0 12px;
+  background: var(--status-strip-bg);
+  color: var(--muted-color);
+  border-top: 1px solid var(--border-color);
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  background: #c4c4c4;
+}
+
+.status-dot.is-active {
+  background: var(--text-color);
+  box-shadow: none;
+}
+
+.status-dot.is-connected,
+.status-dot.is-connecting,
+.status-dot.is-disconnected {
+  box-shadow: none;
+}
+
+.status-connection {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-hint {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.status-panel-btn,
+.status-copy-btn {
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted-color);
+}
+
+.status-panel-btn:hover,
+.status-copy-btn:hover {
+  background: var(--surface-2) !important;
+  color: var(--text-color);
+}
+
+.status-panel-btn.is-active {
+  background: var(--surface-2);
+  color: var(--text-color);
+  box-shadow: none;
+}
+
+.status-panel-btn :deep(.anticon),
+.status-copy-btn :deep(.anticon) {
+  color: currentColor;
 }
 </style>

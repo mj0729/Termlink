@@ -2,11 +2,12 @@
   <a-modal
     :open="open"
     title="修改文件权限"
-    ok-text="确定"
-    cancel-text="取消"
+    wrap-class-name="chmod-modal-shell"
+    :classes="modalClasses"
+    :styles="modalStyles"
+    :close-icon="closeIconNode"
     :confirm-loading="loading"
-    @ok="handleApply"
-    @cancel="$emit('update:open', false)"
+    @cancel="handleCancel"
   >
     <div class="chmod-modal">
       <div class="chmod-modal__target">{{ name }}</div>
@@ -47,11 +48,27 @@
         </a-radio-group>
       </div>
     </div>
+    <template #footer>
+      <div class="chmod-modal__footer">
+        <a-button class="chmod-modal__action chmod-modal__action--ghost" @click="handleCancel">
+          取消
+        </a-button>
+        <a-button
+          type="primary"
+          class="chmod-modal__action chmod-modal__action--primary"
+          :loading="loading"
+          @click="handleApply"
+        >
+          确定
+        </a-button>
+      </div>
+    </template>
   </a-modal>
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, h, reactive, ref, watch } from 'vue'
+import { CloseOutlined } from '@antdv-next/icons'
 
 const props = defineProps<{
   open: boolean
@@ -66,6 +83,45 @@ const emit = defineEmits<{
   'update:open': [open: boolean]
   apply: [mode: number, recursive: boolean, scope: string]
 }>()
+
+const closeIconNode = computed(() => h(CloseOutlined, { class: 'modal-close-icon' }))
+const modalClasses = {
+  container: 'chmod-modal__container',
+}
+const modalStyles = {
+  mask: {
+    background: 'var(--overlay-mask-bg)',
+    backdropFilter: 'blur(12px)',
+  },
+  container: {
+    background: 'var(--overlay-panel-solid)',
+    border: '1px solid var(--border-color)',
+    boxShadow: 'none',
+    padding: '0',
+    overflow: 'hidden',
+    borderRadius: '14px',
+  },
+  content: {
+    background: 'var(--overlay-panel-solid)',
+    padding: '0',
+  },
+  header: {
+    background: 'var(--overlay-panel-solid)',
+    borderBottom: '1px solid var(--overlay-divider-color)',
+    marginBottom: '0',
+    padding: '18px 20px 14px',
+  },
+  body: {
+    background: 'var(--overlay-panel-solid)',
+    color: 'var(--text-color)',
+    padding: '16px 20px 12px',
+  },
+  footer: {
+    background: 'var(--overlay-panel-solid)',
+    borderTop: '1px solid var(--overlay-divider-color)',
+    padding: '12px 20px 18px',
+  },
+}
 
 const recursive = ref(false)
 const applyScope = ref('all')
@@ -108,9 +164,40 @@ function handleApply() {
   const mode = parseInt(octalMode.value, 8)
   emit('apply', mode, recursive.value, applyScope.value)
 }
+
+function handleCancel() {
+  emit('update:open', false)
+}
 </script>
 
 <style scoped>
+:deep(.chmod-modal-shell .ant-modal-content) {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  border-radius: 14px !important;
+}
+
+:deep(.chmod-modal__container) {
+  background: var(--overlay-panel-solid) !important;
+  border-radius: 14px !important;
+}
+
+:deep(.chmod-modal-shell .ant-modal-close) {
+  color: var(--text-color) !important;
+}
+
+:deep(.chmod-modal-shell .ant-modal-close:hover) {
+  background: var(--hover-bg) !important;
+}
+
+:deep(.chmod-modal-shell .modal-close-icon),
+:deep(.chmod-modal-shell .modal-close-icon svg) {
+  color: var(--text-color) !important;
+}
+
 .chmod-modal__target {
   font-weight: 600;
   font-size: 14px;
@@ -153,12 +240,48 @@ function handleApply() {
 .chmod-modal__preview code {
   font-weight: 600;
   font-size: 14px;
-  color: var(--primary-color, #1677ff);
+  color: var(--text-color);
 }
 
 .chmod-modal__recursive {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.chmod-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+:deep(.chmod-modal__action) {
+  min-width: 78px;
+  border-radius: 10px !important;
+  font-weight: 700;
+  box-shadow: none !important;
+}
+
+:deep(.chmod-modal__action--ghost) {
+  background: var(--surface-2) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-color) !important;
+}
+
+:deep(.chmod-modal__action--ghost:hover) {
+  background: var(--hover-bg) !important;
+  border-color: var(--strong-border) !important;
+}
+
+:deep(.chmod-modal__action--primary) {
+  background: var(--text-color) !important;
+  border-color: var(--text-color) !important;
+  color: var(--bg-color) !important;
+}
+
+:deep(.chmod-modal__action--primary:hover) {
+  background: var(--strong-border) !important;
+  border-color: var(--strong-border) !important;
+  color: var(--bg-color) !important;
 }
 </style>

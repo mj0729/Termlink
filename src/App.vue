@@ -129,6 +129,7 @@
             <StatusBar
               :active-connection="activeConnection"
               :active-connection-copy-text="activeConnectionCopyText"
+              :connection-state="activeConnectionState"
               :tab-count="tabs.length"
               :right-panel-tab="rightPanelTab"
               :right-panel-collapsed="effectiveRightPanelCollapsed"
@@ -153,23 +154,62 @@
         <SettingsModal 
           v-model:visible="showSettings" 
           :terminal-config="terminalConfig"
+          :theme-config="themeCenterConfig"
+          :theme-preset-options="themePresetOptions"
           :theme="theme"
           :profiles="profiles"
           @save-config="updateTerminalConfig"
-          @change-theme="toggleTheme"
+          @save-theme-config="updateThemeCenterConfig"
           @refresh-profiles="refreshProfiles"
         />
+
+        <a-modal
+          v-model:open="groupPromptVisible"
+          :title="groupPromptTitle"
+          width="420px"
+          wrap-class-name="group-prompt-modal"
+          :classes="groupPromptModalClasses"
+          :styles="groupPromptModalStyles"
+          :close-icon="groupPromptCloseIconNode"
+          :mask-closable="false"
+          @cancel="handleGroupPromptCancel"
+        >
+          <div class="group-prompt-modal__body">
+            <a-input
+              ref="groupPromptInputRef"
+              v-model:value="groupPromptValue"
+              :placeholder="groupPromptPlaceholder"
+              @press-enter="handleGroupPromptConfirm"
+            />
+          </div>
+          <template #footer>
+            <div class="group-prompt-modal__footer">
+              <a-button class="group-prompt-modal__button" @click="handleGroupPromptCancel">
+                取消
+              </a-button>
+              <a-button
+                type="primary"
+                class="group-prompt-modal__button group-prompt-modal__button--primary"
+                @click="handleGroupPromptConfirm"
+              >
+                确定
+              </a-button>
+            </div>
+          </template>
+        </a-modal>
       </div>
     </a-app>
   </a-config-provider>
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, h, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, h, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { CloseOutlined } from '@antdv-next/icons'
 import { theme as antdTheme } from 'antdv-next'
 import type {
   ConnectionTab,
+  ConnectionStatus,
   DownloadRequest,
   MonitorTab,
   SftpFileEntry,
@@ -177,7 +217,9 @@ import type {
   SshProfile,
   TabContextMenuAction,
   TerminalConfig,
+  ThemeCenterConfig,
   ThemeName,
+  ThemePresetOption,
   UploadRequest,
 } from './types/app'
 
@@ -218,54 +260,95 @@ const rightPanelCollapsed = ref(true)
 const embeddedMonitorCollapsed = ref(false)
 const rightPanelTab = ref<MonitorTab>('monitor')
 const workspaceFileDrawerState = ref<Record<string, boolean>>({})
+const groupPromptVisible = ref(false)
+const groupPromptTitle = ref('新增分组')
+const groupPromptPlaceholder = ref('请输入分组名称')
+const groupPromptValue = ref('')
+const groupPromptInputRef = ref<{ focus?: () => void } | null>(null)
+const groupPromptCloseIconNode = computed(() => h(CloseOutlined, { class: 'modal-close-icon' }))
+const groupPromptModalClasses = {
+  container: 'group-prompt-modal__container',
+}
+const groupPromptModalStyles = {
+  mask: {
+    background: 'var(--overlay-mask-bg)',
+    backdropFilter: 'blur(12px)',
+  },
+  container: {
+    background: 'var(--overlay-panel-solid)',
+    border: '1px solid var(--border-color)',
+    boxShadow: 'none',
+    padding: '0',
+    overflow: 'hidden',
+    borderRadius: '14px',
+  },
+  content: {
+    background: 'var(--overlay-panel-solid)',
+    padding: '0',
+  },
+  header: {
+    background: 'var(--overlay-panel-solid)',
+    borderBottom: '1px solid var(--overlay-divider-color)',
+    marginBottom: '0',
+    padding: '18px 20px 14px',
+  },
+  body: {
+    background: 'var(--overlay-panel-solid)',
+    color: 'var(--text-color)',
+    padding: '16px 20px 10px',
+  },
+  footer: {
+    background: 'var(--overlay-panel-solid)',
+    borderTop: '1px solid var(--overlay-divider-color)',
+    padding: '12px 20px 18px',
+  },
+}
 const sshEditMode = ref(false)
 const editingProfile = ref<SshProfile | null>(null)
 const manualDisconnectingIds = new Set<string>()
 const closingTabIds = new Set<string>()
+let groupPromptResolver: ((value: string | null) => void) | null = null
 let freshTabTimer: number | null = null
 let workspaceMotionFrame: number | null = null
 let workspaceMotionTimer: number | null = null
+let unsubscribeThemeService: (() => void) | null = null
 
 // 主题和设置
 const theme = ref<ThemeName>(ThemeService.getTheme())
+const themeCenterConfig = ref<ThemeCenterConfig>(ThemeService.getThemeCenterConfig())
 const terminalConfig = ref<TerminalConfig>(ThemeService.getTerminalConfig())
-const antdThemeConfig = computed(() => ({
-  algorithm: theme.value === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
-  token: {
-    colorPrimary: theme.value === 'dark' ? '#71a7ff' : '#2f7cff',
-    borderRadius: 12,
-    colorBgBase: theme.value === 'dark' ? '#0b1220' : '#edf4fd',
-    colorBgLayout: theme.value === 'dark' ? '#0b1220' : '#edf4fd',
-    colorBgContainer: theme.value === 'dark' ? '#121b29' : '#f8fbff',
-    colorBgElevated: theme.value === 'dark' ? '#101a2b' : '#f8fbff',
-    colorText: theme.value === 'dark' ? '#e7eefb' : '#192435',
-    colorTextSecondary: theme.value === 'dark' ? '#94a4bb' : '#6f7f95',
-    colorBorder: theme.value === 'dark' ? '#24344d' : '#d6e2f1',
-  },
-  components: {
-    Button: {
-      algorithm: true,
+const themePresetOptions = ref<ThemePresetOption[]>(ThemeService.getThemePresetOptions())
+const antdThemeConfig = computed(() => {
+  themeCenterConfig.value
+
+  return {
+    algorithm: theme.value === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
+    token: ThemeService.getAntdTokens(),
+    components: {
+      Button: {
+        algorithm: true,
+      },
+      Input: {
+        algorithm: true,
+      },
+      Select: {
+        algorithm: true,
+      },
+      Modal: {
+        algorithm: true,
+      },
+      Segmented: {
+        algorithm: true,
+      },
+      Tabs: {
+        algorithm: true,
+      },
+      Tag: {
+        algorithm: true,
+      },
     },
-    Input: {
-      algorithm: true,
-    },
-    Select: {
-      algorithm: true,
-    },
-    Modal: {
-      algorithm: true,
-    },
-    Segmented: {
-      algorithm: true,
-    },
-    Tabs: {
-      algorithm: true,
-    },
-    Tag: {
-      algorithm: true,
-    },
-  },
-}))
+  }
+})
 
 // 已保存的连接配置
 const profiles = ref<SshProfile[]>([])
@@ -402,14 +485,15 @@ function openTabWithMotion(tab: ConnectionTab, options: { markFresh?: boolean } 
   }
 }
 
-// 切换主题
-function toggleTheme(next: ThemeName) {
-  theme.value = ThemeService.toggleTheme(next)
-}
-
 // 更新终端配置
 function updateTerminalConfig(config: Partial<TerminalConfig>) {
   terminalConfig.value = ThemeService.updateTerminalConfig(config)
+}
+
+function updateThemeCenterConfig(config: Partial<ThemeCenterConfig>) {
+  const result = ThemeService.updateThemeCenterConfig(config)
+  theme.value = result.theme
+  themeCenterConfig.value = result.themeConfig
 }
 
 // 刷新连接配置
@@ -442,6 +526,12 @@ const activeConnectionCopyText = computed(() => {
   const tab = currentTab.value
   if (tab?.type !== 'ssh') return ''
   return tab.profile?.host || ''
+})
+
+const activeConnectionState = computed<ConnectionStatus | ''>(() => {
+  const tab = currentTab.value
+  if (tab?.type !== 'ssh') return ''
+  return tab.sshState || 'disconnected'
 })
 
 function getActiveProfileId() {
@@ -664,35 +754,41 @@ async function deleteProfile(profile: SshProfile) {
 }
 
 function promptGroupName(title: string, initialValue = '', placeholder = '请输入分组名称') {
-  let nextValue = initialValue
+  groupPromptTitle.value = title
+  groupPromptPlaceholder.value = placeholder
+  groupPromptValue.value = initialValue
+  groupPromptVisible.value = true
+
+  nextTick(() => {
+    groupPromptInputRef.value?.focus?.()
+  })
 
   return new Promise<string | null>((resolve) => {
-    Modal.confirm({
-      title,
-      content: h('input', {
-        autofocus: true,
-        value: initialValue,
-        placeholder,
-        style: 'width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 8px;',
-        onInput: (event: Event) => {
-          nextValue = (event.target as HTMLInputElement).value
-        },
-      }),
-      okText: '确定',
-      cancelText: '取消',
-      async onOk() {
-        const value = nextValue.trim()
-        if (!value) {
-          message.warning('请输入分组名称')
-          return Promise.reject()
-        }
-        resolve(value)
-      },
-      onCancel() {
-        resolve(null)
-      }
-    })
+    groupPromptResolver = resolve
   })
+}
+
+function closeGroupPrompt(result: string | null) {
+  groupPromptVisible.value = false
+  groupPromptResolver?.(result)
+  groupPromptResolver = null
+}
+
+function handleGroupPromptCancel() {
+  closeGroupPrompt(null)
+}
+
+function handleGroupPromptConfirm() {
+  const value = groupPromptValue.value.trim()
+  if (!value) {
+    message.warning('请输入分组名称')
+    nextTick(() => {
+      groupPromptInputRef.value?.focus?.()
+    })
+    return
+  }
+
+  closeGroupPrompt(value)
 }
 
 async function createGroup() {
@@ -940,6 +1036,10 @@ async function handleTabMenuAction(payload: { action: TabContextMenuAction, tabI
 onMounted(async () => {
   // 加载已保存的SSH配置
   try {
+    unsubscribeThemeService = ThemeService.subscribe((payload) => {
+      theme.value = payload.theme
+      themeCenterConfig.value = payload.themeConfig
+    })
     await refreshConnectionData()
   } catch (error) {
     console.error('初始化连接数据失败:', error)
@@ -955,6 +1055,8 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  unsubscribeThemeService?.()
+  unsubscribeThemeService = null
   clearFreshTabMotion()
   if (workspaceMotionFrame) {
     window.cancelAnimationFrame(workspaceMotionFrame)
@@ -1147,5 +1249,136 @@ onBeforeUnmount(() => {
     gap: 4px;
     padding-inline: 0;
   }
+}
+
+.workspace-shell {
+  padding: 0;
+  background: var(--bg-color);
+}
+
+.workspace-frame {
+  background: var(--workspace-frame-bg);
+  border: none;
+  box-shadow: none;
+}
+
+.main-container {
+  gap: 0;
+}
+
+.content-container,
+.terminals-container,
+.workspace-view {
+  background: var(--workspace-view-bg);
+}
+
+.workspace-view {
+  box-shadow: none;
+  border-top: 1px solid var(--workspace-view-border);
+}
+
+.workspace-view--ssh,
+.workspace-view--connections,
+.workspace-view--file {
+  backdrop-filter: none;
+}
+
+.workspace-view--local {
+  background: var(--workspace-view-bg);
+}
+
+.workspace-view.is-activating {
+  animation: none;
+}
+
+.workspace-view.is-activating::after {
+  display: none;
+}
+
+.group-prompt-modal .ant-modal-content {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  border-radius: 14px !important;
+}
+
+.group-prompt-modal__container {
+  background: var(--overlay-panel-solid) !important;
+  border-radius: 14px !important;
+}
+
+.group-prompt-modal .ant-modal-title {
+  color: var(--text-color) !important;
+  font-weight: 700;
+}
+
+.group-prompt-modal .ant-modal-close {
+  color: var(--text-color) !important;
+}
+
+.group-prompt-modal .ant-modal-close:hover {
+  background: var(--hover-bg) !important;
+}
+
+.group-prompt-modal .modal-close-icon,
+.group-prompt-modal .modal-close-icon svg {
+  color: var(--text-color) !important;
+}
+
+.group-prompt-modal__body .ant-input {
+  height: 42px;
+  border-radius: 10px !important;
+  border-color: var(--border-color) !important;
+  background: var(--surface-1) !important;
+  color: var(--text-color) !important;
+  box-shadow: none !important;
+}
+
+.group-prompt-modal__body .ant-input::placeholder {
+  color: var(--muted-color) !important;
+}
+
+.group-prompt-modal__body .ant-input:focus,
+.group-prompt-modal__body .ant-input-focused {
+  border-color: var(--strong-border) !important;
+  box-shadow: 0 0 0 3px var(--primary-soft) !important;
+}
+
+.group-prompt-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.group-prompt-modal__button {
+  min-width: 78px;
+  border-radius: 10px !important;
+  border-color: var(--border-color) !important;
+  background: var(--surface-2) !important;
+  color: var(--text-color) !important;
+  box-shadow: none !important;
+  font-weight: 700;
+}
+
+.group-prompt-modal__button:hover {
+  border-color: var(--strong-border) !important;
+  background: var(--hover-bg) !important;
+  color: var(--text-color) !important;
+}
+
+.group-prompt-modal .ant-btn.group-prompt-modal__button--primary,
+.group-prompt-modal .ant-btn-primary.group-prompt-modal__button--primary {
+  background: var(--text-color) !important;
+  border-color: var(--text-color) !important;
+  color: var(--bg-color) !important;
+}
+
+.group-prompt-modal .ant-btn.group-prompt-modal__button--primary:hover,
+.group-prompt-modal .ant-btn-primary.group-prompt-modal__button--primary:hover {
+  background: var(--strong-border) !important;
+  border-color: var(--strong-border) !important;
+  color: var(--bg-color) !important;
 }
 </style>

@@ -83,17 +83,17 @@ class SshService {
     return new Promise((resolve) => {
       Modal.confirm({
         title,
-        content: h('div', { style: 'display: grid; gap: 10px;' }, [
+        content: h('div', { class: 'termlink-confirm-stack' }, [
           h(
             'div',
-            { style: 'white-space: pre-line; line-height: 1.6;' },
+            { class: 'termlink-confirm-text' },
             `目标：${profile.username}@${profile.host}:${profile.port}`,
           ),
           h('input', {
+            class: 'termlink-confirm-input',
             type: 'password',
             autofocus: true,
             placeholder: '请输入密码',
-            style: 'width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 8px;',
             onInput: (event: Event) => {
               password = (event.target as HTMLInputElement).value
             },
@@ -298,7 +298,7 @@ class SshService {
         title: verification.state === 'changed' ? '主机密钥已变化' : '确认主机密钥',
         content: h(
           'div',
-          { style: 'white-space: pre-line; line-height: 1.6;' },
+          { class: 'termlink-confirm-text' },
           [
             verification.state === 'changed'
               ? '检测到主机密钥与已保存记录不一致。'
@@ -314,21 +314,21 @@ class SshService {
         cancelText: null,
         footer: () => h(
           'div',
-          { style: 'display: flex; justify-content: flex-end; gap: 8px; width: 100%;' },
+          { class: 'termlink-confirm-footer' },
           [
             h(
               Button,
-              { onClick: () => finish('reject') },
+              { class: 'termlink-confirm-button termlink-confirm-button--danger', onClick: () => finish('reject') },
               { default: () => '拒绝连接' },
             ),
             h(
               Button,
-              { onClick: () => finish('trust-once') },
+              { class: 'termlink-confirm-button', onClick: () => finish('trust-once') },
               { default: () => '仅本次信任' },
             ),
             h(
               Button,
-              { type: 'primary', onClick: () => finish('trust-and-save') },
+              { type: 'primary', class: 'termlink-confirm-button termlink-confirm-button--primary', onClick: () => finish('trust-and-save') },
               { default: () => '信任并保存' },
             ),
           ],

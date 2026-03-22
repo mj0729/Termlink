@@ -38,6 +38,7 @@ import { computed, h, ref } from 'vue'
 import { PlusOutlined } from '@antdv-next/icons'
 import FileContextMenu from './remote-file/FileContextMenu.vue'
 import type { ConnectionTab, TabContextMenuAction } from '../types/app'
+import { getConnectionStatusMeta } from '../constants/connectionStatus'
 
 const props = defineProps({
   tabs: {
@@ -106,22 +107,9 @@ const tabItems = computed(() => (props.tabs as ConnectionTab[]).map((tab) => ({
     h('span', { class: ['tab-kind', `tab-kind--${tab.type}`] }, tab.type === 'ssh' ? 'SSH' : tab.type === 'file' ? 'FILE' : tab.type === 'connections' ? 'HUB' : 'LOCAL'),
     ((tab.type === 'ssh') || (tab.type === 'file' && tab.connectionId))
       ? h('span', {
-          class: [
-            'tab-status',
-            tab.type === 'ssh'
-              ? (tab.sshState === 'disconnected'
-                ? 'is-offline'
-                : tab.sshState === 'connecting'
-                  ? 'is-pending'
-                  : 'is-live')
-              : 'is-linked'
-          ],
+          class: ['tab-status', getTabStatusClass(tab)],
           'aria-label': tab.type === 'ssh'
-            ? (tab.sshState === 'disconnected'
-              ? '已断开'
-              : tab.sshState === 'connecting'
-                ? '连接中'
-                : '已连接')
+            ? (getConnectionStatusMeta(tab.sshState || 'disconnected')?.label || '已断开')
             : '关联连接'
         })
       : null,
@@ -129,6 +117,14 @@ const tabItems = computed(() => (props.tabs as ConnectionTab[]).map((tab) => ({
   ]),
   content: null,
 })))
+
+function getTabStatusClass(tab: ConnectionTab) {
+  if (tab.type === 'file' && tab.connectionId) {
+    return 'is-linked'
+  }
+
+  return getConnectionStatusMeta(tab.sshState || 'disconnected')?.className || 'is-disconnected'
+}
 
 function openContextMenu(event: MouseEvent, tab: ConnectionTab) {
   event.preventDefault()
@@ -377,5 +373,112 @@ function onEditTab(targetKeyOrEvent: string | MouseEvent, action: 'add' | 'remov
     transform: translate3d(0, 0, 0) scale(1);
     filter: saturate(1);
   }
+}
+
+.tabs-container {
+  background: var(--tabs-strip-bg);
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.tabs-container__main {
+  gap: 10px;
+  min-height: 44px;
+}
+
+.tabs-container__add {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px !important;
+  color: var(--text-color) !important;
+  background: var(--surface-1) !important;
+  box-shadow: none;
+  border: 1px solid var(--border-color);
+}
+
+.tabs-container__add:hover {
+  border-color: var(--strong-border);
+  background: var(--surface-2) !important;
+}
+
+.tab-kind {
+  min-width: auto;
+  height: auto;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted-color);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+
+.tab-kind--ssh,
+.tab-kind--local,
+.tab-kind--file,
+.tab-kind--connections {
+  background: transparent;
+  color: var(--muted-color);
+}
+
+.tab-title {
+  max-width: 190px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tab-status.is-live,
+.tab-status.is-pending,
+.tab-status.is-offline,
+.tab-status.is-linked {
+  box-shadow: none;
+}
+
+.tab-status.is-connected,
+.tab-status.is-live {
+  background: var(--connection-connected);
+}
+
+.tab-status.is-connecting,
+.tab-status.is-pending {
+  background: var(--connection-connecting);
+}
+
+.tab-status.is-disconnected,
+.tab-status.is-offline {
+  background: var(--connection-disconnected);
+}
+
+.tab-status.is-linked {
+  background: var(--text-color);
+}
+
+:deep(.ant-tabs-tab) {
+  height: 36px;
+  margin-right: 0 !important;
+  padding: 0 12px !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  color: var(--muted-color) !important;
+  box-shadow: none;
+}
+
+:deep(.ant-tabs-tab:hover) {
+  color: var(--text-color) !important;
+}
+
+:deep(.ant-tabs-tab-active) {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+:deep(.ant-tabs-tab-active .ant-tabs-tab-btn) {
+  color: var(--text-color) !important;
+}
+
+:deep(.ant-tabs-ink-bar) {
+  background: var(--text-color) !important;
+  height: 2px !important;
+  border-radius: 999px !important;
 }
 </style>

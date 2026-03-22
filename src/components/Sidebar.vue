@@ -659,9 +659,9 @@ async function renameFile(file: SftpFileEntry) {
   Modal.confirm({
     title: '重命名',
     content: () => h('input', {
+      class: 'termlink-confirm-input',
       value: nextName.value,
       autofocus: true,
-      style: 'width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--panel-bg); color: var(--text-color);',
       onInput: (event: Event) => {
         nextName.value = (event.target as HTMLInputElement).value
       }
@@ -848,10 +848,10 @@ async function createNewFolder() {
   Modal.confirm({
     title: '新建文件夹',
     content: () => h('input', {
+      class: 'termlink-confirm-input',
       value: folderName.value,
       placeholder: '请输入文件夹名称',
       autofocus: true,
-      style: 'width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--panel-bg); color: var(--text-color);',
       onInput: (event: Event) => {
         folderName.value = (event.target as HTMLInputElement).value
       }

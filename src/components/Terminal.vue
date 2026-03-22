@@ -821,7 +821,7 @@ onBeforeUnmount(async () => {
   height: 100%;
   overflow: hidden;
   padding: 0;
-  background: #0b0e14;
+  background: #0d0f14;
 }
 
 .terminal-frame {
@@ -836,34 +836,36 @@ onBeforeUnmount(async () => {
 
 .terminal-container {
   position: absolute;
-  inset: 6px 8px 6px 8px;
-}
-
-.terminal-area--comfortable .terminal-container {
   inset: 8px 10px 8px 10px;
 }
 
+.terminal-area--comfortable .terminal-container {
+  inset: 10px 12px 10px 12px;
+}
+
 .terminal-area--balanced .terminal-container {
-  inset: 6px 8px 6px 8px;
+  inset: 8px 10px 8px 10px;
 }
 
 .terminal-area--compact .terminal-container {
-  inset: 4px 6px 4px 6px;
+  inset: 6px 8px 6px 8px;
 }
 
 .scroll-indicator {
   position: absolute;
-  top: 8px;
+  top: 48px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(20, 32, 52, 0.68);
-  color: rgba(255, 255, 255, 0.96);
+  background: rgba(17, 17, 17, 0.82);
+  color: rgba(255, 255, 255, 0.92);
   text-align: center;
-  padding: 4px 9px;
-  border-radius: 999px;
+  padding: 3px 8px;
+  border-radius: 8px;
   font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
   z-index: 10;
-  opacity: 0.82;
+  opacity: 0.72;
   transition: opacity 0.3s ease;
 }
 

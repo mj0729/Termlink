@@ -114,7 +114,7 @@
             v-model:value="form.privateKey" 
             placeholder="私钥文件路径" 
           />
-          <a-button @click="selectPrivateKey" style="width: 80px">浏览</a-button>
+          <a-button class="ssh-modal__button" @click="selectPrivateKey" style="width: 80px">浏览</a-button>
         </a-space-compact>
       </a-form-item>
 
@@ -159,10 +159,10 @@
               :max="65535"
               placeholder="目标端口"
             />
-            <a-button danger @click="removePortForward(index)">删除</a-button>
+            <a-button class="ssh-modal__button ssh-modal__button--danger" danger @click="removePortForward(index)">删除</a-button>
           </div>
         </div>
-        <a-button type="dashed" block @click="addPortForward">
+        <a-button type="dashed" block class="ssh-modal__button ssh-modal__button--dashed" @click="addPortForward">
           新增本地端口转发
         </a-button>
       </a-form-item>
@@ -190,7 +190,7 @@
         </a-button>
         <a-button
           type="primary"
-          class="ssh-modal__action ssh-modal__action--primary"
+          class="ssh-modal__action ssh-modal__action--primary ssh-modal__primary-button"
           :loading="loading"
           @click="handleSubmit"
         >
@@ -711,27 +711,56 @@ watch(() => props.editProfile, () => {
   gap: 10px;
 }
 
-:deep(.ssh-modal__action) {
+:global(.ssh-modal__button) {
+  border-radius: 10px !important;
+  border-color: var(--border-color) !important;
+  background: var(--surface-1) !important;
+  color: var(--text-color) !important;
+  box-shadow: none !important;
+}
+
+:global(.ssh-modal__button:hover) {
+  border-color: var(--strong-border) !important;
+  background: var(--surface-2) !important;
+  color: var(--text-color) !important;
+}
+
+:global(.ssh-modal__button--dashed) {
+  border-style: dashed !important;
+  background: transparent !important;
+}
+
+:global(.ssh-modal__button--dashed:hover) {
+  background: var(--surface-2) !important;
+}
+
+:global(.ssh-modal__button--danger) {
+  border-color: color-mix(in srgb, var(--connection-disconnected) 36%, var(--border-color)) !important;
+  background: var(--connection-disconnected-soft) !important;
+  color: var(--connection-disconnected) !important;
+}
+
+:global(.ssh-modal__button--danger:hover) {
+  border-color: var(--connection-disconnected) !important;
+  background: color-mix(in srgb, var(--connection-disconnected-soft) 76%, var(--surface-1)) !important;
+  color: var(--connection-disconnected) !important;
+}
+
+:global(.ssh-modal__action) {
   min-width: 78px;
   border-radius: 12px !important;
   font-weight: 700;
 }
 
-:deep(.ssh-modal__action--ghost) {
+:global(.ssh-modal__action--ghost) {
   background: var(--surface-2) !important;
   border-color: var(--border-color) !important;
   color: var(--text-color) !important;
 }
 
-:deep(.ssh-modal__action--ghost:hover) {
+:global(.ssh-modal__action--ghost:hover) {
   background: var(--hover-bg) !important;
   border-color: var(--strong-border) !important;
-}
-
-:deep(.ssh-modal__action--primary) {
-  background: linear-gradient(135deg, var(--primary-color), #7db7ff) !important;
-  border-color: transparent !important;
-  color: #fff !important;
 }
 
 @media (max-width: 720px) {
@@ -742,5 +771,28 @@ watch(() => props.editProfile, () => {
   .ssh-forward-arrow {
     display: none;
   }
+}
+
+:deep(.ssh-modal .ant-modal-content),
+:deep(.ssh-modal__container) {
+  border-radius: 14px !important;
+}
+
+:deep(.ssh-modal__action) {
+  border-radius: 10px !important;
+}
+
+:global(.ssh-modal .ant-btn.ssh-modal__primary-button),
+:global(.ssh-modal .ant-btn-primary.ssh-modal__primary-button) {
+  background: var(--text-color) !important;
+  border-color: var(--text-color) !important;
+  color: var(--bg-color) !important;
+}
+
+:global(.ssh-modal .ant-btn.ssh-modal__primary-button:hover),
+:global(.ssh-modal .ant-btn-primary.ssh-modal__primary-button:hover) {
+  background: var(--strong-border) !important;
+  border-color: var(--strong-border) !important;
+  color: var(--bg-color) !important;
 }
 </style>

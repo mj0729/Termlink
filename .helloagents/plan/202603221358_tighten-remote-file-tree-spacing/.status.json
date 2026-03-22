@@ -1,0 +1,11 @@
+{
+  "status": "completed",
+  "completed": 4,
+  "failed": 0,
+  "pending": 0,
+  "total": 4,
+  "done": 4,
+  "percent": 100,
+  "current": "已完成全部任务",
+  "updated_at": "2026-03-22 14:03:11"
+}

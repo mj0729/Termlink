@@ -798,6 +798,14 @@ onBeforeUnmount(() => {
   background: transparent !important;
 }
 
+.remote-file-table :deep(.vxe-table--body-wrapper),
+.remote-file-table :deep(.vxe-table--body-inner-wrapper),
+.remote-file-table :deep(.vxe-table--empty-block),
+.remote-file-table :deep(.vxe-table--empty-content),
+.remote-file-table :deep(.vxe-table--empty-placeholder) {
+  background: var(--remote-table-bg) !important;
+}
+
 .remote-file-table :deep(.vxe-table--render-default) {
   --vxe-ui-table-border-color: var(--remote-table-row-border);
   --vxe-ui-table-header-background-color: transparent;

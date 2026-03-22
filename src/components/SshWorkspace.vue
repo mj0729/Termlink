@@ -30,7 +30,7 @@
             <div class="ssh-pane-card__head">
               <div class="ssh-pane-card__title">
                 <strong class="ssh-pane-card__badge">{{ index + 1 }}</strong>
-                <span class="ssh-pane-card__status-dot" :class="`is-${pane.sshState}`"></span>
+                <span class="ssh-pane-card__status-dot" :class="getConnectionStatusMeta(pane.sshState)?.className"></span>
               </div>
 
               <div class="ssh-pane-card__actions">
@@ -170,6 +170,7 @@ import Terminal from './Terminal.vue'
 import RemoteFileWorkbench from './RemoteFileWorkbench.vue'
 import RightPanel from './RightPanel.vue'
 import SshService from '../services/SshService'
+import { getConnectionStatusMeta } from '../constants/connectionStatus'
 import { getBroadcastTargetPaneIds } from '../utils/sshWorkspace'
 import type {
   ConnectionTab,
@@ -581,8 +582,8 @@ onBeforeUnmount(async () => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 2px 0 0;
+  gap: 0;
+  padding: 0;
 }
 
 .ssh-workspace__icon-btn {
@@ -590,7 +591,7 @@ onBeforeUnmount(async () => {
   min-width: 28px !important;
   height: 28px !important;
   padding: 0 !important;
-  border-radius: 999px !important;
+  border-radius: 8px !important;
 }
 
 .ssh-workspace__icon-btn--pane,
@@ -613,9 +614,9 @@ onBeforeUnmount(async () => {
 
 .ssh-workspace__popover-label {
   color: var(--muted-color);
-  font-size: 11px;
+  font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
 }
 
 .ssh-workspace__popover-block strong,
@@ -645,7 +646,7 @@ onBeforeUnmount(async () => {
   min-height: 0;
   grid-auto-rows: minmax(0, 1fr);
   align-content: stretch;
-  gap: 2px;
+  gap: 0;
   padding: 0;
 }
 
@@ -658,27 +659,28 @@ onBeforeUnmount(async () => {
   grid-template-rows: auto minmax(0, 1fr);
   height: 100%;
   min-height: 0;
-  border-radius: 6px;
-  border: 1px solid color-mix(in srgb, var(--border-color) 92%, transparent);
-  background: color-mix(in srgb, var(--workspace-terminal-bg) 88%, var(--surface-1));
+  border-radius: 0;
+  border: none;
+  border-top: 1px solid color-mix(in srgb, var(--border-color) 92%, transparent);
+  background: var(--workspace-terminal-bg);
   overflow: hidden;
 }
 
 .ssh-pane-card.is-active {
-  border-color: color-mix(in srgb, var(--primary-color) 64%, var(--border-color));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary-color) 30%, transparent);
+  border-top-color: var(--strong-border);
+  box-shadow: none;
 }
 
 .ssh-pane-card__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 34px;
-  min-height: 34px;
-  gap: 4px;
-  padding: 3px 5px;
+  height: 30px;
+  min-height: 30px;
+  gap: 6px;
+  padding: 0 8px;
   border-bottom: 1px solid color-mix(in srgb, var(--border-color) 85%, transparent);
-  background: color-mix(in srgb, var(--surface-1) 86%, transparent);
+  background: var(--surface-1);
   box-sizing: border-box;
 }
 
@@ -692,14 +694,14 @@ onBeforeUnmount(async () => {
 .ssh-pane-card__badge {
   color: var(--text-color);
   font-size: 11px;
-  font-weight: 700;
-  min-width: 18px;
-  height: 18px;
+  font-weight: 600;
+  min-width: 16px;
+  height: 16px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--surface-2) 84%, transparent);
+  border-radius: 4px;
+  background: transparent;
 }
 
 .ssh-pane-card__status-dot {
@@ -709,18 +711,18 @@ onBeforeUnmount(async () => {
 }
 
 .ssh-pane-card__status-dot.is-connected {
-  background: #0f766e;
-  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.12);
+  background: var(--connection-connected);
+  box-shadow: 0 0 0 4px var(--connection-connected-soft);
 }
 
 .ssh-pane-card__status-dot.is-connecting {
-  background: #d97706;
-  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.14);
+  background: var(--connection-connecting);
+  box-shadow: 0 0 0 4px var(--connection-connecting-soft);
 }
 
 .ssh-pane-card__status-dot.is-disconnected {
-  background: #b42318;
-  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.14);
+  background: var(--connection-disconnected);
+  box-shadow: 0 0 0 4px var(--connection-disconnected-soft);
 }
 
 .ssh-pane-card__actions {
@@ -728,7 +730,7 @@ onBeforeUnmount(async () => {
   gap: 4px;
   align-items: center;
   justify-content: flex-end;
-  min-width: 98px;
+  min-width: 92px;
   flex-shrink: 0;
 }
 
@@ -747,7 +749,7 @@ onBeforeUnmount(async () => {
   flex-direction: column;
   overflow: hidden;
   border-top: 1px solid color-mix(in srgb, var(--border-color) 90%, transparent);
-  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
+  background: var(--surface-1);
 }
 
 .ssh-workspace__files-inline > * {
@@ -775,5 +777,120 @@ onBeforeUnmount(async () => {
   .ssh-pane-grid {
     grid-template-columns: minmax(0, 1fr) !important;
   }
+}
+
+.ssh-workspace__terminal {
+  background: #0d0f14;
+}
+
+.ssh-pane-grid {
+  background: #0d0f14;
+}
+
+.ssh-pane-card {
+  position: relative;
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0;
+  background: #0d0f14;
+}
+
+.ssh-pane-card.is-active {
+  border-top-color: rgba(255, 255, 255, 0.14);
+  box-shadow: none;
+}
+
+.ssh-pane-card__head {
+  height: 30px;
+  min-height: 30px;
+  padding: 0 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: #11141b;
+}
+
+.ssh-pane-card__title {
+  gap: 8px;
+}
+
+.ssh-pane-card__badge {
+  min-width: auto;
+  height: auto;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ssh-pane-card__status-dot {
+  width: 7px;
+  height: 7px;
+}
+
+.ssh-pane-card__status-dot.is-connected {
+  background: rgba(110, 231, 183, 0.92);
+}
+
+.ssh-pane-card__status-dot.is-connecting {
+  background: rgba(251, 191, 36, 0.92);
+}
+
+.ssh-pane-card__status-dot.is-disconnected {
+  background: rgba(248, 113, 113, 0.92);
+}
+
+.ssh-pane-card__actions {
+  gap: 2px;
+  min-width: auto;
+  margin-left: auto;
+  opacity: 0.72;
+  transition: opacity 0.16s ease;
+}
+
+.ssh-pane-card:hover .ssh-pane-card__actions,
+.ssh-pane-card.is-active .ssh-pane-card__actions {
+  opacity: 1;
+}
+
+.ssh-workspace__icon-btn {
+  width: 24px !important;
+  min-width: 24px !important;
+  height: 24px !important;
+  border-radius: 6px !important;
+  color: rgba(255, 255, 255, 0.72) !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.ssh-workspace__icon-btn:hover,
+.ssh-workspace__icon-btn.ant-btn-primary {
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.ssh-workspace__icon-btn.ant-btn-primary {
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.ssh-workspace__icon-btn :deep(.anticon) {
+  font-size: 12px;
+  color: currentColor;
+}
+
+.ssh-pane-card__body {
+  background: #0d0f14;
+}
+
+.ssh-pane-card__body > * {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ssh-workspace__files-inline {
+  background: var(--surface-1);
+  border-top: 1px solid var(--border-color);
 }
 </style>

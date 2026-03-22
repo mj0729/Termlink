@@ -103,16 +103,17 @@ const breadcrumbNodes = computed(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--border-color, #e8e8e8);
-  background: var(--surface-0, #fafafa);
-  min-height: 36px;
+  background: var(--surface-1, #ffffff);
+  min-height: 40px;
 }
 
 .remote-path-bar__nav :deep(.ant-btn) {
-  min-width: 24px;
-  height: 24px;
+  min-width: 26px;
+  height: 26px;
   padding-inline: 4px !important;
+  border-radius: 8px !important;
 }
 
 .remote-path-bar__breadcrumb {
@@ -132,7 +133,8 @@ const breadcrumbNodes = computed(() => {
   color: var(--muted-color, #999);
   cursor: pointer;
   padding: 2px 4px;
-  border-radius: 4px;
+  border-radius: 6px;
+  font-weight: 500;
 }
 
 .remote-path-bar__crumb:hover {
@@ -140,7 +142,7 @@ const breadcrumbNodes = computed(() => {
 }
 
 .remote-path-bar__crumb.is-current {
-  color: var(--primary-color, #1677ff);
+  color: var(--text-color, #111111);
   font-weight: 600;
 }
 
@@ -152,15 +154,21 @@ const breadcrumbNodes = computed(() => {
 }
 
 .remote-path-bar__search {
-  width: 160px;
+  width: 168px;
 }
 
 .remote-path-bar--compact {
-  padding: 4px 8px;
-  min-height: 32px;
+  padding: 6px 10px;
+  min-height: 34px;
 }
 
 .remote-path-bar--compact .remote-path-bar__search {
   width: 132px;
+}
+
+.remote-path-bar__nav :deep(.anticon),
+.remote-path-bar__search :deep(.anticon) {
+  font-size: 12px;
+  color: currentColor;
 }
 </style>

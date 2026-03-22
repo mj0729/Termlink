@@ -30,7 +30,7 @@
                     <RightOutlined v-else />
                   </a-button>
                   <a-button type="primary" size="small" class="hero-refresh-btn" title="手动刷新" :disabled="!canRefreshMonitor" @click="refreshData">
-                    <ReloadOutlined />
+                    <span class="hero-refresh-btn__glyph" aria-hidden="true">↻</span>
                   </a-button>
                 </div>
                 <div class="dashboard-hero__toolbar-meta">
@@ -463,7 +463,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, ref, shallowRef, onMounted, onUnmounted, watch } from 'vue'
+import { computed, h, ref, shallowRef, onBeforeUnmount, onMounted, onUnmounted, watch } from 'vue'
 import { 
   ThunderboltOutlined,
   DatabaseOutlined,
@@ -581,6 +581,8 @@ const transferFilter = ref<TransferFilter>('all')
 let transferIdCounter = 0
 let downloadProgressUnlisten: (() => void) | null = null
 let uploadProgressUnlisten: (() => void) | null = null
+const currentTheme = ref<'light' | 'dark'>('light')
+let themeObserver: MutationObserver | null = null
 
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
 let refreshInterval = 3000 // 初始刷新间隔3秒
@@ -614,6 +616,8 @@ const sortedDiskInfo = computed(() => (
     return (left.mountpoint || left.device || '').localeCompare(right.mountpoint || right.device || '')
   })
 ))
+
+const isDarkTheme = computed(() => currentTheme.value === 'dark')
 
 const hasExtraDiskInfo = computed(() => sortedDiskInfo.value.length > 2)
 const visibleDiskInfo = computed(() => (
@@ -735,7 +739,7 @@ const heroStatistics = computed(() => ([
     precision: undefined,
     suffix: undefined,
     meta: monitorDisconnected.value ? '连接已断开' : `刷新间隔 ${Math.round(refreshInterval / 1000)}s`,
-    valueStyle: { color: '#1890ff', fontSize: '24px', fontWeight: 700 },
+    valueStyle: { color: isDarkTheme.value ? '#f5f5f5' : '#111111', fontSize: '24px', fontWeight: 700 },
   },
   {
     key: 'rx',
@@ -744,7 +748,7 @@ const heroStatistics = computed(() => ([
     precision: undefined,
     suffix: undefined,
     meta: `${buildRateTrendLabel(rxHistory.value)} · 累计 ${formatSize(sortedNetworkInfo.value.reduce((sum, item) => sum + (item.rx_bytes || 0), 0))}`,
-    valueStyle: { color: '#52c41a', fontSize: '24px', fontWeight: 700 },
+    valueStyle: { color: isDarkTheme.value ? '#f5f5f5' : '#111111', fontSize: '24px', fontWeight: 700 },
   },
   {
     key: 'tx',
@@ -753,7 +757,7 @@ const heroStatistics = computed(() => ([
     precision: undefined,
     suffix: undefined,
     meta: `${buildRateTrendLabel(txHistory.value)} · 累计 ${formatSize(sortedNetworkInfo.value.reduce((sum, item) => sum + (item.tx_bytes || 0), 0))}`,
-    valueStyle: { color: '#faad14', fontSize: '24px', fontWeight: 700 },
+    valueStyle: { color: isDarkTheme.value ? '#f5f5f5' : '#111111', fontSize: '24px', fontWeight: 700 },
   },
 ]))
 
@@ -914,12 +918,15 @@ const activeAlerts = computed(() => (
 ))
 
 const memorySegments = computed(() => {
+  const palette = isDarkTheme.value
+    ? { used: '#737373', available: '#525252', cached: '#3f3f46' }
+    : { used: '#6b7280', available: '#9ca3af', cached: '#d1d5db' }
   const total = memoryInfo.value.total || 0
   if (!total) {
     return [
-      { label: '已用', percent: 0, value: '0 B', color: '#1890ff' },
-      { label: '可用', percent: 0, value: '0 B', color: '#52c41a' },
-      { label: '缓存', percent: 0, value: '0 B', color: '#faad14' },
+      { label: '已用', percent: 0, value: '0 B', color: palette.used },
+      { label: '可用', percent: 0, value: '0 B', color: palette.available },
+      { label: '缓存', percent: 0, value: '0 B', color: palette.cached },
     ]
   }
 
@@ -928,9 +935,9 @@ const memorySegments = computed(() => {
   const available = Math.min(memoryInfo.value.available || 0, Math.max(total - cached, total))
 
   return [
-    { label: '已用', percent: toPercent(used, total), value: formatSize(used), color: '#1890ff' },
-    { label: '可用', percent: toPercent(available, total), value: formatSize(available), color: '#52c41a' },
-    { label: '缓存', percent: toPercent(cached, total), value: formatSize(cached), color: '#faad14' },
+    { label: '已用', percent: toPercent(used, total), value: formatSize(used), color: palette.used },
+    { label: '可用', percent: toPercent(available, total), value: formatSize(available), color: palette.available },
+    { label: '缓存', percent: toPercent(cached, total), value: formatSize(cached), color: palette.cached },
   ]
 })
 
@@ -1110,9 +1117,15 @@ function formatUptime(seconds?: number) {
 
 // 获取进度条颜色
 function getProgressColor(percentage: number) {
-  if (percentage <= 60) return '#52c41a'
-  if (percentage <= 85) return '#faad14'
-  return '#f5222d'
+  if (isDarkTheme.value) {
+    if (percentage <= 60) return '#6b7280'
+    if (percentage <= 85) return '#8a6a2a'
+    return '#7a3a3a'
+  }
+
+  if (percentage <= 60) return '#9ca3af'
+  if (percentage <= 85) return '#d4a24a'
+  return '#c06b6b'
 }
 
 function formatSpeed(bytesPerSecond: number) {
@@ -1298,11 +1311,6 @@ function promptUploadConflictAction(request: UploadRequest): Promise<UploadConfl
   return new Promise((resolve) => {
     let settled = false
     let modalInstance: { destroy: () => void } | null = null
-    const contentStyle = 'display:grid;gap:8px;line-height:1.6;'
-    const pathStyle = 'padding:10px 12px;border-radius:10px;background:rgba(15,23,42,.06);color:var(--text-color);font-family:"SFMono-Regular","JetBrains Mono",Consolas,monospace;font-size:12px;word-break:break-all;'
-    const descStyle = 'color:var(--muted-color);font-size:13px;'
-    const footerStyle = 'display:flex;justify-content:flex-end;gap:8px;width:100%;'
-    const baseButtonStyle = 'min-width:88px;height:32px;border-radius:8px;font-size:13px;cursor:pointer;transition:all .2s ease;padding:0 14px;'
     const finish = (action: UploadConflictAction) => {
       if (settled) return
       settled = true
@@ -1312,28 +1320,28 @@ function promptUploadConflictAction(request: UploadRequest): Promise<UploadConfl
 
     modalInstance = Modal.confirm({
       title: '发现同名远程文件',
-      content: h('div', { style: contentStyle }, [
-        h('div', { style: pathStyle }, request.targetPath),
-        h('div', { style: descStyle }, `请选择如何处理“${request.fileName}”`),
+      content: h('div', { class: 'termlink-confirm-stack' }, [
+        h('div', { class: 'termlink-confirm-path' }, request.targetPath),
+        h('div', { class: 'termlink-confirm-text' }, `请选择如何处理“${request.fileName}”`),
       ]),
       okCancel: false,
       closable: false,
       maskClosable: false,
       keyboard: false,
-      footer: () => h('div', { style: footerStyle }, [
+      footer: () => h('div', { class: 'termlink-confirm-footer' }, [
         h('button', {
           type: 'button',
-          style: `${baseButtonStyle}border:1px solid rgba(148,163,184,.38);background:#fff;color:var(--text-color);`,
+          class: 'termlink-confirm-button',
           onClick: () => finish('skip'),
         }, '跳过'),
         h('button', {
           type: 'button',
-          style: `${baseButtonStyle}border:1px solid rgba(59,130,246,.24);background:rgba(59,130,246,.08);color:var(--text-color);`,
+          class: 'termlink-confirm-button',
           onClick: () => finish('rename'),
         }, '自动重命名'),
         h('button', {
           type: 'button',
-          style: `${baseButtonStyle}border:1px solid var(--primary-color);background:var(--primary-color);color:#fff;`,
+          class: 'termlink-confirm-button termlink-confirm-button--primary',
           onClick: () => finish('overwrite'),
         }, '覆盖'),
       ]),
@@ -1402,6 +1410,23 @@ watch(() => props.connectionId, (newConnectionId) => {
 
 watch(() => props.activeTab, (newTab) => {
   activeTab.value = newTab
+})
+
+onMounted(() => {
+  const body = document.body
+  currentTheme.value = body.dataset.theme === 'dark' ? 'dark' : 'light'
+  themeObserver = new MutationObserver(() => {
+    currentTheme.value = body.dataset.theme === 'dark' ? 'dark' : 'light'
+  })
+  themeObserver.observe(body, {
+    attributes: true,
+    attributeFilter: ['data-theme'],
+  })
+})
+
+onBeforeUnmount(() => {
+  themeObserver?.disconnect()
+  themeObserver = null
 })
 
 watch(activeTab, (newTab) => {
@@ -1710,6 +1735,21 @@ defineExpose({
 .collapse-btn:hover {
   background: var(--surface-2) !important;
   border-color: var(--strong-border) !important;
+}
+
+.hero-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hero-refresh-btn__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  color: currentColor;
 }
 
 .panel-content {
@@ -4096,5 +4136,563 @@ defineExpose({
 :global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-alert-strip__header span),
 :global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-alert-strip__description) {
   color: #ffc8cc !important;
+}
+
+.right-panel {
+  background: var(--surface-1);
+}
+
+.panel-content-wrapper {
+  width: 300px;
+  background: var(--surface-1);
+  border-left: 1px solid var(--border-color);
+  border-radius: 0;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+.right-panel--left .panel-content-wrapper {
+  border-right: 1px solid var(--border-color);
+  border-left: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.right-panel--embedded.right-panel--monitor .panel-content-wrapper {
+  background: var(--surface-1);
+  border-left: 1px solid var(--border-color);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.panel-content,
+.monitor-content {
+  background: var(--surface-1);
+}
+
+.monitor-content {
+  padding: 16px;
+}
+
+.monitor-dashboard,
+.dashboard-stack,
+.dashboard-main-grid,
+.dashboard-bottom-grid {
+  gap: 12px;
+}
+
+.dashboard-hero-card,
+.dashboard-card {
+  border-radius: 12px !important;
+  border: 1px solid var(--border-color) !important;
+  background: var(--surface-1) !important;
+  box-shadow: none !important;
+}
+
+.dashboard-hero-card :deep(.ant-card-body),
+.dashboard-card :deep(.ant-card-body) {
+  padding: 16px !important;
+}
+
+.dashboard-hero__title-row h3,
+.dashboard-section-head h4,
+.resource-highlight-row__name,
+.process-command,
+.process-value,
+.system-fact strong,
+.network-summary-item strong,
+.interface-card__metric,
+.hero-summary-memory__head strong,
+.hero-summary-memory__legend-item strong {
+  color: var(--text-color);
+}
+
+.dashboard-hero__copy p,
+.dashboard-hero__timestamp,
+.dashboard-kpi__label,
+.dashboard-kpi__meta,
+.resource-highlight-row__meta,
+.disk-card__identity span,
+.interface-card__identity span,
+.interface-card__totals,
+.memory-legend-item,
+.network-summary-item span,
+.system-fact span {
+  color: var(--muted-color);
+}
+
+.dashboard-hero__title-row h3 {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.dashboard-section-head h4 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.collapse-btn {
+  border-radius: 8px;
+  background: transparent !important;
+}
+
+.collapse-btn:hover {
+  background: var(--surface-2) !important;
+  border-color: var(--strong-border) !important;
+}
+
+.dashboard-health-pill,
+.resource-highlight-row__tone,
+.process-summary-chip {
+  border: 1px solid var(--border-color);
+  background: var(--surface-2);
+  color: var(--text-color);
+}
+
+.dashboard-health-pill.is-healthy,
+.dashboard-health-pill.is-warning,
+.dashboard-health-pill.is-danger,
+.dashboard-health-pill.is-offline,
+.resource-highlight-row__tone.is-healthy,
+.resource-highlight-row__tone.is-warning,
+.resource-highlight-row__tone.is-danger {
+  background: var(--surface-2);
+  color: var(--text-color);
+}
+
+.dashboard-kpi,
+.hero-summary-memory,
+.resource-highlight-row,
+.system-fact,
+.network-summary-item,
+.disk-card,
+.interface-card,
+.memory-composition {
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.hero-alert-strip {
+  border: 1px solid color-mix(in srgb, var(--error-color) 22%, var(--border-color));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--error-color) 6%, var(--surface-2));
+}
+
+.hero-alert-strip__item {
+  background: var(--surface-1);
+}
+
+.resource-highlight-row__icon,
+.process-value--cpu,
+.process-rank {
+  color: var(--text-color);
+}
+
+.process-rank {
+  background: var(--surface-2);
+}
+
+.process-table :deep(.ant-table-thead > tr > th) {
+  color: var(--muted-color);
+  background: var(--surface-2) !important;
+  border-bottom-color: var(--border-color) !important;
+}
+
+.process-table :deep(.ant-table-tbody > tr > td) {
+  border-bottom-color: var(--border-subtle) !important;
+}
+
+.resource-highlight-row__progress :deep(.ant-progress-inner),
+.disk-card :deep(.ant-progress-inner),
+.memory-composition__bar {
+  background: color-mix(in srgb, var(--muted-color) 12%, transparent) !important;
+}
+
+.panel-content-wrapper {
+  width: 286px;
+}
+
+.monitor-content,
+.right-panel--embedded.right-panel--monitor .monitor-content {
+  padding: 0;
+}
+
+.monitor-dashboard,
+.dashboard-stack,
+.dashboard-bottom-grid,
+.right-panel--embedded.right-panel--monitor .monitor-dashboard,
+.right-panel--embedded.right-panel--monitor .dashboard-stack,
+.right-panel--embedded.right-panel--monitor .dashboard-bottom-grid {
+  gap: 0;
+}
+
+.dashboard-hero-card,
+.dashboard-card,
+.right-panel--embedded.right-panel--monitor .dashboard-card,
+.right-panel--embedded.right-panel--monitor .dashboard-hero-card {
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+.dashboard-hero-card :deep(.ant-card-body),
+.dashboard-card :deep(.ant-card-body),
+.right-panel--embedded.right-panel--monitor .dashboard-hero-card :deep(.ant-card-body),
+.right-panel--embedded.right-panel--monitor .dashboard-card :deep(.ant-card-body) {
+  padding: 14px 16px !important;
+}
+
+.monitor-dashboard > .dashboard-hero-card,
+.monitor-dashboard > .dashboard-stack,
+.monitor-dashboard > .dashboard-bottom-grid {
+  border-top: 1px solid var(--border-color);
+}
+
+.monitor-dashboard > .dashboard-hero-card:first-child {
+  border-top: none;
+}
+
+.dashboard-stack .dashboard-card,
+.dashboard-bottom-grid .dashboard-card {
+  border-top: 1px solid var(--border-subtle) !important;
+}
+
+.dashboard-stack .dashboard-card:first-child {
+  border-top: none !important;
+}
+
+.dashboard-hero {
+  gap: 10px;
+}
+
+.dashboard-hero__title-row {
+  gap: 8px;
+}
+
+.dashboard-hero__title-row h3 {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.dashboard-hero__copy p {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.dashboard-hero__timestamp,
+.dashboard-kpi__label,
+.dashboard-kpi__meta,
+.dashboard-section-head__meta,
+.resource-highlight-row__meta,
+.resource-highlight-row__trend,
+.disk-card__identity span,
+.interface-card__identity span,
+.interface-card__totals,
+.hero-summary-memory__head span,
+.hero-summary-memory__legend-item span,
+.hero-alert-strip__description,
+.hero-alert-strip__header span,
+.process-table :deep(.ant-table-thead > tr > th),
+.process-table :deep(.ant-table-tbody > tr > td) {
+  color: var(--muted-color) !important;
+}
+
+.dashboard-section-head {
+  margin-bottom: 10px;
+}
+
+.dashboard-section-head h4 {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.dashboard-kpi-grid {
+  grid-template-columns: 1fr;
+  gap: 0;
+  margin-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.dashboard-kpi {
+  gap: 4px;
+  padding: 10px 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.dashboard-kpi + .dashboard-kpi {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.dashboard-kpi :deep(.ant-statistic-content) {
+  font-size: 18px;
+}
+
+.dashboard-health-pill,
+.resource-highlight-row__tone,
+.process-summary-chip {
+  min-height: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted-color);
+}
+
+.hero-summary-memory,
+.hero-alert-strip,
+.memory-composition,
+.system-fact,
+.network-summary-item,
+.disk-card,
+.interface-card,
+.right-panel--embedded.right-panel--monitor .hero-summary-memory,
+.right-panel--embedded.right-panel--monitor .hero-alert-strip,
+.right-panel--embedded.right-panel--monitor .memory-composition,
+.right-panel--embedded.right-panel--monitor .system-fact,
+.right-panel--embedded.right-panel--monitor .network-summary-item,
+.right-panel--embedded.right-panel--monitor .disk-card,
+.right-panel--embedded.right-panel--monitor .interface-card {
+  padding: 10px 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.hero-summary-memory,
+.hero-alert-strip,
+.memory-composition,
+.system-fact,
+.network-summary-item,
+.disk-card,
+.interface-card {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.resource-highlight-list {
+  gap: 0;
+}
+
+.resource-highlight-row,
+.right-panel--embedded.right-panel--monitor .resource-highlight-row {
+  gap: 6px;
+  padding: 10px 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.resource-highlight-row + .resource-highlight-row {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.resource-highlight-row__name,
+.disk-card__identity strong,
+.interface-card__identity strong,
+.hero-alert-strip__header strong,
+.hero-alert-strip__message,
+.hero-summary-memory__head strong,
+.hero-summary-memory__legend-item strong,
+.system-fact strong,
+.network-summary-item strong,
+.interface-card__metric,
+.process-command,
+.process-value {
+  color: var(--text-color);
+}
+
+.resource-highlight-row__name,
+.system-fact strong,
+.network-summary-item strong,
+.interface-card__metric,
+.disk-card__identity strong,
+.process-command,
+.process-value {
+  font-weight: 600;
+}
+
+.resource-highlight-row__icon,
+.file-direction-icon,
+.section-icon,
+.item-icon,
+.stat-icon {
+  color: var(--muted-color);
+  font-size: 13px;
+}
+
+.resource-highlight-row__tone.is-healthy,
+.resource-highlight-row__tone.is-warning,
+.resource-highlight-row__tone.is-danger,
+.dashboard-health-pill.is-healthy,
+.dashboard-health-pill.is-warning,
+.dashboard-health-pill.is-danger,
+.dashboard-health-pill.is-offline {
+  color: var(--muted-color);
+}
+
+.process-summary-chips {
+  gap: 10px;
+}
+
+.process-summary-chip {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.process-rank {
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted-color);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.process-table :deep(.ant-table-thead > tr > th) {
+  background: transparent !important;
+  border-bottom-color: var(--border-color) !important;
+}
+
+.process-table :deep(.ant-table-tbody > tr > td) {
+  border-bottom-color: var(--border-subtle) !important;
+}
+
+.system-facts-grid,
+.network-summary-grid,
+.disk-grid,
+.interface-grid {
+  gap: 0;
+  grid-template-columns: 1fr;
+}
+
+.disk-card__row,
+.interface-card__row {
+  gap: 10px;
+}
+
+.hero-alert-strip {
+  color: var(--text-color);
+}
+
+.hero-alert-strip__item {
+  padding: 8px 0 0;
+  border-radius: 0;
+  background: transparent;
+  border-left: none;
+}
+
+.hero-alert-strip__item + .hero-alert-strip__item {
+  border-top: 1px solid var(--border-subtle);
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .panel-content-wrapper),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .monitor-content),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-hero-card),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-card) {
+  background: #171717 !important;
+  border-color: #303030 !important;
+  box-shadow: none !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .monitor-content) {
+  background: #171717 !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-kpi),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-summary-memory),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .disk-card),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .interface-card),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .memory-composition),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .system-fact),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .network-summary-item) {
+  background: transparent !important;
+  border-color: #262626 !important;
+  box-shadow: none !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-kpi--uptime),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-kpi--rx),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-kpi--tx),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row--cpu),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row--memory),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row--disk) {
+  --monitor-accent: var(--text-color) !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-kpi__label),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-kpi__meta),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row__meta),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row__trend),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-summary-memory__head span),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-summary-memory__legend-item span),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .disk-card__identity span),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .interface-card__identity span),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .interface-card__totals),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .process-table .ant-table-thead > tr > th),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .process-table .ant-table-tbody > tr > td) {
+  color: #a3a3a3 !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .process-table .ant-table-thead > tr > th) {
+  background: transparent !important;
+  border-bottom-color: #303030 !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .process-table .ant-table-tbody > tr > td) {
+  border-bottom-color: #262626 !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .process-rank),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .process-summary-chip),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dashboard-health-pill),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .resource-highlight-row__tone),
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dense-inline-pill) {
+  background: #1f1f1f !important;
+  border-color: #303030 !important;
+  color: #f5f5f5 !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .dense-inline-pill.is-active) {
+  background: #262626 !important;
+  border-color: #404040 !important;
+  color: #f5f5f5 !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .collapse-btn) {
+  background: transparent !important;
+  border-color: #303030 !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .collapse-btn:hover) {
+  background: #1f1f1f !important;
+  border-color: #f5f5f5 !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-refresh-btn) {
+  background: #1f1f1f !important;
+  border-color: #303030 !important;
+  color: #f5f5f5 !important;
+  box-shadow: none !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-refresh-btn:hover) {
+  background: #262626 !important;
+  border-color: #404040 !important;
+  color: #ffffff !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-alert-strip) {
+  background: color-mix(in srgb, var(--error-color) 10%, #1f1f1f) !important;
+  border-color: color-mix(in srgb, var(--error-color) 26%, #303030) !important;
+}
+
+:global(body[data-theme="dark"] .right-panel--embedded.right-panel--monitor .hero-alert-strip__item) {
+  background: transparent !important;
 }
 </style>

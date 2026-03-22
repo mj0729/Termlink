@@ -1,5 +1,9 @@
 export type ThemeName = 'light' | 'dark'
+export type ThemeMode = 'light' | 'dark' | 'system'
+export type ThemePresetId = 'minimal-black' | 'soft-gray' | 'terminal-green' | 'cool-slate'
+export type ThemeStatusSaturation = 'soft' | 'normal'
 export type TabType = 'ssh' | 'local' | 'file' | 'connections'
+export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected'
 export type TerminalCursorStyle = 'block' | 'underline' | 'bar'
 export type WorkspaceDensity = 'comfortable' | 'balanced' | 'compact'
 export type ConnectionHubViewMode = 'list' | 'grid'
@@ -26,6 +30,19 @@ export interface ThemeConfig {
   brightMagenta: string
   brightCyan: string
   brightWhite: string
+}
+
+export interface ThemeCenterConfig {
+  mode: ThemeMode
+  presetId: ThemePresetId
+  accentColor: string
+  statusSaturation: ThemeStatusSaturation
+}
+
+export interface ThemePresetOption extends SelectOption {
+  value: ThemePresetId
+  description?: string
+  accent?: string
 }
 
 export interface TerminalConfig {
@@ -137,7 +154,7 @@ export interface ConnectionTab {
   title: string
   type: TabType
   profile?: SshProfile | null
-  sshState?: 'connecting' | 'connected' | 'disconnected'
+  sshState?: ConnectionStatus
   autoPassword?: string | null
   fileInfo?: SftpFileEntry
   connectionId?: string

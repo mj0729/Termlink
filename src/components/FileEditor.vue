@@ -855,9 +855,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   overflow: hidden;
   border-radius: 0;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02)),
-    var(--terminal-bg);
+  background: var(--surface-1);
   position: relative;
 }
 
@@ -865,22 +863,23 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 12px;
-  background: var(--panel-header-bg);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
 }
 
 .file-info {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .file-name {
   font-weight: 600;
   font-size: 13px;
-  color: var(--primary-color);
+  color: var(--text-color);
 }
 
 .file-path {
@@ -898,32 +897,30 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 6px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .file-editor--immersive .editor-header {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 3;
-  padding: 0;
-  border-bottom: none;
-  background: transparent;
-  pointer-events: none;
+  position: relative;
+  top: auto;
+  right: auto;
+  z-index: 1;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--surface-1);
+  pointer-events: auto;
 }
 
 .file-editor--immersive .file-info {
-  display: none;
+  display: flex;
 }
 
 .file-editor--immersive .editor-actions {
-  padding: 7px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
-  box-shadow:
-    0 10px 24px rgba(41, 71, 116, 0.1),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(16px);
-  pointer-events: auto;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .editor-content {
@@ -942,36 +939,34 @@ onBeforeUnmount(() => {
 
 .large-file-toolbar {
   position: absolute;
-  right: 12px;
-  bottom: 12px;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--surface-1) 94%, transparent);
-  box-shadow:
-    0 14px 28px rgba(41, 71, 116, 0.14),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(16px);
-}
-
-.search-toolbar {
-  position: absolute;
-  top: 12px;
-  left: 12px;
+  right: 14px;
+  top: 14px;
   z-index: 3;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px;
-  border-radius: 12px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
   background: color-mix(in srgb, var(--surface-1) 96%, transparent);
-  box-shadow:
-    0 14px 28px rgba(41, 71, 116, 0.1),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(16px);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.search-toolbar {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-1) 96%, transparent);
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .search-toolbar :deep(.ant-input-affix-wrapper),
@@ -995,9 +990,7 @@ onBeforeUnmount(() => {
 .monaco-host {
   width: 100%;
   height: 100%;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 28%),
-    transparent;
+  background: transparent;
 }
 
 .file-editor--immersive .monaco-host {
@@ -1008,7 +1001,7 @@ onBeforeUnmount(() => {
   display: block;
   width: 100%;
   height: 100%;
-  padding: 14px 16px 20px;
+  padding: 14px 16px 18px;
   border: none;
   outline: none;
   resize: none;
@@ -1023,15 +1016,16 @@ onBeforeUnmount(() => {
 }
 
 .file-editor--immersive .file-textarea {
-  padding-top: 16px;
+  padding-top: 14px;
 }
 
 .file-textarea.has-search-toolbar {
-  padding-top: 64px;
+  padding-top: 58px;
 }
 
 .file-textarea.has-large-file-toolbar {
-  padding-bottom: 76px;
+  padding-top: 60px;
+  padding-bottom: 18px;
 }
 
 .file-textarea.is-readonly {
@@ -1045,7 +1039,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--surface-1) 72%, transparent);
-  backdrop-filter: blur(6px);
+  background: color-mix(in srgb, var(--surface-1) 84%, transparent);
+  backdrop-filter: none;
 }
 </style>

@@ -70,24 +70,94 @@
       </a-form-item>
       
       <a-divider>主题设置</a-divider>
-      <a-form-item label="主题">
-        <a-segmented 
-          :options="[{label:'深色',value:'dark'},{label:'浅色',value:'light'}]" 
-          v-model:value="currentTheme" 
-          @change="handleThemeChange" 
+      <a-form-item label="主题模式">
+        <a-segmented
+          block
+          :options="themeModeOptions"
+          v-model:value="themeConfig.mode"
         />
+        <div class="settings-hint">
+          系统模式会跟随 macOS / Windows 当前配色方案，适合长期使用。
+        </div>
       </a-form-item>
+      <a-row :gutter="16">
+        <a-col :span="14">
+          <a-form-item label="主题预设">
+            <a-select
+              v-model:value="themeConfig.presetId"
+              :options="themePresetOptions"
+              style="width: 100%"
+              @change="handlePresetChange"
+            />
+            <div class="settings-hint">
+              {{ currentPresetDescription }}
+            </div>
+          </a-form-item>
+        </a-col>
+        <a-col :span="10">
+          <a-form-item label="状态色强度">
+            <a-segmented
+              block
+              :options="statusSaturationOptions"
+              v-model:value="themeConfig.statusSaturation"
+            />
+          </a-form-item>
+        </a-col>
+      </a-row>
+      <a-form-item label="强调色">
+        <div class="theme-accent-row">
+          <label class="theme-accent-swatch" aria-label="强调色选择器">
+            <input
+              class="theme-accent-native"
+              type="color"
+              :value="themeConfig.accentColor"
+              @input="handleAccentPickerInput"
+            />
+          </label>
+          <a-input
+            :value="themeConfig.accentColor"
+            placeholder="#111111"
+            @update:value="handleAccentTextInput"
+          />
+          <a-button class="settings-modal__button" @click="resetAccentColor">
+            跟随预设
+          </a-button>
+        </div>
+        <div class="settings-hint">
+          强调色会统一驱动按钮、焦点态、进度高亮和 antdv-next 的主色 token。
+        </div>
+      </a-form-item>
+      <div class="theme-summary-grid">
+        <div class="theme-summary-card">
+          <div class="theme-summary-card__label">当前主题方案</div>
+          <div class="theme-summary-card__value">{{ currentPresetLabel }}</div>
+          <div class="theme-summary-card__meta">
+            {{ currentModeLabel }} · {{ currentSaturationLabel }}
+          </div>
+        </div>
+        <div class="theme-summary-card">
+          <div class="theme-summary-card__label">状态语义</div>
+          <div class="theme-status-row">
+            <span class="theme-status-pill theme-status-pill--connected">成功</span>
+            <span class="theme-status-pill theme-status-pill--connecting">连接中</span>
+            <span class="theme-status-pill theme-status-pill--disconnected">断开</span>
+          </div>
+          <div class="theme-summary-card__meta">
+            三种状态颜色统一来自同一份主题配置。
+          </div>
+        </div>
+      </div>
       
       <a-divider>存储设置</a-divider>
       <a-form-item label="配置文件位置">
         <a-space-compact block>
-          <a-input 
+          <a-input
             :value="profilesDir" 
             readonly 
             placeholder="获取中..."
           />
-          <a-button @click="openProfilesDir" style="width: 60px">打开</a-button>
-          <a-button @click="getProfilesDirectory" style="width: 40px" title="刷新">
+          <a-button class="settings-modal__button" @click="openProfilesDir" style="width: 60px">打开</a-button>
+          <a-button class="settings-modal__button settings-modal__button--icon" @click="getProfilesDirectory" style="width: 40px" title="刷新">
             <ReloadOutlined />
           </a-button>
         </a-space-compact>
@@ -98,10 +168,16 @@
 
       <a-form-item label="连接导入导出">
         <div class="storage-actions">
-          <a-button @click="exportConnections(false)">导出连接配置</a-button>
-          <a-button type="primary" @click="exportConnections(true)">导出连接和密码</a-button>
-          <a-button @click="triggerImport">导入连接包</a-button>
-          <a-button @click="importFromSshConfig">导入 ~/.ssh/config</a-button>
+          <a-button class="settings-modal__button" @click="exportConnections(false)">导出连接配置</a-button>
+          <a-button
+            type="primary"
+            class="settings-modal__button settings-modal__primary-button"
+            @click="exportConnections(true)"
+          >
+            导出连接和密码
+          </a-button>
+          <a-button class="settings-modal__button" @click="triggerImport">导入连接包</a-button>
+          <a-button class="settings-modal__button" @click="importFromSshConfig">导入 ~/.ssh/config</a-button>
         </div>
         <div style="margin-top: 4px; color: var(--muted-color); font-size: 12px;">
           导出文件格式为 .tlink。包含密码的导出包会额外要求设置导出密码。
@@ -118,10 +194,14 @@
     <template #footer>
       <div class="settings-modal__footer">
         <a-button class="settings-modal__action settings-modal__action--ghost" @click="handleCancel">
-          Cancel
+          取消
         </a-button>
-        <a-button type="primary" class="settings-modal__action settings-modal__action--primary" @click="handleSave">
-          OK
+        <a-button
+          type="primary"
+          class="settings-modal__action settings-modal__action--primary settings-modal__primary-button"
+          @click="handleSave"
+        >
+          确定
         </a-button>
       </div>
     </template>
@@ -140,12 +220,34 @@ import type {
   SelectOption,
   SshProfile,
   TerminalConfig,
-  ThemeName
+  ThemeCenterConfig,
+  ThemeMode,
+  ThemeName,
+  ThemePresetOption,
+  ThemeStatusSaturation,
 } from '../types/app'
+
+const DEFAULT_THEME_CONFIG: ThemeCenterConfig = {
+  mode: 'light',
+  presetId: 'minimal-black',
+  accentColor: '#111111',
+  statusSaturation: 'soft',
+}
+
+function normalizeAccentColor(value: string | undefined, fallback: string) {
+  const normalized = value?.trim() || ''
+  if (/^#[0-9a-fA-F]{6}$/.test(normalized)) return normalized
+  if (/^#[0-9a-fA-F]{3}$/.test(normalized)) {
+    return `#${normalized.slice(1).split('').map((segment) => segment + segment).join('')}`
+  }
+  return fallback
+}
 
 const props = withDefaults(defineProps<{
   visible?: boolean
   terminalConfig?: TerminalConfig
+  themeConfig?: ThemeCenterConfig
+  themePresetOptions?: ThemePresetOption[]
   theme?: ThemeName
   profiles?: SshProfile[]
 }>(), {
@@ -158,14 +260,21 @@ const props = withDefaults(defineProps<{
     density: 'compact',
     connectionHubViewMode: 'grid',
   }),
+  themeConfig: () => ({
+    mode: 'light',
+    presetId: 'minimal-black',
+    accentColor: '#111111',
+    statusSaturation: 'soft',
+  }),
+  themePresetOptions: () => [],
   theme: 'dark',
   profiles: () => []
 })
 
-const emit = defineEmits(['update:visible', 'saveConfig', 'changeTheme', 'refreshProfiles'])
+const emit = defineEmits(['update:visible', 'saveConfig', 'saveThemeConfig', 'refreshProfiles'])
 
 const config = ref<TerminalConfig>({ ...props.terminalConfig })
-const currentTheme = ref<ThemeName>(props.theme)
+const themeConfig = ref<ThemeCenterConfig>({ ...props.themeConfig })
 const profilesDir = ref('')
 const importInputRef = ref<HTMLInputElement | null>(null)
 const closeIconNode = computed(() => h(CloseOutlined, { class: 'modal-close-icon' }))
@@ -223,23 +332,70 @@ const densityOptions: SelectOption[] = [
   { label: '平衡', value: 'balanced' },
   { label: '紧凑', value: 'compact' },
 ]
+const themeModeOptions: SelectOption[] = [
+  { label: '浅色', value: 'light' },
+  { label: '深色', value: 'dark' },
+  { label: '系统', value: 'system' },
+]
+const statusSaturationOptions: SelectOption[] = [
+  { label: '柔和', value: 'soft' },
+  { label: '标准', value: 'normal' },
+]
+const themePresetOptions = computed<SelectOption[]>(() => (
+  props.themePresetOptions.map((option) => ({
+    label: option.label,
+    value: option.value,
+  }))
+))
 const connectionHubViewOptions: SelectOption[] = [
   { label: '列表视图', value: 'list' },
   { label: '卡片视图', value: 'grid' },
 ]
+const currentPreset = computed(() => (
+  props.themePresetOptions.find((option) => option.value === themeConfig.value.presetId)
+  || props.themePresetOptions[0]
+  || null
+))
+const currentPresetDescription = computed(() => (
+  currentPreset.value?.description || '预设会统一控制浅色 / 深色表面的层次和基调。'
+))
+const currentPresetLabel = computed(() => currentPreset.value?.label || '自定义主题')
+const currentModeLabel = computed(() => {
+  const labels: Record<ThemeMode, string> = {
+    light: '固定浅色',
+    dark: '固定深色',
+    system: `跟随系统（当前 ${props.theme === 'dark' ? '深色' : '浅色'}）`,
+  }
+  return labels[themeConfig.value.mode]
+})
+const currentSaturationLabel = computed(() => {
+  const labels: Record<ThemeStatusSaturation, string> = {
+    soft: '状态色柔和',
+    normal: '状态色标准',
+  }
+  return labels[themeConfig.value.statusSaturation]
+})
 
 // 监听 props 变化，创建本地副本
 watch(() => props.terminalConfig, (newConfig) => {
   config.value = { ...newConfig }
 }, { deep: true, immediate: true })
 
-watch(() => props.theme, (newTheme) => {
-  currentTheme.value = newTheme
-}, { immediate: true })
+watch(() => props.themeConfig, (newConfig) => {
+  const fallbackAccent = props.themePresetOptions.find((option) => option.value === newConfig?.presetId)?.accent
+    || DEFAULT_THEME_CONFIG.accentColor
+
+  themeConfig.value = {
+    ...DEFAULT_THEME_CONFIG,
+    ...newConfig,
+    accentColor: normalizeAccentColor(newConfig?.accentColor, fallbackAccent),
+  }
+}, { deep: true, immediate: true })
 
 // 保存配置
 function handleSave() {
   emit('saveConfig', { ...config.value })
+  emit('saveThemeConfig', { ...themeConfig.value })
   emit('update:visible', false)
 }
 
@@ -248,13 +404,44 @@ function handleCancel() {
   emit('update:visible', false)
   // 重置配置
   config.value = { ...props.terminalConfig }
-  currentTheme.value = props.theme
+  themeConfig.value = {
+    ...DEFAULT_THEME_CONFIG,
+    ...props.themeConfig,
+  }
 }
 
-// 主题变化
-function handleThemeChange(value: ThemeName) {
-  currentTheme.value = value
-  emit('changeTheme', value)
+function handlePresetChange(value: ThemePresetOption['value']) {
+  const nextPreset = props.themePresetOptions.find((option) => option.value === value)
+  if (!nextPreset) return
+
+  themeConfig.value = {
+    ...themeConfig.value,
+    presetId: value,
+    accentColor: nextPreset.accent || themeConfig.value.accentColor,
+  }
+}
+
+function handleAccentColorChange(value: string) {
+  themeConfig.value = {
+    ...themeConfig.value,
+    accentColor: normalizeAccentColor(value, themeConfig.value.accentColor),
+  }
+}
+
+function handleAccentPickerInput(event: Event) {
+  handleAccentColorChange((event.target as HTMLInputElement).value)
+}
+
+function handleAccentTextInput(value: string) {
+  handleAccentColorChange(value)
+}
+
+function resetAccentColor() {
+  if (!currentPreset.value?.accent) return
+  themeConfig.value = {
+    ...themeConfig.value,
+    accentColor: currentPreset.value.accent,
+  }
 }
 
 // 获取配置文件目录
@@ -295,13 +482,13 @@ async function promptText(
   return new Promise<string | null>((resolve) => {
     Modal.confirm({
       title,
-      content: h('div', { style: 'display: grid; gap: 10px;' }, [
+      content: h('div', { class: 'termlink-confirm-stack' }, [
         h('div', { style: 'white-space: pre-line; line-height: 1.6;' }, description),
         h('input', {
+          class: 'termlink-confirm-input',
           type: password ? 'password' : 'text',
           autofocus: true,
           placeholder,
-          style: 'width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 8px;',
           onInput: (event: Event) => {
             value = (event.target as HTMLInputElement).value
           },
@@ -600,6 +787,112 @@ onMounted(() => {
   font-weight: 700;
 }
 
+.settings-hint {
+  margin-top: 6px;
+  color: var(--muted-color);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.theme-accent-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.theme-accent-swatch {
+  display: inline-flex;
+  width: 40px;
+  height: 36px;
+  padding: 5px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--surface-1);
+  cursor: pointer;
+}
+
+.theme-accent-native {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.theme-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.theme-summary-card {
+  min-height: 108px;
+  padding: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: var(--surface-1);
+}
+
+.theme-summary-card__label {
+  color: var(--muted-color);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.theme-summary-card__value {
+  margin-top: 10px;
+  color: var(--text-color);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.theme-summary-card__meta {
+  margin-top: 8px;
+  color: var(--muted-color);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.theme-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.theme-status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.theme-status-pill--connected {
+  background: var(--connection-connected-soft);
+  color: var(--connection-connected);
+  border-color: color-mix(in srgb, var(--connection-connected) 20%, transparent);
+}
+
+.theme-status-pill--connecting {
+  background: var(--connection-connecting-soft);
+  color: var(--connection-connecting);
+  border-color: color-mix(in srgb, var(--connection-connecting) 20%, transparent);
+}
+
+.theme-status-pill--disconnected {
+  background: var(--connection-disconnected-soft);
+  color: var(--connection-disconnected);
+  border-color: color-mix(in srgb, var(--connection-disconnected) 20%, transparent);
+}
+
 .storage-actions {
   display: flex;
   gap: 8px;
@@ -612,26 +905,71 @@ onMounted(() => {
   gap: 10px;
 }
 
-:deep(.settings-modal__action) {
+:global(.settings-modal__button) {
+  border-radius: 10px !important;
+  border-color: var(--border-color) !important;
+  background: var(--surface-1) !important;
+  color: var(--text-color) !important;
+  box-shadow: none !important;
+}
+
+:global(.settings-modal__button:hover) {
+  border-color: var(--strong-border) !important;
+  background: var(--surface-2) !important;
+  color: var(--text-color) !important;
+}
+
+:global(.settings-modal__button--icon) {
+  padding-inline: 0 !important;
+}
+
+:global(.settings-modal__action) {
   min-width: 78px;
   border-radius: 12px !important;
   font-weight: 700;
 }
 
-:deep(.settings-modal__action--ghost) {
+:global(.settings-modal__action--ghost) {
   background: var(--surface-2) !important;
   border-color: var(--border-color) !important;
   color: var(--text-color) !important;
 }
 
-:deep(.settings-modal__action--ghost:hover) {
+:global(.settings-modal__action--ghost:hover) {
   background: var(--hover-bg) !important;
   border-color: var(--strong-border) !important;
 }
 
-:deep(.settings-modal__action--primary) {
-  background: linear-gradient(135deg, var(--primary-color), #7db7ff) !important;
-  border-color: transparent !important;
-  color: #fff !important;
+:global(.settings-modal .ant-btn.settings-modal__primary-button),
+:global(.settings-modal .ant-btn-primary.settings-modal__primary-button) {
+  background: var(--text-color) !important;
+  border-color: var(--text-color) !important;
+  color: var(--bg-color) !important;
+}
+
+:global(.settings-modal .ant-btn.settings-modal__primary-button:hover),
+:global(.settings-modal .ant-btn-primary.settings-modal__primary-button:hover) {
+  background: var(--strong-border) !important;
+  border-color: var(--strong-border) !important;
+  color: var(--bg-color) !important;
+}
+
+:deep(.settings-modal .ant-modal-content),
+:deep(.settings-modal__container) {
+  border-radius: 14px !important;
+}
+
+:deep(.settings-modal__action) {
+  border-radius: 10px !important;
+}
+
+@media (max-width: 720px) {
+  .theme-accent-row {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+
+  .theme-summary-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

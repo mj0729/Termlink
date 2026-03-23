@@ -7,6 +7,12 @@
 
 ## 本次迁移更新
 
+- `RemoteDirectoryTree` 的左侧目录树已修正一次过度压缩带来的错行问题：aggressive 模式下的 `switcher/indent` 宽度从激进值回调一档，同时直接去掉 `.ant-tree-treenode` 默认外边距并固定 switcher 对齐，使展开箭头与文件夹图标重新回到同一行，且节点间距仍比初始状态更紧
+- `RemoteDirectoryTree` 的左侧目录树又继续收紧了一档：SSH 工作区 aggressive 模式下的节点最小高度从 `17px` 下调到 `15px`，节点行高从 `18px` 收到 `16px`，树内联编辑输入框高度也同步收口到 `15px`，仅继续压缩节点纵向占位，不改变缩进、图标和字体大小
+- `RemoteDirectoryTree` 的左侧目录树现已继续收紧节点高度：SSH 工作区 aggressive 模式下的节点最小高度从 `19px` 下调到 `17px`，重命名输入框高度也同步收口到 `17px`，仅压缩节点的纵向占位，不改变字体大小、图标尺寸和层级缩进
+- `RemoteFileTable` 的正文列表现已进一步收紧：compact 模式下的正文行高从 `28px` 下调到 `26px`，仅压缩文件列表每一行的垂直占位，不联动图标尺寸、文字字号和名称列内部间距，让列表整体更接近桌面文件管理器的紧凑密度
+- `RemoteFileTable` 的表头紧凑化样式链已修正到真实命中层：此前仅下调 `--remote-table-header-height` 不足以改变视觉高度，因为 `vxe-table` 默认的 `.vxe-table--render-default .vxe-header--column.is--padding .vxe-cell` 仍通过更高优先级的上下 padding 撑高表头；现在已显式覆盖该 header padding 与高度层级，并通过 `header-row-style / header-cell-style` 内联到组件节点，红框区域会真实收紧，同时不影响路径栏、搜索栏和正文行高
+- `RemoteFileTable` 的列表表头现已进一步压缩：表头高度变量从 `28px` 下调到 `24px`，只收紧列标题横条本身，不改路径栏、搜索栏或正文行高，让 SSH 远程文件工作台在紧凑桌面布局里腾出更多垂直可视空间，同时保留排序和列拖拽的操作热区
 - `Terminal` 已把终端右键菜单抽到共享工具函数，并收掉一批未实际参与行为判断的 SSH 会话本地缓存；SSH 终端在隐藏标签页时现在会解除事件订阅，重新激活时再按快照回放恢复，避免隐藏工作区持续消费 SSH 输出流
 - `RemoteFileWorkbench` 已把重命名、创建目录、删除、拖拽移动、`chmod/chown` 等变更型操作统一抽到 `useRemoteFileActions`，共享“执行命令 → 刷新列表 → 刷新树 → 记录审计”的副作用链，搜索结果也恢复为“先过滤、再排序”的一致数据流
 - `RightPanel` 现在会把“监控是否可见”作为轮询前置条件：切到下载面板或折叠后会立即停止刷新，不再在用户根本没看监控时继续拉系统信息

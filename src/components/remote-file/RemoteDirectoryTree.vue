@@ -431,6 +431,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: var(--remote-tree-node-gap, 6px);
   font-size: var(--remote-tree-font-size, 12px);
+  line-height: var(--remote-tree-node-line-height, 24px);
   color: var(--remote-tree-text);
   padding: var(--remote-tree-title-padding-y, 2px) var(--remote-tree-title-padding-x, 6px);
   border-radius: var(--remote-tree-title-radius, 6px);
@@ -497,6 +498,7 @@ onBeforeUnmount(() => {
 
 .remote-tree :deep(.ant-tree-treenode) {
   padding-block: 0;
+  margin-block: 0 !important;
   display: flex !important;
   align-items: center;
   width: auto !important;
@@ -513,8 +515,11 @@ onBeforeUnmount(() => {
 .remote-tree :deep(.ant-tree-switcher-noop) {
   width: var(--remote-tree-switcher-width, 16px);
   min-width: var(--remote-tree-switcher-width, 16px);
+  height: var(--remote-tree-node-line-height, 24px);
+  line-height: var(--remote-tree-node-line-height, 24px);
   margin-inline-end: 1px;
   display: inline-flex;
+  align-self: center;
   align-items: center;
   justify-content: center;
 }
@@ -530,6 +535,7 @@ onBeforeUnmount(() => {
 
 .remote-tree :deep(.ant-tree-node-content-wrapper) {
   min-height: var(--remote-tree-node-min-height, 24px);
+  line-height: var(--remote-tree-node-line-height, 24px);
   margin: var(--remote-tree-node-margin-y, 1px) 0;
   padding: 0 1px !important;
   border-radius: var(--remote-tree-content-radius, 6px);

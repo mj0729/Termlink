@@ -56,12 +56,12 @@ defineEmits<{
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 12px;
+  padding: 3px 12px;
   font-size: 11px;
   color: var(--muted-color, #999);
   border-top: 1px solid var(--border-color, #e8e8e8);
   background: var(--surface-1, #ffffff);
-  min-height: 30px;
+  min-height: 26px;
 }
 
 .remote-status-bar__left,
@@ -84,8 +84,14 @@ defineEmits<{
   color: var(--text-color, #111111);
 }
 
-.remote-status-bar__toggle :deep(.ant-btn) {
+:deep(.remote-status-bar__toggle.ant-btn) {
   font-size: 12px;
+  padding: 0 4px;
+  min-width: 20px;
+  width: 20px;
+  height: 20px;
+  line-height: 20px;
+  border-radius: 6px;
 }
 
 .remote-status-bar__disk {
@@ -94,10 +100,12 @@ defineEmits<{
 
 .remote-status-bar--compact {
   gap: 8px;
+  min-height: 22px;
+  padding-block: 1px;
 }
 
-.remote-status-bar__toggle :deep(.anticon) {
-  font-size: 12px;
+:deep(.remote-status-bar__toggle .anticon) {
+  font-size: 11px;
   color: currentColor;
 }
 </style>

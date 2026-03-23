@@ -771,6 +771,7 @@ watch(() => props.sshState, (nextState, prevState) => {
   --remote-tree-pad-bottom: 6px;
   --remote-tree-pad-left: 8px;
   --remote-tree-node-min-height: 24px;
+  --remote-tree-node-line-height: 24px;
   --remote-tree-node-margin-y: 1px;
   --remote-tree-node-gap: 6px;
   --remote-tree-title-padding-y: 2px;
@@ -805,18 +806,19 @@ watch(() => props.sshState, (nextState, prevState) => {
   --remote-tree-pad-right: 2px;
   --remote-tree-pad-bottom: 2px;
   --remote-tree-pad-left: 2px;
-  --remote-tree-node-min-height: 19px;
+  --remote-tree-node-min-height: 15px;
+  --remote-tree-node-line-height: 16px;
   --remote-tree-node-margin-y: 0px;
   --remote-tree-node-gap: 2px;
   --remote-tree-title-padding-y: 0px;
   --remote-tree-title-padding-x: 2px;
   --remote-tree-title-radius: 3px;
   --remote-tree-content-radius: 0px;
-  --remote-tree-input-height: 19px;
+  --remote-tree-input-height: 15px;
   --remote-tree-input-padding-x: 2px;
   --remote-tree-input-radius: 0px;
   --remote-tree-icon-size: 14px;
-  --remote-tree-switcher-width: 10px;
+  --remote-tree-switcher-width: 12px;
   --remote-tree-indent-width: 12px;
   --remote-tree-font-size: 12px;
 }

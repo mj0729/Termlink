@@ -15,6 +15,8 @@
       :data="files"
       :loading="loading"
       height="100%"
+      :header-row-style="headerRowStyle"
+      :header-cell-style="headerCellStyle"
       :scroll-y="{ enabled: true, gt: 200 }"
       :column-config="{ resizable: true }"
       :row-config="rowConfig"
@@ -160,6 +162,8 @@ const renameInputRef = ref<HTMLInputElement | null>(null)
 const isDragOver = ref(false)
 const isFocused = ref(false)
 let tableResizeObserver: ResizeObserver | null = null
+let headerStyleObserver: MutationObserver | null = null
+let isSyncingHeaderHeights = false
 
 function handleRightPanelTransitionEnd() {
   updateTableViewportWidth()
@@ -176,15 +180,28 @@ const displayColumnWidths = computed(() => {
   widths.name = Math.max(widths.name, fillWidth)
   return widths
 })
+const headerHeight = computed(() => {
+  if (props.density === 'comfortable') return 26
+  if (props.density === 'balanced') return 24
+  return 24
+})
 const rowHeight = computed(() => {
   if (props.density === 'comfortable') return 32
   if (props.density === 'balanced') return 30
-  return 28
+  return 26
 })
+const headerRowStyle = computed(() => ({
+  height: `${headerHeight.value}px`,
+}))
+const headerCellStyle = computed(() => ({
+  height: `${headerHeight.value}px`,
+  padding: '0 8px',
+  boxSizing: 'border-box',
+}))
 const tableStyleVars = computed(() => {
   const nameCellPadding = props.density === 'comfortable' ? '2px 4px' : '1px 4px'
   return {
-    '--remote-table-header-height': '28px',
+    '--remote-table-header-height': `${headerHeight.value}px`,
     '--remote-table-row-height': `${rowHeight.value}px`,
     '--remote-name-cell-padding': nameCellPadding,
   }
@@ -259,6 +276,31 @@ function persistColumnWidths() {
 function updateTableViewportWidth() {
   tableViewportWidth.value = tableWrapRef.value?.clientWidth || 0
   tableRef.value?.recalculate?.()
+  scheduleHeaderCellHeightsSync()
+}
+
+function syncHeaderCellHeights() {
+  const headerCells = tableWrapRef.value?.querySelectorAll<HTMLElement>('.vxe-header--column .vxe-cell')
+  if (!headerCells?.length) return
+  const height = `${headerHeight.value}px`
+  isSyncingHeaderHeights = true
+  headerCells.forEach((cell) => {
+    cell.style.setProperty('min-height', height, 'important')
+    cell.style.setProperty('height', height, 'important')
+  })
+  isSyncingHeaderHeights = false
+}
+
+function scheduleHeaderCellHeightsSync() {
+  nextTick(() => {
+    syncHeaderCellHeights()
+    requestAnimationFrame(() => {
+      syncHeaderCellHeights()
+    })
+    window.setTimeout(() => {
+      syncHeaderCellHeights()
+    }, 0)
+  })
 }
 
 function normalizeDirPrefix(path: string) {
@@ -712,6 +754,10 @@ watch(() => props.renameView, (view) => {
   }
 })
 
+watch(headerHeight, () => {
+  scheduleHeaderCellHeightsSync()
+})
+
 // ===================== Lifecycle =====================
 
 onMounted(() => {
@@ -730,6 +776,17 @@ onMounted(() => {
     updateTableViewportWidth()
   })
   tableResizeObserver.observe(el)
+  headerStyleObserver = new MutationObserver(() => {
+    if (isSyncingHeaderHeights) return
+    scheduleHeaderCellHeightsSync()
+  })
+  headerStyleObserver.observe(el, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ['style'],
+  })
+  scheduleHeaderCellHeightsSync()
 })
 
 onBeforeUnmount(() => {
@@ -744,6 +801,8 @@ onBeforeUnmount(() => {
   }
   tableResizeObserver?.disconnect()
   tableResizeObserver = null
+  headerStyleObserver?.disconnect()
+  headerStyleObserver = null
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', onPointerUp)
   window.removeEventListener('pointercancel', onPointerUp)
@@ -783,6 +842,7 @@ onBeforeUnmount(() => {
   padding-block: 0;
 }
 
+.remote-file-table :deep(.vxe-table--render-default .vxe-header--row),
 .remote-file-table :deep(.vxe-header--row) {
   height: var(--remote-table-header-height);
 }
@@ -828,7 +888,19 @@ onBeforeUnmount(() => {
   line-height: calc(var(--remote-table-row-height) - 6px);
 }
 
+.remote-file-table :deep(.vxe-table--render-default .vxe-header--column) {
+  height: var(--remote-table-header-height);
+}
+
+.remote-file-table :deep(.vxe-table--render-default .vxe-header--column.is--padding .vxe-cell) {
+  box-sizing: border-box;
+  height: var(--remote-table-header-height);
+  min-height: var(--remote-table-header-height);
+  padding: 0 8px;
+}
+
 .remote-file-table :deep(.vxe-header--column .vxe-cell) {
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   height: var(--remote-table-header-height);

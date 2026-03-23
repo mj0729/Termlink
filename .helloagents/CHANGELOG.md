@@ -1,5 +1,53 @@
 # 变更记录
 
+## [0.0.36] - 2026-03-23
+
+### 修复
+
+- **[workspace-ui]**: 修正左侧目录树在继续压缩缩进后出现的错行对齐问题；`RemoteFileWorkbench` 现将 aggressive 模式下的 `switcher/indent` 宽度从激进值回调一档，`RemoteDirectoryTree` 也同步去掉 `.ant-tree-treenode` 默认外边距并固定 switcher 对齐，使展开箭头与文件夹图标恢复到同一行，同时节点间距仍比初始状态更紧；已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603231800_remote-directory-tree-align-and-tighten](archive/2026-03/202603231800_remote-directory-tree-align-and-tighten/)
+  - 决策: remote-directory-tree-align-and-tighten#D001(回退过度缩进压缩，改为直接压节点间距)
+
+## [0.0.35] - 2026-03-23
+
+### 变更
+
+- **[workspace-ui]**: 继续将 SSH 工作区左侧目录树节点压紧一档；`RemoteFileWorkbench` 现将 aggressive 模式下的目录节点最小高度从 `17px` 下调到 `15px`，节点行高从 `18px` 收到 `16px`，并同步把树内联编辑输入框高度收口到 `15px`，只压缩节点纵向占位，不调整缩进、图标和字体大小；已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603231743_remote-directory-tree-row-spacing-tighten-more](archive/2026-03/202603231743_remote-directory-tree-row-spacing-tighten-more/)
+  - 决策: remote-directory-tree-row-spacing-tighten-more#D001(只继续下调 aggressive 节点高度链一档)
+
+## [0.0.34] - 2026-03-23
+
+### 变更
+
+- **[workspace-ui]**: 继续收紧 SSH 工作区左侧目录树的节点高度；`RemoteFileWorkbench` 现将 aggressive 模式下的目录节点最小高度从 `19px` 下调到 `17px`，并同步把树内联编辑输入框高度收口到 `17px`，只压缩节点的纵向占位，不调整字体大小、图标尺寸和层级缩进；已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603231733_remote-directory-tree-row-spacing-tighten](archive/2026-03/202603231733_remote-directory-tree-row-spacing-tighten/)
+  - 决策: remote-directory-tree-row-spacing-tighten#D001(仅下调 aggressive 目录树节点高度变量)
+
+## [0.0.33] - 2026-03-23
+
+### 变更
+
+- **[workspace-ui]**: 收紧远程文件表格正文列表的行距；`RemoteFileTable` 现将 compact 模式下的正文行高从 `28px` 下调到 `26px`，只压缩文件列表每一行的垂直占位，不调整图标尺寸、文字字号和名称列内部间距，让远程文件区整体密度进一步贴近桌面文件管理器；已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603231729_remote-file-table-row-spacing-tighten](archive/2026-03/202603231729_remote-file-table-row-spacing-tighten/)
+  - 决策: remote-file-table-row-spacing-tighten#D001(仅下调 compact 正文行高，不联动图标与字号)
+
+## [0.0.32] - 2026-03-23
+
+### 修复
+
+- **[workspace-ui]**: 修正远程文件表格表头“变量已调整但视觉高度几乎不变”的真实根因；此前仅将 `RemoteFileTable` 的 `--remote-table-header-height` 从 `28px` 降到 `24px`，但 `vxe-table` 默认的 `.vxe-table--render-default .vxe-header--column.is--padding .vxe-cell` 仍以更高优先级的上下 padding 撑高表头。现已显式覆盖该 header padding 与高度层级，并通过 `header-row-style / header-cell-style` 将表头高度直接内联到组件节点，使表头压缩真正作用到界面，同时保持路径栏、搜索栏和正文行高不变；已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603231650_remote-file-table-header-effective-height-fix](archive/2026-03/202603231650_remote-file-table-header-effective-height-fix/)
+  - 决策: remote-file-table-header-effective-height-fix#D001(覆盖 vxe-table 默认 header padding，而不再只改低优先级高度变量)
+
+## [0.0.31] - 2026-03-23
+
+### 变更
+
+- **[workspace-ui]**: 收紧远程文件表格的列表表头高度；`RemoteFileTable` 现将表头高度变量从 `28px` 下调到 `24px`，只压缩列标题横条本身，不影响路径栏、搜索栏和正文行高，使 SSH 远程文件工作台在保持排序与列拖拽交互不变的前提下获得更紧凑的顶部占位；已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603231643_remote-file-table-header-compact](archive/2026-03/202603231643_remote-file-table-header-compact/)
+  - 决策: remote-file-table-header-compact#D001(仅下调远程文件表格表头高度，不扩展到路径栏或正文行高)
+
 ## [0.0.30] - 2026-03-23
 
 ### 变更

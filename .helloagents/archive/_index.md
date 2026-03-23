@@ -18,3 +18,9 @@
 | 202603201716 | vite8-upgrade | - | - | - | ✅完成 |
 
 | 202603221239 | network-interface-operstate-alert | - | - | - | ✅完成 |
+| 202603231643 | remote-file-table-header-compact | - | - | - | ✅完成 |
+| 202603231650 | remote-file-table-header-effective-height-fix | - | - | - | ✅完成 |
+| 202603231729 | remote-file-table-row-spacing-tighten | - | - | - | ✅完成 |
+| 202603231733 | remote-directory-tree-row-spacing-tighten | - | - | - | ✅完成 |
+| 202603231743 | remote-directory-tree-row-spacing-tighten-more | - | - | - | ✅完成 |
+| 202603231800 | remote-directory-tree-align-and-tighten | - | - | - | ✅完成 |

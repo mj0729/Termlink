@@ -239,6 +239,7 @@ const emit = defineEmits(['toggle-disks'])
 .disk-card__mountpoint,
 .disk-card__device,
 .disk-card__summary,
+.interface-card__identity strong,
 .interface-card__identity span {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -273,6 +274,7 @@ const emit = defineEmits(['toggle-disks'])
   align-items: center;
   justify-content: flex-end;
   gap: 4px 8px;
+  min-width: 0;
 }
 
 .interface-card__metric {
@@ -349,6 +351,11 @@ const emit = defineEmits(['toggle-disks'])
   padding: 8px 0;
 }
 
+.dashboard-bottom-grid--embedded .interface-card__row {
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+
 .dashboard-bottom-grid--embedded .disk-card__compact-head,
 .dashboard-bottom-grid--embedded .disk-card__compact-meta {
   gap: 4px 8px;
@@ -377,6 +384,7 @@ const emit = defineEmits(['toggle-disks'])
 }
 
 .dashboard-bottom-grid--embedded .interface-card__live {
+  justify-content: flex-start;
   gap: 2px 8px;
 }
 

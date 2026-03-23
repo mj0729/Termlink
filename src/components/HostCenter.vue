@@ -29,26 +29,28 @@
               @click="selectedGroup = group.value"
             >
               <span class="hub-nav-item__label">{{ group.label }}</span>
-              <span class="hub-nav-item__count">{{ group.count }}</span>
-              <span v-if="group.value !== '__all__'" class="hub-nav-item__actions">
-                <button
-                  type="button"
-                  class="hub-icon-action"
-                  aria-label="编辑分组"
-                  title="编辑分组"
-                  @click.stop="emit('renameGroup', group.value)"
-                >
-                  <EditOutlined aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  class="hub-icon-action hub-icon-action--danger"
-                  aria-label="删除分组"
-                  title="删除分组"
-                  @click.stop="emit('deleteGroup', group.value)"
-                >
-                  <DeleteOutlined aria-hidden="true" />
-                </button>
+              <span class="hub-nav-item__trail">
+                <span class="hub-nav-item__count">{{ group.count }}</span>
+                <span v-if="group.value !== '__all__'" class="hub-nav-item__actions">
+                  <button
+                    type="button"
+                    class="hub-icon-action"
+                    aria-label="编辑分组"
+                    title="编辑分组"
+                    @click.stop="emit('renameGroup', group.value)"
+                  >
+                    <EditOutlined aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    class="hub-icon-action hub-icon-action--danger"
+                    aria-label="删除分组"
+                    title="删除分组"
+                    @click.stop="emit('deleteGroup', group.value)"
+                  >
+                    <DeleteOutlined aria-hidden="true" />
+                  </button>
+                </span>
               </span>
             </button>
           </div>
@@ -79,7 +81,9 @@
                 ></span>
                 <span>{{ tag.label }}</span>
               </span>
-              <span class="hub-nav-item__count">{{ tag.count }}</span>
+              <span class="hub-nav-item__trail">
+                <span class="hub-nav-item__count">{{ tag.count }}</span>
+              </span>
             </button>
           </div>
         </section>
@@ -627,7 +631,7 @@ watch(tagItems, (nextTags) => {
 .hub-nav-item {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
   gap: 8px;
   min-height: 34px;
   padding: 0 10px;
@@ -658,10 +662,21 @@ watch(tagItems, (nextTags) => {
   font-weight: 700;
 }
 
+.hub-nav-item__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .hub-nav-item__label--tag {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.hub-nav-item__label--tag > span:last-child {
+  min-width: 0;
 }
 
 .hub-nav-item__dot {
@@ -671,15 +686,30 @@ watch(tagItems, (nextTags) => {
   flex-shrink: 0;
 }
 
+.hub-nav-item__trail {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-width: fit-content;
+}
+
 .hub-nav-item__count {
-  margin-left: auto;
   font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  min-width: 18px;
+  white-space: nowrap;
 }
 
 .hub-nav-item__actions {
   display: flex;
   align-items: center;
   gap: 2px;
+  flex: 0 0 auto;
   opacity: 0.4;
   transition: opacity 0.18s ease;
 }
@@ -1200,7 +1230,7 @@ watch(tagItems, (nextTags) => {
 }
 
 .hub-workbench {
-  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-columns: clamp(248px, 23vw, 280px) minmax(0, 1fr);
   gap: 0;
 }
 
@@ -1491,5 +1521,123 @@ watch(tagItems, (nextTags) => {
 :global(body[data-theme="dark"] .hub-icon-action:hover) {
   border-color: #303030;
   background: #1f1f1f;
+}
+
+@media (max-width: 1120px) {
+  .hub-workbench {
+    grid-template-columns: clamp(236px, 26vw, 268px) minmax(0, 1fr);
+  }
+
+  .hub-sidebar {
+    grid-template-columns: 1fr;
+    gap: 20px;
+    padding: 18px 16px;
+    border-right: 1px solid var(--border-color);
+    border-bottom: none;
+  }
+
+  .hub-sidebar__section {
+    padding: 0 0 16px;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .hub-sidebar__section:last-child {
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+
+  .hub-toolbar__actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .hub-list__head,
+  .hub-row {
+    grid-template-columns: minmax(220px, 1.3fr) minmax(190px, 1fr) minmax(100px, 0.7fr) 72px;
+  }
+
+  .hub-row__cell--tags,
+  .hub-list__head span:nth-child(4) {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .hub-workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .hub-sidebar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    padding: 16px 18px;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .hub-sidebar__section {
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .connection-hub {
+    padding: 0;
+  }
+
+  .hub-sidebar {
+    grid-template-columns: 1fr;
+    gap: 20px;
+    padding: 14px 16px;
+  }
+
+  .hub-sidebar__section {
+    padding: 0 0 16px;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .hub-sidebar__section:last-child {
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+
+  .hub-main__bar,
+  .hub-content {
+    padding: 14px 16px;
+  }
+
+  .hub-search,
+  .hub-toolbar__actions,
+  .hub-action {
+    width: 100%;
+  }
+
+  .hub-main__summary {
+    margin-left: 0;
+  }
+
+  .hub-toolbar__actions :deep(.ant-btn) {
+    flex: 1;
+  }
+
+  .hub-list__head {
+    display: none;
+  }
+
+  .hub-row,
+  .hub-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hub-row__cell--meta {
+    justify-content: flex-start;
+  }
+
+  .hub-row__cell--actions,
+  .hub-card__actions {
+    justify-content: flex-start;
+    opacity: 1;
+  }
 }
 </style>

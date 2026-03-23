@@ -109,7 +109,20 @@
         ></textarea>
       </div>
       <div v-if="loading" class="editor-loading-overlay">
-        <a-spin tip="加载文件内容..." size="large" />
+        <div v-if="loadingProgressVisible" class="editor-loading-card">
+          <span class="editor-loading-card__title">加载文件内容...</span>
+          <a-progress
+            :percent="loadingProgressPercent"
+            status="active"
+            :show-info="false"
+            stroke-linecap="round"
+          />
+          <div class="editor-loading-card__meta">
+            <span>{{ loadingProgressPercent }}%</span>
+            <span>{{ loadingProgressText }}</span>
+          </div>
+        </div>
+        <a-spin v-else tip="加载文件内容..." size="large" />
       </div>
     </div>
   </div>
@@ -161,6 +174,8 @@ const emit = defineEmits(['startDownload'])
 
 const LARGE_FILE_CHUNK_BYTES = 2 * 1024 * 1024
 const LARGE_FILE_READONLY_BYTES = 256 * 1024
+const INITIAL_LOAD_CHUNK_BYTES = 256 * 1024
+const INITIAL_LOAD_PROGRESS_THRESHOLD_BYTES = 128 * 1024
 
 interface SftpTextChunk {
   content: string
@@ -384,6 +399,9 @@ const downloading = ref(false)
 const loadingMore = ref(false)
 const loadedBytes = ref(0)
 const totalBytes = ref(0)
+const loadingProgressBytes = ref(0)
+const loadingProgressTotalBytes = ref(0)
+const loadingProgressVisible = ref(false)
 const hasMoreChunks = ref(false)
 const chunkedLoadingActive = ref(false)
 const searchVisible = ref(false)
@@ -406,6 +424,25 @@ const immersiveReadonly = computed(() => readOnly.value && isImmersiveFile(props
 const shouldUseChunkedLoading = computed(() => (
   isImmersiveFile(props.fileInfo.name) && (props.fileInfo.size || 0) > LARGE_FILE_CHUNK_BYTES
 ))
+const shouldUseProgressiveInitialLoad = computed(() => (
+  !shouldUseChunkedLoading.value && (props.fileInfo.size || 0) >= INITIAL_LOAD_PROGRESS_THRESHOLD_BYTES
+))
+const loadingProgressPercent = computed(() => {
+  if (!loadingProgressVisible.value) return 0
+
+  const total = loadingProgressTotalBytes.value || props.fileInfo.size || 0
+  if (total <= 0) return 0
+
+  return Math.min(100, Math.max(1, Math.round((loadingProgressBytes.value / total) * 100)))
+})
+const loadingProgressText = computed(() => {
+  const total = loadingProgressTotalBytes.value || props.fileInfo.size || 0
+  if (total <= 0) {
+    return '正在读取远程文件'
+  }
+
+  return `${formatFileSize(loadingProgressBytes.value)} / ${formatFileSize(total)}`
+})
 const searchSummary = computed(() => {
   if (!searchQuery.value) {
     return chunkedLoadingActive.value ? '搜索仅针对已加载内容' : 'Monaco 自带搜索'
@@ -440,6 +477,9 @@ function resetLoadState() {
   hasLoaded.value = false
   loadedBytes.value = 0
   totalBytes.value = props.fileInfo.size || 0
+  loadingProgressBytes.value = 0
+  loadingProgressTotalBytes.value = props.fileInfo.size || 0
+  loadingProgressVisible.value = false
   hasMoreChunks.value = false
   chunkedLoadingActive.value = false
   loadingMore.value = false
@@ -675,6 +715,35 @@ async function appendChunk(offset: number, replaceContent = false) {
   })
 }
 
+async function readFullFileWithProgress() {
+  if (!props.connectionId) return ''
+
+  const chunks: string[] = []
+  let offset = 0
+  let hasMore = true
+
+  loadingProgressVisible.value = true
+  loadingProgressBytes.value = 0
+  loadingProgressTotalBytes.value = props.fileInfo.size || 0
+
+  while (hasMore) {
+    const chunk = await invoke<SftpTextChunk>('read_sftp_file_chunk', {
+      connectionId: props.connectionId,
+      path: props.fileInfo.path,
+      offset,
+      maxBytes: INITIAL_LOAD_CHUNK_BYTES
+    })
+
+    chunks.push(chunk.content)
+    offset = chunk.nextOffset
+    hasMore = chunk.hasMore
+    loadingProgressBytes.value = chunk.nextOffset
+    loadingProgressTotalBytes.value = chunk.totalBytes || props.fileInfo.size || 0
+  }
+
+  return chunks.join('')
+}
+
 // 加载文件内容
 async function loadFileContent() {
   if (!props.active || !props.connectionId) return
@@ -685,13 +754,19 @@ async function loadFileContent() {
     if (shouldUseChunkedLoading.value) {
       await appendChunk(0, true)
     } else {
-      const content = await invoke<string>('read_sftp_file', {
-        connectionId: props.connectionId,
-        path: props.fileInfo.path
-      })
+      const content = shouldUseProgressiveInitialLoad.value
+        ? await readFullFileWithProgress()
+        : await invoke<string>('read_sftp_file', {
+            connectionId: props.connectionId,
+            path: props.fileInfo.path
+          })
       fileContent.value = content
       originalContent.value = content
       hasLoaded.value = true
+      loadedBytes.value = loadingProgressVisible.value
+        ? loadingProgressTotalBytes.value || props.fileInfo.size || content.length
+        : content.length
+      totalBytes.value = Math.max(loadedBytes.value, props.fileInfo.size || 0)
       resetEditorMode()
       await nextTick()
       await refreshMonacoEditor()
@@ -705,6 +780,7 @@ async function loadFileContent() {
       message.error('加载文件失败: ' + errorMessage)
     }
   } finally {
+    loadingProgressVisible.value = false
     loading.value = false
   }
 }
@@ -1048,5 +1124,36 @@ onBeforeUnmount(() => {
   justify-content: center;
   background: color-mix(in srgb, var(--surface-1) 84%, transparent);
   backdrop-filter: none;
+}
+
+.editor-loading-card {
+  display: grid;
+  gap: 10px;
+  width: min(320px, calc(100% - 48px));
+  padding: 18px 18px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-1) 96%, transparent);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--text-color) 8%, transparent);
+}
+
+.editor-loading-card__title {
+  color: var(--text-color);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.editor-loading-card__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted-color);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.editor-loading-card :deep(.ant-progress-inner) {
+  background: var(--surface-2);
 }
 </style>

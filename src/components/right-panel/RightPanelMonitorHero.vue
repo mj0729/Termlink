@@ -51,52 +51,6 @@
       </div>
     </div>
 
-    <div class="hero-summary-memory">
-      <div class="hero-summary-memory__head">
-        <span>内存构成</span>
-        <strong>{{ formatSize(memoryInfo.used) }} / {{ formatSize(memoryInfo.total) }}</strong>
-      </div>
-      <a-tooltip v-if="isEmbedded" placement="topLeft" overlay-class-name="memory-composition-tooltip">
-        <template #title>
-          <div class="memory-composition__tooltip">
-            <div v-for="segment in memorySegments" :key="`${segment.label}-tooltip`" class="memory-composition__tooltip-item">
-              <span class="memory-legend-item__dot" :style="{ background: segment.color }"></span>
-              <span>{{ segment.label }}</span>
-              <strong>{{ segment.value }}</strong>
-            </div>
-          </div>
-        </template>
-        <div class="memory-composition__bar memory-composition__bar--interactive">
-          <span
-            v-for="segment in memorySegments"
-            :key="segment.label"
-            class="memory-composition__segment"
-            :style="{ width: `${segment.percent}%`, background: segment.color }"
-          ></span>
-        </div>
-      </a-tooltip>
-      <div v-else class="memory-composition__bar">
-        <span
-          v-for="segment in memorySegments"
-          :key="segment.label"
-          class="memory-composition__segment"
-          :style="{ width: `${segment.percent}%`, background: segment.color }"
-        ></span>
-      </div>
-      <div v-if="!isEmbedded" class="hero-summary-memory__legend">
-        <div
-          v-for="segment in memorySegments"
-          :key="segment.label"
-          class="hero-summary-memory__legend-item"
-          :style="{ '--memory-segment-color': segment.color }"
-        >
-          <span class="memory-legend-item__dot" :style="{ background: segment.color }"></span>
-          <span>{{ segment.label }}</span>
-          <strong>{{ segment.value }}</strong>
-        </div>
-      </div>
-    </div>
-
     <div v-if="alerts.length" class="hero-alert-strip">
       <div class="hero-alert-strip__header">
         <strong>告警</strong>
@@ -210,8 +164,6 @@ const emit = defineEmits(['toggle', 'refresh'])
 .dashboard-hero__timestamp,
 .dashboard-kpi__label,
 .dashboard-kpi__meta,
-.hero-summary-memory__head span,
-.hero-summary-memory__legend-item span,
 .hero-alert-strip__description,
 .hero-alert-strip__header span {
   color: var(--muted-color);
@@ -296,86 +248,17 @@ const emit = defineEmits(['toggle', 'refresh'])
   color: inherit;
 }
 
-.hero-summary-memory,
 .hero-alert-strip {
   padding: 10px 0;
   border-top: 1px solid var(--border-subtle);
 }
 
-.hero-summary-memory {
-  display: grid;
-  gap: 8px;
-  margin-top: 2px;
-}
-
-.hero-summary-memory__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.hero-summary-memory__head strong,
-.hero-summary-memory__legend-item strong,
-.memory-composition__tooltip-item strong,
 .hero-alert-strip__header strong,
 .hero-alert-strip__message {
   color: var(--text-color);
   font-family: "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
   font-size: 12px;
   font-weight: 600;
-}
-
-.hero-summary-memory__legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 12px;
-}
-
-.hero-summary-memory__legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.memory-composition__bar {
-  position: relative;
-  display: flex;
-  width: 100%;
-  height: 10px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--muted-color) 12%, transparent);
-}
-
-.memory-composition__segment {
-  min-width: 2%;
-}
-
-.memory-composition__bar--interactive {
-  cursor: help;
-}
-
-.memory-composition__tooltip {
-  display: grid;
-  gap: 6px;
-  min-width: 160px;
-}
-
-.memory-composition__tooltip-item {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 6px;
-  color: rgba(255, 255, 255, 0.92);
-  font-size: 12px;
-}
-
-.memory-legend-item__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
 }
 
 .hero-alert-strip {
@@ -460,8 +343,6 @@ const emit = defineEmits(['toggle', 'refresh'])
 .dashboard-hero-card--embedded .dashboard-hero__timestamp,
 .dashboard-hero-card--embedded .dashboard-kpi__label,
 .dashboard-hero-card--embedded .dashboard-kpi__meta,
-.dashboard-hero-card--embedded .hero-summary-memory__head span,
-.dashboard-hero-card--embedded .hero-summary-memory__legend-item span,
 .dashboard-hero-card--embedded .hero-alert-strip__description,
 .dashboard-hero-card--embedded .hero-alert-strip__header span {
   font-size: 9px;
@@ -527,57 +408,13 @@ const emit = defineEmits(['toggle', 'refresh'])
   text-overflow: clip;
 }
 
-.dashboard-hero-card--embedded .hero-summary-memory,
 .dashboard-hero-card--embedded .hero-alert-strip {
   padding: 8px 0;
 }
 
-.dashboard-hero-card--embedded .hero-summary-memory {
-  gap: 4px;
-}
-
-.dashboard-hero-card--embedded .hero-summary-memory__head {
-  gap: 8px;
-}
-
-.dashboard-hero-card--embedded .hero-summary-memory__head strong,
-.dashboard-hero-card--embedded .hero-summary-memory__legend-item strong,
 .dashboard-hero-card--embedded .hero-alert-strip__header strong,
 .dashboard-hero-card--embedded .hero-alert-strip__message {
   font-size: 10px;
-}
-
-.dashboard-hero-card--embedded .hero-summary-memory__head strong {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--surface-1);
-  box-shadow: inset 0 0 0 1px var(--border-subtle);
-}
-
-.dashboard-hero-card--embedded .hero-summary-memory__legend {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px;
-}
-
-.dashboard-hero-card--embedded .hero-summary-memory__legend-item {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 3px;
-  min-width: 0;
-  padding: 3px 5px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--memory-segment-color) 10%, var(--surface-1));
-}
-
-.dashboard-hero-card--embedded .memory-composition__bar {
-  height: 16px;
-}
-
-.dashboard-hero-card--embedded .memory-composition__segment {
-  min-width: 3%;
 }
 
 .dashboard-hero-card--embedded .hero-alert-strip {
@@ -589,8 +426,6 @@ const emit = defineEmits(['toggle', 'refresh'])
   padding-top: 5px;
 }
 
-:global(body[data-theme="dark"] .right-panel-monitor .hero-summary-memory__head strong),
-:global(body[data-theme="dark"] .right-panel-monitor .hero-summary-memory__legend-item strong),
 :global(body[data-theme="dark"] .right-panel-monitor .hero-alert-strip__header strong),
 :global(body[data-theme="dark"] .right-panel-monitor .hero-alert-strip__message) {
   color: #f5f5f5 !important;
@@ -598,8 +433,6 @@ const emit = defineEmits(['toggle', 'refresh'])
 
 :global(body[data-theme="dark"] .right-panel-monitor .dashboard-kpi__label),
 :global(body[data-theme="dark"] .right-panel-monitor .dashboard-kpi__meta),
-:global(body[data-theme="dark"] .right-panel-monitor .hero-summary-memory__head span),
-:global(body[data-theme="dark"] .right-panel-monitor .hero-summary-memory__legend-item span),
 :global(body[data-theme="dark"] .right-panel-monitor .hero-alert-strip__description),
 :global(body[data-theme="dark"] .right-panel-monitor .hero-alert-strip__header span) {
   color: #a3a3a3 !important;

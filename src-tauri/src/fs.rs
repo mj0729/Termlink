@@ -278,6 +278,62 @@ pub fn select_download_location(file_name: String) -> Result<Option<String>, Str
     }
 }
 
+#[tauri::command]
+pub fn select_local_directory(
+    title: Option<String>,
+    default_path: Option<String>,
+) -> Result<Option<String>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let prompt = apple_script_string(title.as_deref().unwrap_or("选择文件夹"));
+        let default_location = default_path
+            .as_deref()
+            .and_then(resolve_dialog_default_dir)
+            .as_deref()
+            .map(apple_script_string);
+
+        let script = if let Some(default_location) = default_location {
+            format!(
+                "set chosenFolder to choose folder with prompt \"{}\" default location POSIX file \"{}\"\nPOSIX path of chosenFolder",
+                prompt, default_location
+            )
+        } else {
+            format!(
+                "set chosenFolder to choose folder with prompt \"{}\"\nPOSIX path of chosenFolder",
+                prompt
+            )
+        };
+
+        return run_macos_dialog(&script);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let title = powershell_string(title.as_deref().unwrap_or("选择文件夹"));
+        let initial_dir = default_path
+            .as_deref()
+            .and_then(resolve_dialog_default_dir)
+            .map(powershell_string)
+            .unwrap_or_default();
+        let script = format!(
+            "Add-Type -AssemblyName System.Windows.Forms; \
+            $dialog = New-Object System.Windows.Forms.FolderBrowserDialog; \
+            $dialog.Description = '{title}'; \
+            if ('{initial_dir}' -ne '') {{ $dialog.SelectedPath = '{initial_dir}'; }} \
+            if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {{ Write-Output $dialog.SelectedPath }}"
+        );
+        return run_windows_dialog(&script);
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        return run_linux_directory_dialog(
+            title.as_deref().unwrap_or("选择文件夹"),
+            default_path,
+        );
+    }
+}
+
 fn resolve_dialog_default_dir(path: &str) -> Option<String> {
     let path = PathBuf::from(path);
     if path.is_dir() {
@@ -532,6 +588,46 @@ fn run_linux_save_dialog(file_name: &str) -> Result<Option<String>, String> {
     }
 
     Err("当前 Linux 环境缺少 zenity/kdialog，无法打开保存对话框".to_string())
+}
+
+#[cfg(target_os = "linux")]
+fn run_linux_directory_dialog(
+    title: &str,
+    default_path: Option<String>,
+) -> Result<Option<String>, String> {
+    let default_path = default_path
+        .or_else(|| {
+            dirs::download_dir().map(|path| path.to_string_lossy().to_string())
+        })
+        .unwrap_or_else(|| {
+            std::env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .to_string_lossy()
+                .to_string()
+        });
+
+    if let Ok(output) = Command::new("zenity")
+        .args([
+            "--file-selection",
+            "--directory",
+            "--filename",
+            &default_path,
+            "--title",
+            title,
+        ])
+        .output()
+    {
+        return parse_linux_dialog_output(output);
+    }
+
+    if let Ok(output) = Command::new("kdialog")
+        .args(["--getexistingdirectory", &default_path, "--title", title])
+        .output()
+    {
+        return parse_linux_dialog_output(output);
+    }
+
+    Err("当前 Linux 环境缺少 zenity/kdialog，无法打开文件夹选择器".to_string())
 }
 
 #[cfg(target_os = "linux")]

@@ -4,12 +4,20 @@ import type {
   HostKeyVerification,
   SshConnectionInteractions,
   SshHostKeyDecision,
-} from '../services/SshService'
-import type { SshProfile } from '../types/app'
+} from '../services/SshService.js'
+import type { SshProfile } from '../types/app.js'
 
 export const defaultSshConnectionInteractions: SshConnectionInteractions = {
   requestPassword(profile, { title }) {
     return promptForSshPassword(profile, title)
+  },
+  requestPassphrase(profile, { title, privateKeyPath }) {
+    return promptForSecret(
+      profile,
+      title,
+      '请输入私钥密码短语',
+      privateKeyPath ? `私钥：${privateKeyPath}` : '用于解锁当前私钥',
+    )
   },
   confirmHostKey(verification) {
     return confirmSshHostKey(verification)
@@ -19,6 +27,15 @@ export const defaultSshConnectionInteractions: SshConnectionInteractions = {
 function promptForSshPassword(
   profile: Pick<SshProfile, 'host' | 'port' | 'username'>,
   title: string,
+): Promise<string | null> {
+  return promptForSecret(profile, title, '请输入密码')
+}
+
+function promptForSecret(
+  profile: Pick<SshProfile, 'host' | 'port' | 'username'>,
+  title: string,
+  placeholder: string,
+  helperText?: string,
 ): Promise<string | null> {
   let password = ''
 
@@ -31,11 +48,14 @@ function promptForSshPassword(
           { class: 'termlink-confirm-text' },
           `目标：${profile.username}@${profile.host}:${profile.port}`,
         ),
+        helperText
+          ? h('div', { class: 'termlink-confirm-text' }, helperText)
+          : null,
         h('input', {
           class: 'termlink-confirm-input',
           type: 'password',
           autofocus: true,
-          placeholder: '请输入密码',
+          placeholder,
           onInput: (event: Event) => {
             password = (event.target as HTMLInputElement).value
           },

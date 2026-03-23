@@ -1,13 +1,14 @@
 use crate::{connection_manager, download_manager};
 use russh_sftp::client::SftpSession;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::Emitter;
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 const UPLOAD_CHUNK_SIZE: usize = 64 * 1024;
+const DOWNLOAD_CHUNK_SIZE: usize = 32 * 1024;
 
 #[derive(Clone, Copy)]
 enum TextEncoding {
@@ -502,6 +503,30 @@ async fn emit_upload_progress(
     .map_err(|e| format!("发送上传进度事件失败: {}", e))
 }
 
+async fn emit_download_progress(
+    app: &tauri::AppHandle,
+    download_id: u32,
+    downloaded: u64,
+    total: u64,
+) -> Result<(), String> {
+    let progress = if total == 0 {
+        100
+    } else {
+        ((downloaded as f64 / total as f64) * 100.0).round() as u32
+    };
+
+    app.emit(
+        "download-progress",
+        serde_json::json!({
+            "downloadId": download_id,
+            "downloaded": downloaded,
+            "total": total,
+            "progress": progress
+        }),
+    )
+    .map_err(|e| format!("发送下载进度事件失败: {}", e))
+}
+
 fn ensure_transfer_not_cancelled(transfer_id: Option<u32>) -> Result<(), String> {
     if let Some(transfer_id) = transfer_id {
         if download_manager::is_transfer_cancelled(transfer_id) {
@@ -686,6 +711,206 @@ async fn upload_local_entry(
             total,
         )
         .await?;
+    }
+
+    Ok(())
+}
+
+fn build_local_partial_path(local_path: &Path) -> PathBuf {
+    let file_name = local_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("download");
+
+    local_path.with_file_name(format!("{file_name}.termlink-part"))
+}
+
+async fn remove_local_path_if_exists(path: &Path) -> Result<(), String> {
+    let metadata = match fs::metadata(path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(format!("清理本地路径失败: {}", error)),
+    };
+
+    if metadata.is_dir() {
+        fs::remove_dir_all(path)
+            .await
+            .map_err(|e| format!("删除本地目录失败: {}", e))?;
+    } else {
+        fs::remove_file(path)
+            .await
+            .map_err(|e| format!("删除本地文件失败: {}", e))?;
+    }
+
+    Ok(())
+}
+
+async fn calculate_remote_total_size(
+    session: &SftpSession,
+    remote_path: &str,
+) -> Result<u64, String> {
+    let metadata = session
+        .metadata(remote_path)
+        .await
+        .map_err(|e| format!("获取远程文件元数据失败: {}", e))?;
+
+    if !metadata.is_dir() {
+        return Ok(metadata.len());
+    }
+
+    let mut total = 0u64;
+    let mut stack = vec![remote_path.to_string()];
+
+    while let Some(current_path) = stack.pop() {
+        let entries = session
+            .read_dir(&current_path)
+            .await
+            .map_err(|e| format!("读取远程目录失败: {}", e))?;
+
+        for entry in entries {
+            let name = entry.file_name().to_string();
+            if name == "." || name == ".." {
+                continue;
+            }
+
+            let child_path = join_remote_path(&current_path, &name);
+            if entry.file_type().is_dir() {
+                stack.push(child_path);
+            } else {
+                total += entry.metadata().len();
+            }
+        }
+    }
+
+    Ok(total)
+}
+
+async fn download_remote_file(
+    session: &SftpSession,
+    remote_path: &str,
+    local_path: &Path,
+    app: &tauri::AppHandle,
+    download_id: u32,
+    downloaded: &mut u64,
+    total: u64,
+) -> Result<(), String> {
+    let mut remote_file = session
+        .open(remote_path)
+        .await
+        .map_err(|e| format!("打开远程文件失败: {}", e))?;
+
+    if let Some(parent) = local_path.parent() {
+        fs::create_dir_all(parent)
+            .await
+            .map_err(|e| format!("创建本地目录失败: {}", e))?;
+    }
+
+    let partial_path = build_local_partial_path(local_path);
+    remove_local_path_if_exists(&partial_path).await?;
+
+    let mut local_file = fs::File::create(&partial_path)
+        .await
+        .map_err(|e| format!("创建本地文件失败: {}", e))?;
+
+    let mut buffer = vec![0u8; DOWNLOAD_CHUNK_SIZE];
+
+    loop {
+        if download_manager::is_transfer_cancelled(download_id) {
+            let _ = local_file.flush().await;
+            let _ = remove_local_path_if_exists(&partial_path).await;
+            return Err("传输已取消".to_string());
+        }
+
+        let bytes_read = remote_file
+            .read(&mut buffer)
+            .await
+            .map_err(|e| format!("读取远程文件失败: {}", e))?;
+
+        if bytes_read == 0 {
+            break;
+        }
+
+        local_file
+            .write_all(&buffer[..bytes_read])
+            .await
+            .map_err(|e| format!("写入本地文件失败: {}", e))?;
+
+        *downloaded += bytes_read as u64;
+        emit_download_progress(app, download_id, *downloaded, total).await?;
+    }
+
+    local_file
+        .flush()
+        .await
+        .map_err(|e| format!("刷新文件缓冲失败: {}", e))?;
+
+    fs::rename(&partial_path, local_path)
+        .await
+        .map_err(|e| format!("完成下载文件落盘失败: {}", e))?;
+
+    Ok(())
+}
+
+async fn download_remote_entry(
+    session: &SftpSession,
+    remote_path: &str,
+    local_path: &Path,
+    app: &tauri::AppHandle,
+    download_id: u32,
+    downloaded: &mut u64,
+    total: u64,
+) -> Result<(), String> {
+    let mut stack = vec![(remote_path.to_string(), local_path.to_path_buf())];
+
+    while let Some((current_remote_path, current_local_path)) = stack.pop() {
+        let metadata = session
+            .metadata(&current_remote_path)
+            .await
+            .map_err(|e| format!("获取远程文件元数据失败: {}", e))?;
+
+        if !metadata.is_dir() {
+            download_remote_file(
+                session,
+                &current_remote_path,
+                &current_local_path,
+                app,
+                download_id,
+                downloaded,
+                total,
+            )
+            .await?;
+            continue;
+        }
+
+        fs::create_dir_all(&current_local_path)
+            .await
+            .map_err(|e| format!("创建本地目录失败: {}", e))?;
+
+        let entries = session
+            .read_dir(&current_remote_path)
+            .await
+            .map_err(|e| format!("读取远程目录失败: {}", e))?;
+
+        let mut children = Vec::new();
+        for entry in entries {
+            let name = entry.file_name().to_string();
+            if name == "." || name == ".." {
+                continue;
+            }
+
+            children.push((
+                join_remote_path(&current_remote_path, &name),
+                current_local_path.join(&name),
+            ));
+        }
+
+        for child in children.into_iter().rev() {
+            stack.push(child);
+        }
+    }
+
+    if total == 0 {
+        emit_download_progress(app, download_id, 0, 0).await?;
     }
 
     Ok(())
@@ -1106,107 +1331,38 @@ pub async fn download_sftp_file(
 ) -> Result<(), String> {
     let session = get_sftp_session(&connection_id).await?;
     download_manager::reset_transfer_cancel(download_id);
+    let local_path = PathBuf::from(normalize_local_path(&local_path));
 
-    println!("下载文件(带进度): {} -> {}", remote_path, local_path);
+    println!("下载远程条目: {} -> {}", remote_path, local_path.display());
 
-    // 首先获取文件大小
-    let metadata = match session.metadata(&remote_path).await {
-        Ok(meta) => meta,
-        Err(e) => return Err(format!("获取文件元数据失败: {}", e)),
-    };
+    let total_size = calculate_remote_total_size(&session, &remote_path).await?;
+    let mut downloaded = 0u64;
+    emit_download_progress(&app, download_id, 0, total_size).await?;
 
-    let total_size = metadata.len();
-    println!("文件总大小: {} 字节", total_size);
-
-    // 发送初始进度
-    let _ = app.emit(
-        "download-progress",
-        serde_json::json!({
-            "downloadId": download_id,
-            "downloaded": 0,
-            "total": total_size,
-            "progress": 0
-        }),
-    );
-
-    // 打开远程文件进行读取
-    let mut file = match session.open(&remote_path).await {
-        Ok(f) => f,
-        Err(e) => return Err(format!("打开远程文件失败: {}", e)),
-    };
-
-    // 创建本地文件
-    let mut local_file = match tokio::fs::File::create(&local_path).await {
-        Ok(f) => f,
-        Err(e) => return Err(format!("创建本地文件失败: {}", e)),
-    };
-
-    // 分块读取和写入
-    const CHUNK_SIZE: usize = 32768; // 32KB 每块
-    let mut buffer = vec![0u8; CHUNK_SIZE];
-    let mut downloaded: u64 = 0;
-    let mut last_progress_percent = 0;
-
-    loop {
-        if download_manager::is_transfer_cancelled(download_id) {
-            download_manager::reset_transfer_cancel(download_id);
-            return Err("传输已取消".to_string());
-        }
-
-        // 使用 AsyncReadExt 的 read 方法读取一块数据
-        use tokio::io::AsyncReadExt;
-        let bytes_read = match file.read(&mut buffer).await {
-            Ok(n) => n,
-            Err(e) => return Err(format!("读取远程文件失败: {}", e)),
-        };
-
-        if bytes_read == 0 {
-            break; // 文件读取完成
-        }
-
-        // 写入本地文件
-        if let Err(e) = local_file.write_all(&buffer[..bytes_read]).await {
-            return Err(format!("写入本地文件失败: {}", e));
-        }
-
-        downloaded += bytes_read as u64;
-
-        // 计算进度百分比
-        let progress = if total_size > 0 {
-            ((downloaded as f64 / total_size as f64) * 100.0) as u32
-        } else {
-            0
-        };
-
-        // 只在进度变化时发送更新（避免过多事件）
-        if progress != last_progress_percent || downloaded == total_size {
-            last_progress_percent = progress;
-
-            let _ = app.emit(
-                "download-progress",
-                serde_json::json!({
-                    "downloadId": download_id,
-                    "downloaded": downloaded,
-                    "total": total_size,
-                    "progress": progress
-                }),
-            );
-
-            println!(
-                "下载进度: {}/{} 字节 ({}%)",
-                downloaded, total_size, progress
-            );
-        }
-    }
-
-    // 确保文件写入完成
-    if let Err(e) = local_file.flush().await {
-        return Err(format!("刷新文件缓冲失败: {}", e));
-    }
+    let result = download_remote_entry(
+        &session,
+        &remote_path,
+        &local_path,
+        &app,
+        download_id,
+        &mut downloaded,
+        total_size,
+    )
+    .await;
 
     download_manager::reset_transfer_cancel(download_id);
-    println!("文件下载成功: {}", local_path);
-    Ok(())
+
+    match result {
+        Ok(()) => {
+            emit_download_progress(&app, download_id, downloaded, total_size).await?;
+            println!("远程条目下载成功: {}", local_path.display());
+            Ok(())
+        }
+        Err(error) => {
+            let _ = remove_local_path_if_exists(&local_path).await;
+            Err(error)
+        }
+    }
 }
 
 #[tauri::command]
@@ -1458,7 +1614,11 @@ pub async fn delete_sftp_directory(connection_id: String, path: String) -> Resul
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_remote_text, decode_utf16_chunk, decode_utf8_chunk};
+    use super::{
+        build_local_partial_path, build_remote_conflict_name, decode_remote_text,
+        decode_utf16_chunk, decode_utf8_chunk,
+    };
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn decodes_utf8_text() {
@@ -1511,6 +1671,17 @@ mod tests {
         let (content, consumed) = decode_utf16_chunk(&bytes[..6], true).unwrap();
         assert_eq!(content, "日志");
         assert_eq!(consumed, "日志".encode_utf16().count() * 2);
+    }
+
+    #[test]
+    fn builds_local_partial_path_next_to_target_file() {
+        let partial = build_local_partial_path(Path::new("/tmp/example.log"));
+        assert_eq!(partial, PathBuf::from("/tmp/example.log.termlink-part"));
+    }
+
+    #[test]
+    fn builds_remote_conflict_name_for_directory_like_entry() {
+        assert_eq!(build_remote_conflict_name("release", 2), "release (2)");
     }
 }
 

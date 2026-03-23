@@ -5,6 +5,20 @@
   >
     <div class="terminal-frame">
       <div ref="container" class="terminal-container" />
+      <div v-if="showConnectionOverlay" class="terminal-connection-overlay">
+        <div class="terminal-connection-overlay__badge">
+          {{ sshState === 'connecting' ? '连接中' : '连接已断开' }}
+        </div>
+        <div class="terminal-connection-overlay__title">
+          {{ overlayTitle }}
+        </div>
+        <div v-if="overlayMessage" class="terminal-connection-overlay__message">
+          {{ overlayMessage }}
+        </div>
+        <div class="terminal-connection-overlay__hint">
+          {{ overlayHint }}
+        </div>
+      </div>
     </div>
     <!-- 滚动指示器 -->
     <div v-if="hasScrollContent" class="scroll-indicator">
@@ -33,6 +47,9 @@ const props = withDefaults(defineProps<{
   autoPassword?: string
   sshUser?: string
   sshState?: 'connecting' | 'connected' | 'disconnected'
+  connectionError?: string
+  reconnectAttempt?: number
+  reconnectScheduledAt?: number | null
   type?: string
 }>(), {
   active: false,
@@ -48,6 +65,9 @@ const props = withDefaults(defineProps<{
   autoPassword: '',
   sshUser: '',
   sshState: 'connected',
+  connectionError: '',
+  reconnectAttempt: 0,
+  reconnectScheduledAt: null,
   type: 'local'
 })
 
@@ -64,11 +84,46 @@ let promptBuffer = ''
 let pendingReconnectEnter = false
 let hasShownConnectingNotice = false
 let contextMenuCleanup: (() => void) | null = null
+let reconnectTickTimer: number | null = null
+const nowTs = ref(Date.now())
 const hasScrollContent = computed(() => {
   if (!terminal.value) return false
   return terminal.value.buffer.active.viewportY > 0
 })
 const density = computed<WorkspaceDensity>(() => props.config.density || 'balanced')
+const showConnectionOverlay = computed(() => isSshTerminal() && props.sshState !== 'connected')
+const reconnectCountdownSeconds = computed(() => {
+  if (!props.reconnectScheduledAt) return 0
+  return Math.max(0, Math.ceil((props.reconnectScheduledAt - nowTs.value) / 1000))
+})
+const overlayTitle = computed(() => {
+  if (props.sshState === 'connecting') {
+    if (props.reconnectAttempt) {
+      return `正在进行第 ${props.reconnectAttempt} 次重连`
+    }
+    return '正在建立 SSH 连接'
+  }
+
+  return props.connectionError || 'SSH 会话已断开'
+})
+const overlayMessage = computed(() => {
+  if (props.sshState === 'connecting') {
+    return props.connectionError || ''
+  }
+
+  if (props.reconnectScheduledAt && reconnectCountdownSeconds.value > 0) {
+    return `将在 ${reconnectCountdownSeconds.value} 秒后自动重试`
+  }
+
+  return ''
+})
+const overlayHint = computed(() => {
+  if (props.sshState === 'connecting') {
+    return '请稍候，连接恢复后会继续显示终端内容。'
+  }
+
+  return '按回车立即手动重连，或等待自动重试。'
+})
 
 function isSshTerminal() {
   return props.type === 'ssh' || props.id.startsWith('ssh-')
@@ -290,6 +345,22 @@ function renderConnectingNotice(force = false) {
   if (!force && hasShownConnectingNotice) return
   terminal.value.writeln('\r\n正在建立 SSH 连接，请稍候...')
   hasShownConnectingNotice = true
+}
+
+function syncReconnectTicker() {
+  if (reconnectTickTimer) {
+    window.clearInterval(reconnectTickTimer)
+    reconnectTickTimer = null
+  }
+
+  if (!props.reconnectScheduledAt) {
+    return
+  }
+
+  nowTs.value = Date.now()
+  reconnectTickTimer = window.setInterval(() => {
+    nowTs.value = Date.now()
+  }, 1000)
 }
 
 // 创建终端实例
@@ -686,6 +757,10 @@ watch(() => props.sshState, (nextState, prevState) => {
   }
 })
 
+watch(() => props.reconnectScheduledAt, () => {
+  syncReconnectTicker()
+}, { immediate: true })
+
 onMounted(async () => {
   resetSshSessionState()
   pendingReconnectEnter = false
@@ -726,6 +801,11 @@ onBeforeUnmount(async () => {
     terminal.value.dispose()
   }
 
+  if (reconnectTickTimer) {
+    window.clearInterval(reconnectTickTimer)
+    reconnectTickTimer = null
+  }
+
   if (container.value) {
     container.value.innerHTML = ''
   }
@@ -758,6 +838,46 @@ onBeforeUnmount(async () => {
 .terminal-container {
   position: absolute;
   inset: 8px 10px 8px 10px;
+}
+
+.terminal-connection-overlay {
+  position: absolute;
+  inset: 18px 20px auto 20px;
+  z-index: 4;
+  display: grid;
+  gap: 8px;
+  max-width: min(520px, calc(100% - 40px));
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--connection-disconnected) 28%, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+  background: rgba(9, 12, 18, 0.92);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(10px);
+}
+
+.terminal-connection-overlay__badge {
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--connection-disconnected-soft) 72%, transparent);
+  color: var(--connection-disconnected);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.terminal-connection-overlay__title {
+  color: #f5f7fa;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.terminal-connection-overlay__message,
+.terminal-connection-overlay__hint {
+  color: rgba(233, 237, 242, 0.82);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
 }
 
 .terminal-area--comfortable .terminal-container {

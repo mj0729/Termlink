@@ -63,6 +63,26 @@ export interface SshPortForward {
   label?: string
 }
 
+export interface CommandSnippet {
+  id: string
+  name: string
+  command: string
+  group?: string
+}
+
+export interface StartupTask {
+  id: string
+  name: string
+  command: string
+  enabled: boolean
+}
+
+export interface EnvTemplate {
+  id: string
+  key: string
+  value: string
+}
+
 export interface SshProfile {
   id: string
   host: string
@@ -74,15 +94,20 @@ export interface SshProfile {
   password?: string | null
   save_password?: boolean
   private_key?: string | null
+  private_key_passphrase?: string | null
   proxy_jump_id?: string | null
   proxy_jump_name?: string | null
   proxy_jump_host?: string | null
   proxy_jump_port?: number | null
   proxy_jump_username?: string | null
   proxy_jump_private_key?: string | null
+  proxy_jump_private_key_passphrase?: string | null
   ssh_config_source?: string | null
   ssh_config_host?: string | null
   port_forwards?: SshPortForward[]
+  command_snippets?: CommandSnippet[]
+  startup_tasks?: StartupTask[]
+  env_templates?: EnvTemplate[]
 }
 
 export interface SshConnectionPayload {
@@ -97,15 +122,20 @@ export interface SshConnectionPayload {
   tags?: string[]
   usePrivateKey?: boolean
   privateKey?: string
+  privateKeyPassphrase?: string
   proxyJumpId?: string | null
   proxyJumpName?: string | null
   proxyJumpHost?: string | null
   proxyJumpPort?: number | string | null
   proxyJumpUsername?: string | null
   proxyJumpPrivateKey?: string | null
+  proxyJumpPrivateKeyPassphrase?: string | null
   sshConfigSource?: string | null
   sshConfigHost?: string | null
   portForwards?: SshPortForward[]
+  commandSnippets?: CommandSnippet[]
+  startupTasks?: StartupTask[]
+  envTemplates?: EnvTemplate[]
   isEdit?: boolean
 }
 
@@ -132,6 +162,7 @@ export interface DownloadRequest {
   remotePath: string
   savePath: string
   connectionId: string
+  entryType?: 'file' | 'directory'
   batchId?: string
   batchLabel?: string
 }
@@ -155,6 +186,9 @@ export interface ConnectionTab {
   type: TabType
   profile?: SshProfile | null
   sshState?: ConnectionStatus
+  lastError?: string | null
+  reconnectAttempt?: number
+  reconnectScheduledAt?: number | null
   autoPassword?: string | null
   fileInfo?: SftpFileEntry
   connectionId?: string
@@ -169,7 +203,6 @@ export type TabContextMenuAction =
   | 'closeOthers'
   | 'closeAll'
 
-export type DownloadStatus = 'downloading' | 'completed' | 'error' | 'cancelled'
 export type MonitorTab = 'monitor' | 'download'
 export type TransferDirection = 'download' | 'upload'
 export type TransferStatus = 'running' | 'completed' | 'error' | 'cancelled' | 'skipped'
@@ -200,21 +233,6 @@ export interface TransferItem {
   status: TransferStatus
   progress: number
   transferred: number
-  total: number
-  speed: number
-  startTime: number
-  error: string | null
-}
-
-export interface DownloadItem {
-  id: number
-  fileName: string
-  remotePath: string
-  savePath: string
-  connectionId: string
-  status: DownloadStatus
-  progress: number
-  downloaded: number
   total: number
   speed: number
   startTime: number
@@ -327,12 +345,16 @@ export interface SshModalForm extends SshConnectionPayload {
   port: number
   password: string
   privateKey: string
+  privateKeyPassphrase: string
   proxyJumpPort: number | null
   usePrivateKey: boolean
   savePassword: boolean
   group: string
   tags: string[]
   portForwards: SshPortForward[]
+  commandSnippets: CommandSnippet[]
+  startupTasks: StartupTask[]
+  envTemplates: EnvTemplate[]
 }
 
 export interface ImportPreviewItem {

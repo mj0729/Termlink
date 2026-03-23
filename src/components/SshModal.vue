@@ -118,6 +118,13 @@
         </a-space-compact>
       </a-form-item>
 
+      <a-form-item v-if="form.usePrivateKey" label="私钥密码短语" name="privateKeyPassphrase">
+        <a-input-password
+          v-model:value="form.privateKeyPassphrase"
+          placeholder="如私钥已加密，可先填写密码短语"
+        />
+      </a-form-item>
+
       <a-divider>高级 SSH</a-divider>
 
       <a-form-item label="堡垒机 / ProxyJump">
@@ -167,6 +174,151 @@
         </a-button>
       </a-form-item>
 
+      <a-divider>工作流模板</a-divider>
+
+      <a-form-item label="环境变量模板">
+        <div class="ssh-template-list">
+          <div
+            v-for="(envItem, index) in form.envTemplates"
+            :key="envItem.id"
+            class="ssh-template-item ssh-template-item--card ssh-template-item--env"
+          >
+            <div class="ssh-template-item__header">
+              <div class="ssh-template-item__eyebrow">环境变量</div>
+              <a-button
+                type="text"
+                size="small"
+                class="ssh-modal__icon-action ssh-modal__icon-action--danger"
+                @click="removeEnvTemplate(index)"
+              >
+                <DeleteOutlined />
+              </a-button>
+            </div>
+            <div class="ssh-template-item__main">
+              <div class="ssh-template-item__row">
+                <a-input
+                  v-model:value="envItem.key"
+                  placeholder="变量名，例如 APP_ENV"
+                />
+                <a-input
+                  v-model:value="envItem.value"
+                  placeholder="变量值"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+        <a-button type="dashed" block class="ssh-modal__button ssh-modal__button--dashed" @click="addEnvTemplate">
+          新增环境变量
+        </a-button>
+      </a-form-item>
+
+      <a-form-item label="连接后启动任务">
+        <div class="ssh-template-list">
+          <div
+            v-for="(task, index) in form.startupTasks"
+            :key="task.id"
+            class="ssh-template-item ssh-template-item--card ssh-template-item--command"
+          >
+            <div class="ssh-template-item__header">
+              <div class="ssh-template-item__eyebrow">启动任务</div>
+              <div class="ssh-template-item__tools ssh-template-item__tools--compact">
+                <span class="ssh-template-item__status" :class="{ 'is-inactive': !task.enabled }">
+                  {{ task.enabled ? '已启用' : '已关闭' }}
+                </span>
+                <a-switch v-model:checked="task.enabled" size="small" />
+                <a-button
+                  type="text"
+                  size="small"
+                  class="ssh-modal__icon-action"
+                  @click="moveStartupTask(index, -1)"
+                  :disabled="index === 0"
+                >
+                  上
+                </a-button>
+                <a-button
+                  type="text"
+                  size="small"
+                  class="ssh-modal__icon-action"
+                  @click="moveStartupTask(index, 1)"
+                  :disabled="index === form.startupTasks.length - 1"
+                >
+                  下
+                </a-button>
+                <a-button
+                  type="text"
+                  size="small"
+                  class="ssh-modal__icon-action ssh-modal__icon-action--danger"
+                  @click="removeStartupTask(index)"
+                >
+                  <DeleteOutlined />
+                </a-button>
+              </div>
+            </div>
+            <div class="ssh-template-item__main">
+              <a-input
+                v-model:value="task.name"
+                placeholder="任务名称，例如 初始化工作目录"
+              />
+              <a-input
+                v-model:value="task.command"
+                placeholder="连接后自动执行的命令"
+              />
+            </div>
+          </div>
+        </div>
+        <div class="ssh-template-hint">
+          按当前顺序执行，关闭的任务会跳过；执行结果和失败退出码会直接显示在终端中。
+        </div>
+        <a-button type="dashed" block class="ssh-modal__button ssh-modal__button--dashed" @click="addStartupTask">
+          新增启动任务
+        </a-button>
+      </a-form-item>
+
+      <a-form-item label="常用命令片段">
+        <div class="ssh-template-list">
+          <div
+            v-for="(snippet, index) in form.commandSnippets"
+            :key="snippet.id"
+            class="ssh-template-item ssh-template-item--card ssh-template-item--snippet"
+          >
+            <div class="ssh-template-item__header">
+              <div class="ssh-template-item__eyebrow">命令片段</div>
+              <a-button
+                type="text"
+                size="small"
+                class="ssh-modal__icon-action ssh-modal__icon-action--danger"
+                @click="removeCommandSnippet(index)"
+              >
+                <DeleteOutlined />
+              </a-button>
+            </div>
+            <div class="ssh-template-item__main ssh-template-item__main--snippet">
+              <div class="ssh-template-item__row">
+                <a-input
+                  v-model:value="snippet.name"
+                  placeholder="片段名称，例如 查看日志"
+                />
+                <a-input
+                  v-model:value="snippet.group"
+                  placeholder="分组，例如 排障 / 部署"
+                />
+              </div>
+              <a-input
+                v-model:value="snippet.command"
+                placeholder="可在工作区一键发送的命令"
+              />
+            </div>
+          </div>
+        </div>
+        <div class="ssh-template-hint">
+          可按主机内分组整理片段，工作区支持按名称、分组和命令内容即时搜索。
+        </div>
+        <a-button type="dashed" block class="ssh-modal__button ssh-modal__button--dashed" @click="addCommandSnippet">
+          新增命令片段
+        </a-button>
+      </a-form-item>
+
       <a-form-item v-if="form.sshConfigSource || form.sshConfigHost" label="SSH Config 来源">
         <div class="ssh-config-meta">
           <span v-if="form.sshConfigHost">Host {{ form.sshConfigHost }}</span>
@@ -204,9 +356,18 @@
 <script setup lang="ts">
 import { computed, h, ref, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { CloseOutlined } from '@antdv-next/icons'
-import type { SelectOption, SshModalForm, SshPortForward, SshProfile } from '../types/app'
+import { CloseOutlined, DeleteOutlined } from '@antdv-next/icons'
+import type {
+  CommandSnippet,
+  EnvTemplate,
+  SelectOption,
+  SshModalForm,
+  SshPortForward,
+  SshProfile,
+  StartupTask,
+} from '../types/app'
 import { PROFILE_TAG_PRESETS } from '../constants/profileTags'
+import { normalizeCommandSnippets } from '../utils/commandSnippets'
 
 const props = withDefaults(defineProps<{
   visible?: boolean
@@ -278,6 +439,7 @@ const createInitialForm = (): SshModalForm => ({
   username: '',
   password: '',
   privateKey: '',
+  privateKeyPassphrase: '',
   usePrivateKey: false,
   savePassword: true,
   group: '',
@@ -288,9 +450,13 @@ const createInitialForm = (): SshModalForm => ({
   proxyJumpPort: null,
   proxyJumpUsername: null,
   proxyJumpPrivateKey: null,
+  proxyJumpPrivateKeyPassphrase: null,
   sshConfigSource: null,
   sshConfigHost: null,
   portForwards: [],
+  commandSnippets: [],
+  startupTasks: [],
+  envTemplates: [],
 })
 
 const form = ref<SshModalForm>(createInitialForm())
@@ -350,6 +516,7 @@ function resetForm() {
       username: props.editProfile.username || '',
       password: '', // 不显示密码
       privateKey: props.editProfile.private_key || '',
+      privateKeyPassphrase: '',
       usePrivateKey: Boolean(props.editProfile.private_key),
       savePassword: true,
       group: props.editProfile.group || '',
@@ -360,9 +527,16 @@ function resetForm() {
       proxyJumpPort: props.editProfile.proxy_jump_port || null,
       proxyJumpUsername: props.editProfile.proxy_jump_username || null,
       proxyJumpPrivateKey: props.editProfile.proxy_jump_private_key || null,
+      proxyJumpPrivateKeyPassphrase: props.editProfile.proxy_jump_private_key_passphrase || null,
       sshConfigSource: props.editProfile.ssh_config_source || null,
       sshConfigHost: props.editProfile.ssh_config_host || null,
       portForwards: props.editProfile.port_forwards?.map((item) => ({ ...item })) || [],
+      commandSnippets: props.editProfile.command_snippets?.map((item) => ({ ...item })) || [],
+      startupTasks: props.editProfile.startup_tasks?.map((item) => ({
+        ...item,
+        enabled: item.enabled !== false,
+      })) || [],
+      envTemplates: props.editProfile.env_templates?.map((item) => ({ ...item })) || [],
     }
   } else {
     // 新建模式
@@ -380,6 +554,60 @@ function createEmptyPortForward(): SshPortForward {
     remotePort: 80,
     label: '',
   }
+}
+
+function createEmptyCommandSnippet(): CommandSnippet {
+  return {
+    id: `snippet-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    name: '',
+    command: '',
+    group: '',
+  }
+}
+
+function createEmptyStartupTask(): StartupTask {
+  return {
+    id: `startup-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    name: '',
+    command: '',
+    enabled: true,
+  }
+}
+
+function createEmptyEnvTemplate(): EnvTemplate {
+  return {
+    id: `env-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    key: '',
+    value: '',
+  }
+}
+
+function normalizeNamedCommands<T extends { id: string; name: string; command: string }>(items: T[]) {
+  return items
+    .map((item) => ({
+      ...item,
+      name: item.name.trim(),
+      command: item.command.trim(),
+    }))
+    .filter((item) => item.name && item.command)
+}
+
+function normalizeStartupTasks(items: StartupTask[]) {
+  return normalizeNamedCommands(items)
+    .map((item) => ({
+      ...item,
+      enabled: item.enabled !== false,
+    }))
+}
+
+function normalizeEnvTemplates(items: EnvTemplate[]) {
+  return items
+    .map((item) => ({
+      ...item,
+      key: item.key.trim(),
+      value: item.value.trim(),
+    }))
+    .filter((item) => item.key)
 }
 
 function getTagColor(tag: string) {
@@ -414,6 +642,7 @@ async function handleSubmit() {
         submitData.proxyJumpPort = proxyProfile.port
         submitData.proxyJumpUsername = proxyProfile.username
         submitData.proxyJumpPrivateKey = proxyProfile.private_key || null
+        submitData.proxyJumpPrivateKeyPassphrase = proxyProfile.private_key_passphrase || null
       }
     } else {
       submitData.proxyJumpName = null
@@ -421,10 +650,14 @@ async function handleSubmit() {
       submitData.proxyJumpPort = null
       submitData.proxyJumpUsername = null
       submitData.proxyJumpPrivateKey = null
+      submitData.proxyJumpPrivateKeyPassphrase = null
     }
     if (props.editMode) {
       submitData.isEdit = true
     }
+    submitData.commandSnippets = normalizeCommandSnippets(submitData.commandSnippets)
+    submitData.startupTasks = normalizeStartupTasks(submitData.startupTasks)
+    submitData.envTemplates = normalizeEnvTemplates(submitData.envTemplates)
     
     emit('submit', submitData)
     
@@ -453,6 +686,7 @@ function handleProxyJumpChange(proxyJumpId: string | null) {
     form.value.proxyJumpPort = null
     form.value.proxyJumpUsername = null
     form.value.proxyJumpPrivateKey = null
+    form.value.proxyJumpPrivateKeyPassphrase = null
     return
   }
 
@@ -467,6 +701,7 @@ function handleProxyJumpChange(proxyJumpId: string | null) {
   form.value.proxyJumpPort = proxyProfile.port
   form.value.proxyJumpUsername = proxyProfile.username
   form.value.proxyJumpPrivateKey = proxyProfile.private_key || null
+  form.value.proxyJumpPrivateKeyPassphrase = proxyProfile.private_key_passphrase || null
 }
 
 function addPortForward() {
@@ -475,6 +710,40 @@ function addPortForward() {
 
 function removePortForward(index: number) {
   form.value.portForwards.splice(index, 1)
+}
+
+function addCommandSnippet() {
+  form.value.commandSnippets.push(createEmptyCommandSnippet())
+}
+
+function removeCommandSnippet(index: number) {
+  form.value.commandSnippets.splice(index, 1)
+}
+
+function addStartupTask() {
+  form.value.startupTasks.push(createEmptyStartupTask())
+}
+
+function removeStartupTask(index: number) {
+  form.value.startupTasks.splice(index, 1)
+}
+
+function moveStartupTask(index: number, offset: number) {
+  const nextIndex = index + offset
+  if (nextIndex < 0 || nextIndex >= form.value.startupTasks.length) {
+    return
+  }
+
+  const [task] = form.value.startupTasks.splice(index, 1)
+  form.value.startupTasks.splice(nextIndex, 0, task)
+}
+
+function addEnvTemplate() {
+  form.value.envTemplates.push(createEmptyEnvTemplate())
+}
+
+function removeEnvTemplate(index: number) {
+  form.value.envTemplates.splice(index, 1)
 }
 
 // 选择私钥文件
@@ -687,11 +956,31 @@ watch(() => props.editProfile, () => {
   margin-bottom: 10px;
 }
 
+.ssh-template-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
 .ssh-forward-item {
   display: grid;
   grid-template-columns: 128px 24px minmax(0, 1fr) 128px auto;
   gap: 10px;
   align-items: center;
+}
+
+.ssh-template-item {
+  display: grid;
+  gap: 10px;
+  align-items: center;
+}
+
+.ssh-template-item--card {
+  grid-template-columns: 1fr;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-1) 82%, transparent);
 }
 
 .ssh-forward-arrow {
@@ -776,8 +1065,110 @@ watch(() => props.editProfile, () => {
   border-color: var(--strong-border) !important;
 }
 
+.ssh-template-item__main {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ssh-template-item__main--snippet {
+  gap: 12px;
+}
+
+.ssh-template-item__row {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
+}
+
+.ssh-template-item__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ssh-template-item__eyebrow {
+  color: var(--muted-color);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.ssh-template-item__tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ssh-template-item__tools--compact {
+  gap: 6px;
+}
+
+.ssh-template-item__status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--connection-connected-soft) 88%, transparent);
+  color: var(--connection-connected);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ssh-template-item__status.is-inactive {
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+  color: var(--muted-color);
+}
+
+.ssh-template-hint {
+  margin: 8px 0 10px;
+  color: var(--muted-color);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+:global(.ssh-modal__icon-action) {
+  width: 30px !important;
+  min-width: 30px !important;
+  height: 30px !important;
+  padding: 0 !important;
+  border-radius: 9px !important;
+  color: var(--muted-color) !important;
+  font-size: 12px !important;
+  border: 1px solid transparent !important;
+}
+
+:global(.ssh-modal__icon-action:hover) {
+  background: var(--surface-2) !important;
+  color: var(--text-color) !important;
+  border-color: var(--border-color) !important;
+}
+
+:global(.ssh-modal__icon-action:disabled) {
+  opacity: 0.42 !important;
+  background: transparent !important;
+  border-color: transparent !important;
+}
+
+:global(.ssh-modal__icon-action--danger:hover) {
+  background: var(--connection-disconnected-soft) !important;
+  color: var(--connection-disconnected) !important;
+}
+
 @media (max-width: 720px) {
   .ssh-forward-item {
+    grid-template-columns: 1fr;
+  }
+
+  .ssh-template-item__row {
+    grid-template-columns: 1fr;
+  }
+
+  .ssh-template-item--command,
+  .ssh-template-item--env {
     grid-template-columns: 1fr;
   }
 

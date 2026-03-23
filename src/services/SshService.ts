@@ -1,10 +1,14 @@
 import { invoke } from '@tauri-apps/api/core'
 import type {
+  CommandSnippet,
   ConnectionTab,
+  EnvTemplate,
   SshPortForward,
   SshConnectionPayload,
   SshProfile,
-} from '../types/app'
+  StartupTask,
+} from '../types/app.js'
+import { normalizeCommandSnippets } from '../utils/commandSnippets.js'
 
 type SshJumpAuthRequestPayload = {
   host: string
@@ -61,6 +65,10 @@ export type SshConnectionInteractions = {
     profile: Pick<SshProfile, 'host' | 'port' | 'username'>,
     options: { title: string },
   ) => Promise<string | null>
+  requestPassphrase?: (
+    profile: Pick<SshProfile, 'host' | 'port' | 'username'>,
+    options: { title: string; privateKeyPath?: string | null },
+  ) => Promise<string | null>
   confirmHostKey?: (verification: HostKeyVerification) => Promise<SshHostKeyDecision>
 }
 
@@ -94,6 +102,19 @@ class SshService {
     return interactions.requestPassword(profile, { title })
   }
 
+  async requestPassphrase(
+    profile: Pick<SshProfile, 'host' | 'port' | 'username'>,
+    interactions?: SshConnectionInteractions,
+    title = '输入私钥密码短语',
+    privateKeyPath?: string | null,
+  ): Promise<string | null> {
+    if (!interactions?.requestPassphrase) {
+      return null
+    }
+
+    return interactions.requestPassphrase(profile, { title, privateKeyPath })
+  }
+
   async resolvePasswordForProfile(profile: SshProfile): Promise<string | null> {
     if (profile.private_key) {
       return null
@@ -120,6 +141,7 @@ class SshService {
     profileId: string | null = null,
     proxyJump: SshJumpAuthRequestPayload | null = null,
     portForwards: SshPortForwardPayload[] = [],
+    passphrase: string | null = null,
   ): SshAuthRequestPayload {
     return {
       connection_id: connectionId,
@@ -129,7 +151,7 @@ class SshService {
       username: profile.username,
       password,
       private_key_path: profile.private_key || null,
-      passphrase: null,
+      passphrase,
       strict_host_key_checking: true,
       proxy_jump: proxyJump,
       port_forwards: portForwards,
@@ -149,17 +171,161 @@ class SshService {
       }))
   }
 
-  async resolveProxyJumpAuth(profile: SshProfile): Promise<SshJumpAuthRequestPayload | null> {
+  normalizeNamedCommands<T extends { id: string; name: string; command: string }>(items: T[] | undefined): T[] {
+    return (items || [])
+      .map((item) => ({
+        ...item,
+        name: item.name?.trim() || '',
+        command: item.command?.trim() || '',
+      }))
+      .filter((item) => item.name && item.command)
+  }
+
+  normalizeCommandSnippets(items: CommandSnippet[] | undefined): CommandSnippet[] {
+    return normalizeCommandSnippets(items)
+  }
+
+  normalizeStartupTasks(items: StartupTask[] | undefined): StartupTask[] {
+    return this.normalizeNamedCommands(items)
+      .map((item) => ({
+        ...item,
+        enabled: item.enabled !== false,
+      }))
+  }
+
+  normalizeEnvTemplates(items: EnvTemplate[] | undefined): EnvTemplate[] {
+    return (items || [])
+      .map((item) => ({
+        ...item,
+        key: item.key?.trim() || '',
+        value: item.value ?? '',
+      }))
+      .filter((item) => item.key)
+  }
+
+  escapeShellValue(value: string) {
+    return `'${value.replace(/'/g, `'\"'\"'`)}'`
+  }
+
+  buildBootstrapNotice(message: string, leadingBlankLine = false) {
+    const prefix = leadingBlankLine ? '\\n' : ''
+    return `printf '${prefix}%s\\n' ${this.escapeShellValue(message)}`
+  }
+
+  buildBootstrapCommands(profile: SshProfile) {
+    const commands: string[] = []
+    const envTemplates = this.normalizeEnvTemplates(profile.env_templates)
+      .filter((envItem) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(envItem.key))
+    const enabledTasks = this.normalizeStartupTasks(profile.startup_tasks)
+      .filter((task) => task.enabled)
+
+    if (!envTemplates.length && !enabledTasks.length) {
+      return commands
+    }
+
+    commands.push(this.buildBootstrapNotice(
+      `[Termlink] 工作流已加载：${envTemplates.length} 个环境变量，${enabledTasks.length} 个启动任务。`,
+      true,
+    ))
+
+    for (const envItem of envTemplates) {
+      commands.push(`export ${envItem.key}=${this.escapeShellValue(envItem.value)}`)
+    }
+
+    if (envTemplates.length) {
+      commands.push(this.buildBootstrapNotice(`[Termlink] 已注入 ${envTemplates.length} 个主机级环境变量。`))
+    }
+
+    if (!enabledTasks.length) {
+      commands.push(this.buildBootstrapNotice('[Termlink] 当前没有启用的启动任务。'))
+      return commands
+    }
+
+    commands.push('__termlink_bootstrap_failures=0')
+
+    enabledTasks.forEach((task, index) => {
+      commands.push(this.buildBootstrapNotice(
+        `[Termlink] 启动任务 ${index + 1}/${enabledTasks.length}: ${task.name}`,
+      ))
+      commands.push(task.command)
+      commands.push('__termlink_bootstrap_status=$?')
+      commands.push('if [ "$__termlink_bootstrap_status" -ne 0 ]; then')
+      commands.push('  __termlink_bootstrap_failures=$((__termlink_bootstrap_failures + 1))')
+      commands.push(
+        `  printf '%s\\n' ${this.escapeShellValue(`[Termlink] 启动任务失败: ${task.name}（退出码 `)}"$__termlink_bootstrap_status"${this.escapeShellValue('）')}`,
+      )
+      commands.push('fi')
+    })
+
+    commands.push('if [ "$__termlink_bootstrap_failures" -eq 0 ]; then')
+    commands.push(`  ${this.buildBootstrapNotice('[Termlink] 启动任务执行完成。')}`)
+    commands.push('else')
+    commands.push(`  ${this.buildBootstrapNotice('[Termlink] 启动任务执行结束，但存在失败项，请查看上方输出。')}`)
+    commands.push('fi')
+
+    commands.push('unset __termlink_bootstrap_failures')
+    commands.push('unset __termlink_bootstrap_status')
+
+    return commands
+  }
+
+  async scheduleProfileBootstrap(connectionId: string, profile: SshProfile) {
+    const commands = this.buildBootstrapCommands(profile)
+    if (!commands.length) return
+
+    window.setTimeout(() => {
+      this.writeTerminal(connectionId, `${commands.join('\n')}\n`).catch((error) => {
+        console.warn('执行连接后启动任务失败:', error)
+      })
+    }, 180)
+  }
+
+  async insertCommandSnippet(connectionId: string, snippet: Pick<CommandSnippet, 'command'> | string) {
+    const command = typeof snippet === 'string' ? snippet : snippet.command
+    const normalized = command.trim()
+    if (!normalized) return
+    await this.writeTerminal(connectionId, normalized)
+  }
+
+  async sendCommandSnippet(connectionId: string, snippet: Pick<CommandSnippet, 'command'> | string) {
+    const command = typeof snippet === 'string' ? snippet : snippet.command
+    const normalized = command.trim()
+    if (!normalized) return
+    await this.writeTerminal(connectionId, `${normalized}\n`)
+  }
+
+  async resolveProxyJumpAuth(
+    profile: SshProfile,
+    interactions?: SshConnectionInteractions,
+  ): Promise<SshJumpAuthRequestPayload | null> {
     if (!profile.proxy_jump_host || !profile.proxy_jump_username) {
       return null
     }
 
     let password: string | null = null
+    let passphrase: string | null = profile.proxy_jump_private_key_passphrase || null
     if (profile.proxy_jump_id) {
       try {
         password = await invoke<string | null>('get_ssh_password', { id: profile.proxy_jump_id })
       } catch (error) {
         console.warn('获取跳板机密码失败:', error)
+      }
+    }
+
+    if (profile.proxy_jump_private_key && !passphrase) {
+      passphrase = await this.requestPassphrase(
+        {
+          host: profile.proxy_jump_host,
+          port: profile.proxy_jump_port || 22,
+          username: profile.proxy_jump_username,
+        },
+        interactions,
+        '跳板机私钥需要密码短语，请输入后继续连接',
+        profile.proxy_jump_private_key,
+      )
+
+      if (!passphrase) {
+        throw this.createCancelledError()
       }
     }
 
@@ -169,7 +335,7 @@ class SshService {
       username: profile.proxy_jump_username,
       password,
       private_key_path: profile.proxy_jump_private_key || null,
-      passphrase: null,
+      passphrase,
       strict_host_key_checking: true,
     }
   }
@@ -204,6 +370,14 @@ class SshService {
   isAuthenticationError(error: unknown): boolean {
     const text = String(error).toLowerCase()
     return text.includes('认证') || text.includes('authentication') || text.includes('password')
+  }
+
+  isPrivateKeyPassphraseError(error: unknown): boolean {
+    const text = String(error).toLowerCase()
+    return text.includes('密码短语')
+      || text.includes('passphrase')
+      || text.includes('解密私钥失败')
+      || text.includes('可能需要密码短语')
   }
 
   isUserCancelledError(error: unknown): boolean {
@@ -270,6 +444,9 @@ class SshService {
       type: 'ssh',
       profile,
       sshState,
+      lastError: null,
+      reconnectAttempt: 0,
+      reconnectScheduledAt: null,
       autoPassword,
     }
   }
@@ -305,6 +482,7 @@ class SshService {
     interactions?: SshConnectionInteractions,
   ): Promise<string | null> {
     let password = profile.private_key ? null : initialPassword
+    let passphrase = profile.private_key_passphrase || null
 
     if (!profile.private_key && !password) {
       password = await this.requestPassword(profile, interactions, '输入 SSH 密码后继续连接')
@@ -314,17 +492,67 @@ class SshService {
       throw this.createCancelledError()
     }
 
-    const proxyJump = await this.resolveProxyJumpAuth(profile)
+    let proxyJump = await this.resolveProxyJumpAuth(profile, interactions)
     const portForwards = this.normalizePortForwards(profile.port_forwards)
 
     try {
       await this.startConnection(
-        this.buildAuthRequest(connectionId, profile, password, profileId, proxyJump, portForwards),
+        this.buildAuthRequest(connectionId, profile, password, profileId, proxyJump, portForwards, passphrase),
         interactions,
       )
+      this.scheduleProfileBootstrap(connectionId, profile)
       await this.persistPasswordIfNeeded(profile, password)
       return password
     } catch (error) {
+      if (profile.private_key && this.isPrivateKeyPassphraseError(error)) {
+        passphrase = await this.requestPassphrase(
+          profile,
+          interactions,
+          '私钥需要密码短语，请输入后继续连接',
+          profile.private_key || null,
+        )
+
+        if (!passphrase) {
+          throw this.createCancelledError()
+        }
+
+        await this.startConnection(
+          this.buildAuthRequest(connectionId, profile, password, profileId, proxyJump, portForwards, passphrase),
+          interactions,
+        )
+        this.scheduleProfileBootstrap(connectionId, profile)
+        return password
+      }
+
+      if (!profile.private_key && proxyJump?.private_key_path && this.isPrivateKeyPassphraseError(error)) {
+        const retryPassphrase = await this.requestPassphrase(
+          {
+            host: proxyJump.host,
+            port: proxyJump.port,
+            username: proxyJump.username,
+          },
+          interactions,
+          '跳板机私钥密码短语错误，请重新输入',
+          proxyJump.private_key_path,
+        )
+
+        if (!retryPassphrase) {
+          throw this.createCancelledError()
+        }
+
+        proxyJump = {
+          ...proxyJump,
+          passphrase: retryPassphrase,
+        }
+
+        await this.startConnection(
+          this.buildAuthRequest(connectionId, profile, password, profileId, proxyJump, portForwards, passphrase),
+          interactions,
+        )
+        this.scheduleProfileBootstrap(connectionId, profile)
+        return password
+      }
+
       if (!this.isAuthenticationError(error) || profile.private_key) {
         throw error
       }
@@ -335,9 +563,10 @@ class SshService {
       }
 
       await this.startConnection(
-        this.buildAuthRequest(connectionId, profile, retryPassword, profileId, proxyJump, portForwards),
+        this.buildAuthRequest(connectionId, profile, retryPassword, profileId, proxyJump, portForwards, passphrase),
         interactions,
       )
+      this.scheduleProfileBootstrap(connectionId, profile)
       await this.persistPasswordIfNeeded(profile, retryPassword)
       return retryPassword
     }
@@ -391,15 +620,20 @@ class SshService {
       group: sshData.group,
       tags: sshData.tags || [],
       private_key: sshData.usePrivateKey ? sshData.privateKey : null,
+      private_key_passphrase: sshData.usePrivateKey ? (sshData.privateKeyPassphrase || null) : null,
       proxy_jump_id: sshData.proxyJumpId || null,
       proxy_jump_name: sshData.proxyJumpName || null,
       proxy_jump_host: sshData.proxyJumpHost || null,
       proxy_jump_port: sshData.proxyJumpPort ? Number(sshData.proxyJumpPort) : null,
       proxy_jump_username: sshData.proxyJumpUsername || null,
       proxy_jump_private_key: sshData.proxyJumpPrivateKey || null,
+      proxy_jump_private_key_passphrase: sshData.proxyJumpPrivateKeyPassphrase || null,
       ssh_config_source: sshData.sshConfigSource || null,
       ssh_config_host: sshData.sshConfigHost || null,
       port_forwards: sshData.portForwards || [],
+      command_snippets: this.normalizeCommandSnippets(sshData.commandSnippets),
+      startup_tasks: this.normalizeStartupTasks(sshData.startupTasks),
+      env_templates: this.normalizeEnvTemplates(sshData.envTemplates),
     }
     const title = this.getConnectionTabTitle(profile)
 
@@ -480,15 +714,20 @@ class SshService {
         group: profileData.group,
         tags: profileData.tags || [],
         private_key: profileData.usePrivateKey ? profileData.privateKey : null,
+        private_key_passphrase: profileData.usePrivateKey ? (profileData.privateKeyPassphrase || null) : null,
         proxy_jump_id: profileData.proxyJumpId || null,
         proxy_jump_name: profileData.proxyJumpName || null,
         proxy_jump_host: profileData.proxyJumpHost || null,
         proxy_jump_port: profileData.proxyJumpPort ? Number(profileData.proxyJumpPort) : null,
         proxy_jump_username: profileData.proxyJumpUsername || null,
         proxy_jump_private_key: profileData.proxyJumpPrivateKey || null,
+        proxy_jump_private_key_passphrase: profileData.proxyJumpPrivateKeyPassphrase || null,
         ssh_config_source: profileData.sshConfigSource || null,
         ssh_config_host: profileData.sshConfigHost || null,
         port_forwards: profileData.portForwards || [],
+        command_snippets: this.normalizeCommandSnippets(profileData.commandSnippets),
+        startup_tasks: this.normalizeStartupTasks(profileData.startupTasks),
+        env_templates: this.normalizeEnvTemplates(profileData.envTemplates),
       }
 
       await invoke('save_ssh_profile', {
@@ -573,6 +812,14 @@ class SshService {
       return `连接被拒绝 (${hostInfo})\n请检查：\n1. 主机地址和端口是否正确\n2. SSH服务是否运行\n3. 防火墙设置`
     }
 
+    if (errorStr.includes('no route to host') || errorStr.includes('network is unreachable') || errorStr.includes('无法访问')) {
+      return `目标主机不可达 (${hostInfo})\n请检查：\n1. 网络是否连通\n2. 主机地址是否正确\n3. 路由或安全组是否放行`
+    }
+
+    if (errorStr.includes('name or service not known') || errorStr.includes('failed to lookup address information') || errorStr.includes('dns')) {
+      return `主机名解析失败 (${hostInfo})\n请检查：\n1. 主机名是否正确\n2. DNS 配置是否正常\n3. 是否需要改用 IP 直连`
+    }
+
     if (errorStr.includes('timeout') || errorStr.includes('超时')) {
       return `连接超时 (${hostInfo})\n请检查：\n1. 网络连接是否正常\n2. 主机地址是否可达\n3. 端口是否正确`
     }
@@ -581,8 +828,20 @@ class SshService {
       return `认证失败 (${hostInfo})\n请检查：\n1. 用户名是否正确\n2. 密码是否正确\n3. 私钥文件是否有效`
     }
 
+    if (errorStr.includes('密码短语') || errorStr.includes('passphrase') || errorStr.includes('解密私钥失败')) {
+      return `私钥密码短语无效 (${hostInfo})\n请检查：\n1. 私钥是否需要密码短语\n2. 输入的密码短语是否正确\n3. 私钥文件是否损坏`
+    }
+
+    if (errorStr.includes('私钥认证失败') || errorStr.includes('private key')) {
+      return `私钥认证失败 (${hostInfo})\n请检查：\n1. 私钥是否与当前用户名匹配\n2. 私钥格式是否受支持\n3. 如私钥已加密，请重新输入密码短语`
+    }
+
     if (errorStr.includes('host key') || errorStr.includes('主机密钥')) {
       return `主机密钥验证失败 (${hostInfo})\n请检查：\n1. 主机密钥是否已更改\n2. 是否为第一次连接此主机`
+    }
+
+    if (errorStr.includes('broken pipe') || errorStr.includes('connection reset') || errorStr.includes('connection closed') || errorStr.includes('channel closed') || errorStr.includes('断开')) {
+      return `连接已断开 (${hostInfo})\n请检查：\n1. 远端会话是否被关闭\n2. 网络是否稳定\n3. 服务器是否主动断开了连接`
     }
 
     if (errorStr.includes('network') || errorStr.includes('网络')) {

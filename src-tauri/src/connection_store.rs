@@ -17,8 +17,46 @@ pub struct PortForward {
     pub label: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct NamedCommand {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub command: String,
+    #[serde(skip_serializing_if = "String::is_empty", default)]
+    pub group: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct StartupTask {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub command: String,
+    #[serde(default = "default_startup_task_enabled")]
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct EnvTemplate {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub key: String,
+    #[serde(default)]
+    pub value: String,
+}
+
 fn default_port_forward_type() -> String {
     "local".to_string()
+}
+
+fn default_startup_task_enabled() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +92,12 @@ pub struct ConnectionProfile {
     pub ssh_config_host: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub port_forwards: Vec<PortForward>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub command_snippets: Vec<NamedCommand>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub startup_tasks: Vec<StartupTask>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub env_templates: Vec<EnvTemplate>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

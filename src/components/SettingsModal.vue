@@ -232,7 +232,7 @@
                   </a-button>
                 </a-space-compact>
                 <div class="settings-hint">
-                  SSH 主机配置和密码存储在此目录中。
+                  SSH 主机配置保存在此目录中；密码单独保存在应用级加密存储中。
                 </div>
               </a-form-item>
             </section>

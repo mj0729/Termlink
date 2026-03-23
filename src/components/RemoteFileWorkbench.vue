@@ -450,13 +450,17 @@ function cancelInlineRename() {
 
 function handleExternalDrop(fileList: FileList, targetPath: string) {
   const uploadPath = targetPath || currentPath.value
+  const batchId = fileList.length > 1 ? `upload-${Date.now()}` : undefined
+  const batchLabel = fileList.length > 1 ? `批量上传 (${fileList.length}项)` : undefined
   for (let i = 0; i < fileList.length; i++) {
     const file = fileList[i]
     emit('startUpload', {
       fileName: file.name,
       targetPath: uploadPath === '/' ? `/${file.name}` : `${uploadPath}/${file.name}`,
       connectionId: props.connectionId!,
-      source: { kind: 'file', file }
+      source: { kind: 'file', file },
+      batchId,
+      batchLabel,
     })
   }
 }
@@ -509,8 +513,8 @@ function handleContextMenuClick(key: string) {
   
   switch (key) {
     case 'open': if (entry) openEntry(entry); break
-    case 'download': 
-      if (entries.length) entries.forEach(e => downloadFile(e))
+    case 'download':
+      if (entries.length) void downloadEntries(entries)
       break
     case 'delete': deleteSelected(entries.length ? entries : undefined); break
     case 'rename': if (entry) startInlineRename(entry, contextMenu.sourceView); break
@@ -563,14 +567,52 @@ function openEntry(file: SftpFileEntry) {
   }
 }
 
-async function downloadFile(file: SftpFileEntry) {
+function isDirectoryEntry(entry: SftpFileEntry) {
+  return Boolean(entry.is_dir || entry.is_directory)
+}
+
+function joinLocalPath(parent: string, name: string) {
+  const separator = parent.includes('\\') ? '\\' : '/'
+  return parent.endsWith(separator) ? `${parent}${name}` : `${parent}${separator}${name}`
+}
+
+async function downloadEntries(entries: SftpFileEntry[]) {
+  if (!props.connectionId || entries.length === 0) return
+
+  const hasDirectory = entries.some(isDirectoryEntry)
+  const requiresDirectoryPicker = hasDirectory || entries.length > 1
+  const batchId = entries.length > 1 ? `download-${Date.now()}` : undefined
+  const batchLabel = entries.length > 1 ? `批量下载 (${entries.length}项)` : undefined
+
+  if (requiresDirectoryPicker) {
+    const targetDirectory = await invoke<string | null>('select_local_directory', {
+      title: entries.length > 1 ? '选择批量下载目录' : `选择“${entries[0].name}”的保存位置`,
+    })
+    if (!targetDirectory) return
+
+    for (const entry of entries) {
+      emit('startDownload', {
+        fileName: entry.name,
+        remotePath: entry.path,
+        savePath: joinLocalPath(targetDirectory, entry.name),
+        connectionId: props.connectionId,
+        entryType: isDirectoryEntry(entry) ? 'directory' : 'file',
+        batchId,
+        batchLabel,
+      })
+    }
+    return
+  }
+
+  const file = entries[0]
   const savePath = await invoke<string | null>('select_download_location', { fileName: file.name })
   if (!savePath) return
   emit('startDownload', {
     fileName: file.name,
     remotePath: file.path,
     savePath,
-    connectionId: props.connectionId!
+    connectionId: props.connectionId,
+    entryType: 'file',
   })
 }
 
@@ -581,6 +623,7 @@ function openUploadPicker() {
 function handleContextUploadChange(e: Event) {
   const files = (e.target as HTMLInputElement).files
   if (files) handleExternalDrop(files, currentPath.value)
+  ;(e.target as HTMLInputElement).value = ''
 }
 
 // --- Lifecycle ---

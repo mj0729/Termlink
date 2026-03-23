@@ -64,6 +64,7 @@ pub fn run() {
             fs::parse_default_ssh_config,
             fs::select_download_location,
             fs::select_local_file,
+            fs::select_local_directory,
             // SFTP commands
             sftp_russh::list_sftp_files,
             sftp_russh::resolve_sftp_target_path,

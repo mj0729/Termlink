@@ -4,7 +4,7 @@
 
 ## Module Responsibility
 
-The `src-tauri/` directory contains the Rust backend of Termlink. It provides all system-level functionality: local terminal (PTY) management, SSH terminal sessions, SFTP file transfers, SSH profile/credential storage, remote system monitoring, download management, and local filesystem browsing. All functions are exposed to the frontend as Tauri commands.
+The `src-tauri/` directory contains the Rust backend of Termlink. It provides all system-level functionality: local terminal (PTY) management, SSH terminal sessions, SFTP file transfers, SSH profile/credential storage, remote system monitoring, download helpers, and local filesystem browsing. All functions are exposed to the frontend as Tauri commands.
 
 ## Entry & Startup
 
@@ -36,10 +36,10 @@ All Tauri commands are registered in `src/lib.rs` via `invoke_handler`. The full
 ### SSH Profile Management
 | Command | Function | Description |
 |---------|----------|-------------|
-| `save_ssh_profile` | `ssh::save_ssh_profile` | Save SSH profile to JSON file + password to keyring |
+| `save_ssh_profile` | `ssh::save_ssh_profile` | Save SSH profile to JSON file + password to encrypted local credential store |
 | `list_ssh_profiles` | `ssh::list_ssh_profiles` | List all saved SSH profiles |
-| `get_ssh_password` | `ssh::get_ssh_password` | Retrieve password from OS keyring |
-| `delete_ssh_profile` | `ssh::delete_ssh_profile` | Delete profile file and keyring entry |
+| `get_ssh_password` | `ssh::get_ssh_password` | Retrieve password from encrypted local credential store (with legacy keyring migration) |
+| `delete_ssh_profile` | `ssh::delete_ssh_profile` | Delete profile file and stored credential |
 | `restart_ssh_connection` | `ssh::restart_ssh_connection` | Cleanup for SSH reconnection |
 | `get_profiles_dir` | `ssh::get_profiles_dir` | Get profiles directory path |
 
@@ -47,8 +47,9 @@ All Tauri commands are registered in `src/lib.rs` via `invoke_handler`. The full
 | Command | Function | Description |
 |---------|----------|-------------|
 | `list_sftp_files` | `sftp_russh::list_sftp_files` | List remote directory contents |
-| `download_sftp_file` | `sftp_russh::download_sftp_file` | Download file with real-time progress |
+| `download_sftp_file` | `sftp_russh::download_sftp_file` | Download remote file or directory with real-time progress |
 | `upload_sftp_file` | `sftp_russh::upload_sftp_file` | Upload local file to remote |
+| `upload_sftp_content` | `sftp_russh::upload_sftp_content` | Upload in-memory file content to remote |
 | `read_sftp_file` | `sftp_russh::read_sftp_file` | Read remote file as UTF-8 text |
 | `write_sftp_file` | `sftp_russh::write_sftp_file` | Write content to remote file |
 | `delete_sftp_file` | `sftp_russh::delete_sftp_file` | Delete remote file |
@@ -73,6 +74,7 @@ All Tauri commands are registered in `src/lib.rs` via `invoke_handler`. The full
 | Command | Function | Description |
 |---------|----------|-------------|
 | `select_download_location` | `download_manager::select_download_location` | Get default download path |
+| `select_local_directory` | `fs::select_local_directory` | Select a local directory for batch or folder downloads |
 | `get_sftp_file_info` | `download_manager::get_sftp_file_info` | Get file info for download |
 | `download_sftp_file_with_progress` | `download_manager::download_sftp_file_with_progress` | (Placeholder) Download with progress callback |
 | `cancel_download` | `download_manager::cancel_download` | Cancel ongoing download |
@@ -91,13 +93,13 @@ All Tauri commands are registered in `src/lib.rs` via `invoke_handler`. The full
 | `terminal.rs` | ~134 | Local PTY via `portable-pty`. Global `PTY_SENDERS` HashMap for session management. |
 | `connection_manager.rs` | ~390 | Shared SSH connection actor. Owns transport, terminal channel, lazy SFTP session, and remote command execution. |
 | `ssh_terminal_russh.rs` | ~40 | Thin Tauri command adapter for SSH terminal + host-key flow. |
-| `ssh.rs` | ~104 | SSH profile CRUD. Stores profiles as JSON in `ProjectDirs` config dir. Passwords stored via `keyring`. |
-| `ssh_auth.rs` | ~300 | SSH authentication and strict host-key verification. |
+| `ssh.rs` | ~104 | SSH profile CRUD. Stores profiles as JSON in `ProjectDirs` config dir. Passwords stored via encrypted local credential store with keyring migration fallback. |
+| `ssh_auth.rs` | ~300 | SSH authentication and strict host-key verification. Supports password, private key, ProxyJump, and passphrase-aware private key loading. |
 | `host_key_store.rs` | ~120 | Local host-key persistence for trusted fingerprints. |
 | `sftp_russh.rs` | ~360 | Full SFTP implementation via `russh-sftp`. Reuses `ConnectionManager` actor sessions. |
 | `ssh_command.rs` | ~10 | Thin Tauri command adapter for shared remote command execution + disconnect. |
 | `system_monitor.rs` | ~572 | Remote system monitoring. Executes batch shell commands to gather CPU, memory, disk, network, process info. Parses `/proc/` output. Network speed calculation with caching. |
-| `download_manager.rs` | ~129 | Download helpers: location selection, file info, cross-platform file manager opening. |
+| `download_manager.rs` | ~129 | Download helpers: local path conflict resolution, placeholder APIs, cross-platform file manager opening. |
 | `fs.rs` | ~142 | Local filesystem operations: directory listing, home dir, parent dir, file explorer launch. |
 | `build.rs` | ~3 | Standard Tauri build script |
 
@@ -110,7 +112,7 @@ All Tauri commands are registered in `src/lib.rs` via `invoke_handler`. The full
 | `russh-keys` | 0.40 | SSH key handling |
 | `russh-sftp` | 2.0 | SFTP protocol over russh |
 | `portable-pty` | 0.8 | Cross-platform PTY |
-| `keyring` | 2 | OS credential storage |
+| `keyring` | 2 | Legacy credential migration fallback |
 | `tokio` | 1 (full) | Async runtime |
 | `serde` / `serde_json` | 1.0 | Serialization |
 | `parking_lot` | 0.12 | Synchronous mutexes |
@@ -125,7 +127,7 @@ All Tauri commands are registered in `src/lib.rs` via `invoke_handler`. The full
 ### Rust Structs
 
 ```
-SshProfileMeta { id, host, port, username, save_password, private_key?, name?, group?, tags }
+SshProfileMeta { id, host, port, username, save_password, private_key?, private_key_passphrase?, proxy_jump_*, name?, group?, tags }
 SftpFileInfo { name, is_dir, size, modified?, permissions }
 FileItem { name, path, is_directory, size?, modified?, is_hidden }
 BatchSystemInfo { system, cpu, memory, disk[], network[], process }
@@ -147,18 +149,18 @@ FileInfo { name, size, modified? }
 
 ## Testing & Quality
 
-**No tests exist.** No `#[cfg(test)]` modules are present.
+Basic unit tests exist for SSH auth serialization, SSH config parsing, host key serialization, and selected SFTP helpers.
 
 Recommended additions:
 - Unit tests for parsing functions in `system_monitor.rs` (CPU, memory, disk, network, process parsing)
-- Unit tests for `ssh.rs` profile serialization/deserialization
+- Unit tests for `ssh.rs` / `connection_store.rs` profile serialization-deserialization
 - Integration tests for `fs.rs` local filesystem operations
 
 ## Known TODOs
 
 1. `ssh.rs`: `restart_ssh_connection()` only cleans up, reconnection handled in frontend
-2. `download_manager.rs`: `download_sftp_file_with_progress()` is a placeholder with simulated delay
-3. Private key auth still needs full passphrase support
+2. `download_manager.rs`: `download_sftp_file_with_progress()` is a placeholder with simulated delay and is not the main transfer path
+3. Auto reconnect is currently frontend-managed with limited retry scheduling, not a backend session keepalive
 
 ## FAQ
 
@@ -166,10 +168,10 @@ Recommended additions:
 A: A single `connection_id` maps to one `ConnectionManager` actor. Terminal I/O, lazy SFTP session creation, and monitoring commands all reuse the same SSH transport instead of opening three independent pools.
 
 **Q: How does system monitoring work without a local agent?**
-A: The system monitor executes batch shell commands (`cat /proc/stat`, `df -h`, etc.) over SSH and parses the text output. This means it only works on Linux targets.
+A: The system monitor executes batch shell commands (`cat /proc/stat`, `df -h`, etc.) over SSH and parses the text output. In practice this currently targets Linux hosts.
 
 **Q: Where are SSH profiles stored?**
-A: JSON files in `ProjectDirs::from("com", "Termlink", "Termlink").config_dir()/profiles/`. Passwords are stored separately in the OS keyring via the `keyring` crate.
+A: Connection metadata is stored in the app storage directory as JSON. Passwords are stored separately in the encrypted local credential store; legacy keyring entries are migrated on read.
 
 ## Related Files
 
@@ -190,7 +192,7 @@ src-tauri/
     ssh_terminal_russh.rs          -- SSH terminal sessions
     ssh_auth.rs                    -- SSH auth + host-key verification
     host_key_store.rs              -- Trusted host-key storage
-    ssh.rs                         -- SSH profile CRUD + keyring
+    ssh.rs                         -- SSH profile CRUD + encrypted credential integration
     sftp_russh.rs                  -- SFTP file operations
     ssh_command.rs                 -- Shared SSH command adapter
     system_monitor.rs              -- Remote system monitoring

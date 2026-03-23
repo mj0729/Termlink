@@ -45,7 +45,6 @@ declare module 'vue' {
     ATree: typeof import('antdv-next')['Tree']
     ChmodModal: typeof import('./components/remote-file/ChmodModal.vue')['default']
     ChownModal: typeof import('./components/remote-file/ChownModal.vue')['default']
-    DownloadManager: typeof import('./components/DownloadManager.vue')['default']
     FileContextMenu: typeof import('./components/remote-file/FileContextMenu.vue')['default']
     FileEditor: typeof import('./components/FileEditor.vue')['default']
     FileManager: typeof import('./components/FileManager.vue')['default']

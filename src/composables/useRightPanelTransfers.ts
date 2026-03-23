@@ -1,5 +1,9 @@
 import { computed, ref, type Ref } from 'vue'
-import { useTransferManager, type TransferTask } from './useTransferManager'
+import {
+  describeUploadConflictAction,
+  useTransferManager,
+  type TransferTask,
+} from './useTransferManager'
 import type { MonitorTab, UploadRequest } from '../types/app'
 
 type TransferFilter = 'all' | 'download' | 'upload' | 'running' | 'completed' | 'error'
@@ -18,6 +22,12 @@ export interface TransferGroup {
   total: number
   speed: number
   count: number
+  runningCount: number
+  completedCount: number
+  errorCount: number
+  skippedCount: number
+  cancelledCount: number
+  statusSummary: string
   items: TransferTask[]
 }
 
@@ -39,6 +49,8 @@ export function useRightPanelTransfers(activeTab: Ref<MonitorTab>) {
     cancelTransfers,
     retryTransfer: retryManagedTransfer,
     clearCompleted: clearManagedCompleted,
+    defaultUploadConflictStrategy,
+    clearDefaultUploadConflictStrategy,
     openFileLocation: openManagedFileLocation,
   } = useTransferManager()
 
@@ -87,10 +99,15 @@ export function useRightPanelTransfers(activeTab: Ref<MonitorTab>) {
     const transferred = items.reduce((sum, item) => sum + item.transferred, 0)
     const total = items.reduce((sum, item) => sum + item.total, 0)
     const speed = items.reduce((sum, item) => sum + item.speed, 0)
-    const hasRunning = items.some((item) => item.status === 'running')
-    const hasError = items.some((item) => item.status === 'error')
-    const hasCancelled = items.some((item) => item.status === 'cancelled')
-    const hasSkipped = items.some((item) => item.status === 'skipped')
+    const runningCount = items.filter((item) => item.status === 'running').length
+    const completedCount = items.filter((item) => item.status === 'completed').length
+    const errorCount = items.filter((item) => item.status === 'error').length
+    const skippedCount = items.filter((item) => item.status === 'skipped').length
+    const cancelledCount = items.filter((item) => item.status === 'cancelled').length
+    const hasRunning = runningCount > 0
+    const hasError = errorCount > 0
+    const hasCancelled = cancelledCount > 0
+    const hasSkipped = skippedCount > 0
 
     let status: TransferGroup['status'] = 'completed'
     if (hasRunning) {
@@ -102,6 +119,14 @@ export function useRightPanelTransfers(activeTab: Ref<MonitorTab>) {
     } else if (hasSkipped) {
       status = 'skipped'
     }
+
+    const statusSummary = [
+      completedCount > 0 ? `成功 ${completedCount}` : '',
+      errorCount > 0 ? `失败 ${errorCount}` : '',
+      skippedCount > 0 ? `跳过 ${skippedCount}` : '',
+      cancelledCount > 0 ? `取消 ${cancelledCount}` : '',
+      runningCount > 0 ? `进行中 ${runningCount}` : '',
+    ].filter(Boolean).join(' · ')
 
     return {
       id,
@@ -117,6 +142,12 @@ export function useRightPanelTransfers(activeTab: Ref<MonitorTab>) {
       total,
       speed,
       count,
+      runningCount,
+      completedCount,
+      errorCount,
+      skippedCount,
+      cancelledCount,
+      statusSummary,
       items,
     }
   }
@@ -169,6 +200,11 @@ export function useRightPanelTransfers(activeTab: Ref<MonitorTab>) {
 
   return {
     transfers,
+    defaultUploadConflictStrategyLabel: computed(() => (
+      defaultUploadConflictStrategy.value
+        ? describeUploadConflictAction(defaultUploadConflictStrategy.value)
+        : ''
+    )),
     transferFilter,
     transferFilterOptions,
     visibleTransferGroups,
@@ -179,5 +215,6 @@ export function useRightPanelTransfers(activeTab: Ref<MonitorTab>) {
     openFileLocation,
     removeTransferGroup,
     clearCompleted,
+    clearDefaultUploadConflictStrategy,
   }
 }

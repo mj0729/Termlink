@@ -32,8 +32,7 @@ The `src/` directory contains the entire frontend layer of Termlink. It renders 
 | `Terminal.vue` | `src/components/Terminal.vue` | xterm.js terminal wrapper. Handles local PTY and SSH terminal I/O, resize, theme, context menu (copy/paste/clear). |
 | `FileEditor.vue` | `src/components/FileEditor.vue` | Monaco Editor wrapper for remote file editing. Supports read/write via SFTP, language detection, save/discard. |
 | `FileManager.vue` | `src/components/FileManager.vue` | Local filesystem browser using Ant Design table. Navigation, hidden files toggle. (Currently less used than Sidebar's SFTP browser) |
-| `SystemMonitor.vue` | `src/components/SystemMonitor.vue` | Standalone floating system monitor panel (alternative to RightPanel's monitor). |
-| `DownloadManager.vue` | `src/components/DownloadManager.vue` | Standalone floating download manager (alternative to RightPanel's download tab). |
+| `SystemMonitor.vue` | `src/components/SystemMonitor.vue` | Standalone legacy system monitor panel kept for compatibility; the integrated monitor experience now lives in `RightPanel.vue`. |
 | `SshModal.vue` | `src/components/SshModal.vue` | Modal dialog for creating/editing SSH connections. Supports password/private-key auth, groups, tags. |
 | `SettingsModal.vue` | `src/components/SettingsModal.vue` | Dual-pane preferences dialog with left-side category navigation for general, terminal, appearance, and storage settings. Keeps theme/terminal config editing plus profile import/export actions. |
 
@@ -56,7 +55,7 @@ All Tauri commands are called via `invoke('command_name', { params })`. Key comm
 - **Host key**: `preview_ssh_host_key`, `save_ssh_host_key_decision`
 - **SFTP**: `list_sftp_files`, `download_sftp_file`, `upload_sftp_file`, `read_sftp_file`, `write_sftp_file`, `delete_sftp_file`, `create_sftp_directory`, `rename_sftp_file`, `delete_sftp_directory`
 - **System Monitor**: `get_all_system_info_batch`, `get_dynamic_system_info_batch`
-- **Download**: `select_download_location`, `download_sftp_file_with_progress`, `cancel_download`, `open_file_location`
+- **Transfer / Filesystem**: `select_download_location`, `select_local_directory`, `download_sftp_file`, `upload_sftp_file`, `upload_sftp_content`, `cancel_transfer`, `open_file_location`
 - **Filesystem**: `list_files`, `get_home_dir`, `get_parent_dir`, `open_file_explorer`
 
 Events (backend -> frontend via `listen`):
@@ -91,7 +90,7 @@ Frontend state is managed via Vue 3 reactive refs in `App.vue`:
 
 ## Testing & Quality
 
-**No tests exist.** No test framework is configured.
+Lightweight regression tests exist for SSH workspace and SSH config import flows.
 
 Recommended additions:
 - Add Vitest for component and service unit tests
@@ -106,8 +105,8 @@ A: A single `connection_id` now owns one backend `ConnectionManager` actor. Term
 **Q: How does theming work?**
 A: `ThemeService` sets `data-theme` attribute on `<body>`. CSS variables in `style.css` and `App.vue` respond to this attribute. Terminal colors are separate theme objects passed to xterm.js.
 
-**Q: Why are there two system monitor components?**
-A: `SystemMonitor.vue` is an older floating panel implementation. `RightPanel.vue` contains the newer integrated version. Both share the same backend API.
+**Q: Why is there both `SystemMonitor.vue` and `RightPanel.vue`?**
+A: `SystemMonitor.vue` is an older standalone implementation kept in the repo. The primary in-product experience for monitoring and transfer management is now the integrated `RightPanel.vue`.
 
 ## Related Files
 
@@ -123,7 +122,6 @@ src/
     FileEditor.vue                 -- Monaco Editor wrapper (~400 LOC)
     FileManager.vue                -- Local file browser (~470 LOC)
     SystemMonitor.vue              -- Floating system monitor (~650 LOC)
-    DownloadManager.vue            -- Floating download manager (~355 LOC)
     TopMenu.vue                    -- Top menu bar (~105 LOC)
     TabManager.vue                 -- Tab bar (~85 LOC)
     SshModal.vue                   -- SSH connection dialog (~290 LOC)

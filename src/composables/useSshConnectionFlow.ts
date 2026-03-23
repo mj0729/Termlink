@@ -20,6 +20,8 @@ type UseSshConnectionFlowOptions = {
 export function useSshConnectionFlow(options: UseSshConnectionFlowOptions) {
   const manualDisconnectingIds = ref(new Set<string>())
   const closingTabIds = ref(new Set<string>())
+  const autoReconnectTimers = ref(new Map<string, number>())
+  const autoReconnectDelays = [1500, 5000]
 
   function isUserCancelledConnection(error: unknown) {
     return String(error).includes('已取消连接')
@@ -36,13 +38,25 @@ export function useSshConnectionFlow(options: UseSshConnectionFlowOptions) {
   function clearTrackedSshTab(id: string) {
     manualDisconnectingIds.value.delete(id)
     closingTabIds.value.delete(id)
+    clearAutoReconnectTimer(id)
+  }
+
+  function clearAutoReconnectTimer(id: string) {
+    const timer = autoReconnectTimers.value.get(id)
+    if (timer) {
+      window.clearTimeout(timer)
+      autoReconnectTimers.value.delete(id)
+    }
   }
 
   async function removePendingSshTab(id: string) {
     await options.closeTab(id, { skipDisconnect: true })
   }
 
-  async function reconnectSsh(tab: ConnectionTab | null, flowOptions: { silent?: boolean } = {}) {
+  async function reconnectSsh(
+    tab: ConnectionTab | null,
+    flowOptions: { silent?: boolean; source?: 'manual' | 'auto' } = {},
+  ) {
     if (tab?.type !== 'ssh' || !tab.profile) {
       return false
     }
@@ -56,22 +70,93 @@ export function useSshConnectionFlow(options: UseSshConnectionFlowOptions) {
     }
 
     try {
+      clearAutoReconnectTimer(tab.id)
+      options.patchSshTab(tab.id, {
+        lastError: null,
+        reconnectScheduledAt: null,
+      })
       options.updateSshTabState(tab.id, 'connecting')
       await SshService.reconnect(tab.id, tab.profile, defaultSshConnectionInteractions)
-      options.updateSshTabState(tab.id, 'connected')
+      options.patchSshTab(tab.id, {
+        sshState: 'connected',
+        lastError: null,
+        reconnectAttempt: 0,
+        reconnectScheduledAt: null,
+      })
+      if (!flowOptions.silent) {
+        message.success(`已重新连接 ${tab.title}`)
+      }
       return true
     } catch (error) {
+      const formattedError = String(error)
       if (isUserCancelledConnection(error)) {
-        options.updateSshTabState(tab.id, 'disconnected')
+        options.patchSshTab(tab.id, {
+          sshState: 'disconnected',
+          reconnectScheduledAt: null,
+        })
+        if (!flowOptions.silent) {
+          message.info(`已取消重连 ${tab.title}`)
+        }
         return false
       }
 
-      options.updateSshTabState(tab.id, 'disconnected')
+      options.patchSshTab(tab.id, {
+        sshState: 'disconnected',
+        lastError: formattedError,
+        reconnectScheduledAt: null,
+      })
       if (!flowOptions.silent) {
-        options.showLongError(String(error))
+        message.error(`重连失败: ${tab.title}`)
+        options.showLongError(formattedError)
       }
       return false
     }
+  }
+
+  function scheduleAutoReconnect(tab: ConnectionTab, reason: string) {
+    if (tab.type !== 'ssh' || !tab.profile || closingTabIds.value.has(tab.id) || manualDisconnectingIds.value.has(tab.id)) {
+      return
+    }
+
+    clearAutoReconnectTimer(tab.id)
+
+    const nextAttempt = (tab.reconnectAttempt || 0) + 1
+    const delay = autoReconnectDelays[nextAttempt - 1]
+
+    if (!delay) {
+      options.patchSshTab(tab.id, {
+        sshState: 'disconnected',
+        lastError: reason,
+        reconnectScheduledAt: null,
+      })
+      return
+    }
+
+    const scheduledAt = Date.now() + delay
+    options.patchSshTab(tab.id, {
+      sshState: 'disconnected',
+      lastError: reason,
+      reconnectAttempt: nextAttempt,
+      reconnectScheduledAt: scheduledAt,
+    })
+
+    const timer = window.setTimeout(async () => {
+      autoReconnectTimers.value.delete(tab.id)
+      const currentTab = options.findTabById(tab.id)
+      if (!currentTab || currentTab.type !== 'ssh' || currentTab.sshState === 'connected') {
+        return
+      }
+
+      const success = await reconnectSsh(currentTab, { silent: true, source: 'auto' })
+      if (!success) {
+        const latestTab = options.findTabById(tab.id)
+        if (latestTab?.type === 'ssh') {
+          scheduleAutoReconnect(latestTab, latestTab.lastError || reason)
+        }
+      }
+    }, delay)
+
+    autoReconnectTimers.value.set(tab.id, timer)
   }
 
   async function launchSavedProfile(profile: SshProfile) {
@@ -97,6 +182,9 @@ export function useSshConnectionFlow(options: UseSshConnectionFlowOptions) {
       options.patchSshTab(tabInfo.id, {
         autoPassword,
         sshState: 'connected',
+        lastError: null,
+        reconnectAttempt: 0,
+        reconnectScheduledAt: null,
       })
     } catch (error) {
       if (isUserCancelledConnection(error)) {
@@ -109,7 +197,11 @@ export function useSshConnectionFlow(options: UseSshConnectionFlowOptions) {
 
       const failedTab = options.tabs.value.find((tab) => tab.type === 'ssh' && tab.profile?.id === profile.id)
       if (failedTab) {
-        options.patchSshTab(failedTab.id, { sshState: 'disconnected' })
+        options.patchSshTab(failedTab.id, {
+          sshState: 'disconnected',
+          lastError: String(error),
+          reconnectScheduledAt: null,
+        })
       }
 
       console.error('启动SSH连接失败:', error)
@@ -147,8 +239,18 @@ export function useSshConnectionFlow(options: UseSshConnectionFlowOptions) {
     if (closingTabIds.value.has(id)) return
 
     if (manualDisconnectingIds.value.has(id)) {
-      options.updateSshTabState(id, 'disconnected')
+      options.patchSshTab(id, {
+        sshState: 'disconnected',
+        reconnectAttempt: 0,
+        reconnectScheduledAt: null,
+      })
       manualDisconnectingIds.value.delete(id)
+      return
+    }
+
+    const tab = options.findTabById(id)
+    if (tab?.type === 'ssh' && tab.profile) {
+      scheduleAutoReconnect(tab, 'SSH 会话已断开，正在尝试恢复连接')
       return
     }
 
@@ -160,9 +262,15 @@ export function useSshConnectionFlow(options: UseSshConnectionFlowOptions) {
     if (tab?.type !== 'ssh' || tab.sshState === 'disconnected') return
 
     manualDisconnectingIds.value.add(id)
+    clearAutoReconnectTimer(id)
     try {
       await SshService.closeConnection(id)
-      options.updateSshTabState(id, 'disconnected')
+      options.patchSshTab(id, {
+        sshState: 'disconnected',
+        lastError: null,
+        reconnectAttempt: 0,
+        reconnectScheduledAt: null,
+      })
     } finally {
       manualDisconnectingIds.value.delete(id)
     }

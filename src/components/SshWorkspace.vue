@@ -19,7 +19,8 @@
       :style="workspaceShellStyle"
     >
       <section class="ssh-workspace__terminal" :class="{ 'has-inline-files': showInlineFiles }">
-        <div class="ssh-pane-grid" :style="paneGridStyle">
+        <div class="ssh-workspace__terminal-surface">
+          <div class="ssh-pane-grid" :style="paneGridStyle">
           <article
             v-for="(pane, index) in workspacePanes"
             :key="pane.id"
@@ -124,6 +125,9 @@
                 :auto-password="pane.autoPassword"
                 :ssh-user="pane.profile?.username || profile?.username || ''"
                 :ssh-state="pane.sshState"
+                :connection-error="pane.isPrimary ? (lastError || '') : ''"
+                :reconnect-attempt="pane.isPrimary ? (reconnectAttempt || 0) : 0"
+                :reconnect-scheduled-at="pane.isPrimary ? (reconnectScheduledAt || null) : null"
                 type="ssh"
                 @close="pane.isPrimary ? $emit('close') : removePane(pane.id)"
                 @current-directory-change="handlePaneDirectoryChange(pane.id, $event)"
@@ -132,6 +136,78 @@
               />
             </div>
           </article>
+          </div>
+
+          <div
+            v-if="commandSnippets.length"
+            ref="snippetTriggerRef"
+            class="ssh-workspace__snippet-launcher"
+          >
+            <button
+              type="button"
+              class="ssh-workspace__snippet-trigger"
+              :class="{ 'is-open': showSnippetPanel }"
+              @click="toggleSnippetPanel"
+              :title="showSnippetPanel ? '收起命令片段' : '打开命令片段'"
+            >
+              <FileTextOutlined />
+              <strong>{{ commandSnippets.length }}</strong>
+            </button>
+          </div>
+
+          <transition name="ssh-workspace-snippet-sheet">
+            <section
+              v-if="showSnippetPanel"
+              ref="snippetPanelRef"
+              class="ssh-workspace__snippet-sheet"
+            >
+              <a-input
+                v-model:value="snippetQuery"
+                class="ssh-workspace__snippet-search"
+                allow-clear
+                placeholder="搜索名称 / 分组 / 命令"
+              />
+
+              <div v-if="snippetGroups.length" class="ssh-workspace__snippet-groups">
+                <section
+                  v-for="group in snippetGroups"
+                  :key="group.key"
+                  class="ssh-workspace__snippet-group"
+                >
+                  <div class="ssh-workspace__snippet-group-title">
+                    {{ group.label }}
+                    <span>{{ group.items.length }}</span>
+                  </div>
+                  <div
+                    v-for="snippet in group.items"
+                    :key="snippet.id"
+                    class="ssh-workspace__snippet-item"
+                    role="button"
+                    tabindex="0"
+                    @click="insertCommandSnippet(snippet.command)"
+                    @keydown.enter.prevent="insertCommandSnippet(snippet.command)"
+                    @keydown.space.prevent="insertCommandSnippet(snippet.command)"
+                  >
+                    <div class="ssh-workspace__snippet-copy">
+                      <strong>{{ snippet.name }}</strong>
+                      <code>{{ snippet.command }}</code>
+                    </div>
+                    <div class="ssh-workspace__snippet-actions">
+                      <a-button size="small" type="text" @click.stop="copyCommandSnippet(snippet.command)">
+                        复制
+                      </a-button>
+                      <a-button size="small" type="text" @click.stop="runCommandSnippet(snippet.command)">
+                        执行
+                      </a-button>
+                    </div>
+                  </div>
+                </section>
+              </div>
+              <div v-else class="ssh-workspace__snippet-empty">
+                没有匹配的命令片段
+              </div>
+            </section>
+          </transition>
         </div>
 
         <section v-if="showInlineFiles" class="ssh-workspace__files-inline">
@@ -159,8 +235,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
+import { message } from 'antdv-next'
 import {
   CloseOutlined,
+  FileTextOutlined,
   PlusOutlined,
   ReloadOutlined,
   SettingOutlined,
@@ -171,6 +249,7 @@ import RemoteFileWorkbench from './RemoteFileWorkbench.vue'
 import RightPanel from './RightPanel.vue'
 import SshService from '../services/SshService'
 import { getConnectionStatusMeta } from '../constants/connectionStatus'
+import { buildCommandSnippetGroups } from '../utils/commandSnippets'
 import { getBroadcastTargetPaneIds } from '../utils/sshWorkspace'
 import { defaultSshConnectionInteractions } from '../utils/sshConnectionInteractions'
 import type {
@@ -203,6 +282,9 @@ const props = withDefaults(defineProps<{
   embeddedMonitorVisible?: boolean
   embeddedMonitorCollapsed?: boolean
   sshState?: ConnectionTab['sshState']
+  lastError?: string | null
+  reconnectAttempt?: number
+  reconnectScheduledAt?: number | null
   filesDrawerOpen?: boolean
 }>(), {
   connectionId: '',
@@ -221,6 +303,9 @@ const props = withDefaults(defineProps<{
   embeddedMonitorVisible: false,
   embeddedMonitorCollapsed: false,
   sshState: 'connected',
+  lastError: null,
+  reconnectAttempt: 0,
+  reconnectScheduledAt: null,
   filesDrawerOpen: false,
 })
 
@@ -235,10 +320,14 @@ const emit = defineEmits<{
 }>()
 
 const workspaceRef = ref<HTMLElement | null>(null)
+const snippetPanelRef = ref<HTMLElement | null>(null)
+const snippetTriggerRef = ref<HTMLElement | null>(null)
 const workspaceWidth = ref(0)
 const terminalPath = ref('')
 const activePaneId = ref(props.id)
 const broadcastEnabled = ref(false)
+const snippetQuery = ref('')
+const snippetPanelOpen = ref(false)
 const extraPanes = ref<WorkspacePane[]>([])
 const showEmbeddedMonitor = computed(() => (
   props.embeddedMonitorVisible
@@ -279,6 +368,12 @@ const paneGridStyle = computed(() => ({
 const activePane = computed(() => (
   workspacePanes.value.find((pane) => pane.id === activePaneId.value)
   || primaryPane.value
+))
+const commandSnippets = computed(() => props.profile?.command_snippets || [])
+const snippetGroups = computed(() => buildCommandSnippetGroups(commandSnippets.value, snippetQuery.value))
+const filteredSnippets = computed(() => snippetGroups.value.flatMap((group) => group.items))
+const showSnippetPanel = computed(() => (
+  snippetPanelOpen.value || Boolean(snippetQuery.value.trim())
 ))
 
 const activeWorkbenchConnectionId = computed(() => {
@@ -352,6 +447,40 @@ function toggleBroadcast() {
   broadcastEnabled.value = !broadcastEnabled.value
 }
 
+function closeSnippetPanel(options: { resetQuery?: boolean } = {}) {
+  snippetPanelOpen.value = false
+  if (options.resetQuery !== false) {
+    snippetQuery.value = ''
+  }
+}
+
+function toggleSnippetPanel() {
+  if (showSnippetPanel.value) {
+    closeSnippetPanel()
+    return
+  }
+
+  snippetPanelOpen.value = true
+}
+
+function handleGlobalPointerDown(event: MouseEvent) {
+  if (!showSnippetPanel.value) {
+    return
+  }
+
+  const target = event.target as Node | null
+  if (!target) {
+    closeSnippetPanel()
+    return
+  }
+
+  if (snippetPanelRef.value?.contains(target) || snippetTriggerRef.value?.contains(target)) {
+    return
+  }
+
+  closeSnippetPanel()
+}
+
 function buildRemoteFilesWindowUrl() {
   const params = new URLSearchParams()
   params.set('mode', 'remote-files')
@@ -399,6 +528,57 @@ async function copyForwardAddress(localPort: number) {
     message.success(`已复制 ${value}`)
   } catch {
     message.error('复制端口地址失败')
+  }
+}
+
+function getRunnablePane() {
+  if (activePane.value.sshState === 'connected') {
+    return activePane.value
+  }
+
+  if (primaryPane.value.sshState === 'connected') {
+    return primaryPane.value
+  }
+
+  return null
+}
+
+async function runCommandSnippet(command: string) {
+  const pane = getRunnablePane()
+  if (!pane) {
+    message.warning('当前没有可用连接可执行命令片段')
+    return
+  }
+
+  try {
+    await SshService.sendCommandSnippet(pane.id, command)
+    message.success('命令片段已发送到终端')
+  } catch (error) {
+    message.error(`发送命令片段失败：${String(error)}`)
+  }
+}
+
+async function insertCommandSnippet(command: string) {
+  const pane = getRunnablePane()
+  if (!pane) {
+    message.warning('当前没有可用连接可插入命令片段')
+    return
+  }
+
+  try {
+    await SshService.insertCommandSnippet(pane.id, command)
+    message.success('命令片段已插入终端输入区')
+  } catch (error) {
+    message.error(`插入命令片段失败：${String(error)}`)
+  }
+}
+
+async function copyCommandSnippet(command: string) {
+  try {
+    await navigator.clipboard.writeText(command.trim())
+    message.success('命令片段已复制')
+  } catch {
+    message.error('复制命令片段失败')
   }
 }
 
@@ -480,6 +660,8 @@ onMounted(async () => {
     })
     resizeObserver.observe(workspaceRef.value)
   }
+
+  document.addEventListener('click', handleGlobalPointerDown)
 })
 
 watch(workspaceDensity, () => {
@@ -503,6 +685,14 @@ watch(() => props.id, (nextId) => {
   activePaneId.value = nextId
 })
 
+watch(() => props.profile?.id, () => {
+  closeSnippetPanel()
+})
+
+watch(showSnippetPanel, () => {
+  scheduleLayoutRecovery()
+})
+
 watch(() => props.filesDrawerOpen, async (nextOpen, previousOpen) => {
   scheduleLayoutRecovery()
 
@@ -517,6 +707,7 @@ onBeforeUnmount(async () => {
   if (resizeFrame) cancelAnimationFrame(resizeFrame)
   if (activateSyncFrame) cancelAnimationFrame(activateSyncFrame)
   resizeObserver?.disconnect()
+  document.removeEventListener('click', handleGlobalPointerDown)
 
   await Promise.all(extraPanes.value.map((pane) => SshService.closeConnection(pane.id)))
 })
@@ -582,6 +773,15 @@ onBeforeUnmount(async () => {
   padding: 0;
 }
 
+.ssh-workspace__terminal-surface {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .ssh-workspace__icon-btn {
   width: 28px !important;
   min-width: 28px !important;
@@ -601,6 +801,30 @@ onBeforeUnmount(async () => {
   display: grid;
   gap: 12px;
   min-width: 240px;
+}
+
+.ssh-workspace__snippet-groups {
+  display: grid;
+  gap: 6px;
+}
+
+.ssh-workspace__snippet-group {
+  display: grid;
+  gap: 4px;
+}
+
+.ssh-workspace__snippet-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted-color);
+  font-size: 10px;
+}
+
+.ssh-workspace__snippet-empty {
+  color: var(--muted-color);
+  font-size: 12px;
+  padding: 4px 2px;
 }
 
 .ssh-workspace__popover-block {
@@ -636,6 +860,196 @@ onBeforeUnmount(async () => {
   background: color-mix(in srgb, var(--workspace-terminal-bg) 86%, var(--surface-1));
 }
 
+.ssh-workspace__snippet-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--workspace-terminal-bg) 86%, var(--surface-1));
+  cursor: pointer;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    transform 0.16s ease;
+}
+
+.ssh-workspace__snippet-item:hover,
+.ssh-workspace__snippet-item:focus-visible {
+  background: color-mix(in srgb, var(--workspace-terminal-bg) 72%, var(--surface-1));
+  transform: translateX(-1px);
+}
+
+.ssh-workspace__snippet-item:focus-visible {
+  outline: none;
+}
+
+.ssh-workspace__snippet-copy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.ssh-workspace__snippet-copy strong {
+  color: var(--text-color);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.ssh-workspace__snippet-copy code {
+  color: var(--muted-color);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ssh-workspace__snippet-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: nowrap;
+  opacity: 0;
+  transform: translateX(4px);
+  pointer-events: none;
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease;
+}
+
+.ssh-workspace__snippet-item:hover .ssh-workspace__snippet-actions,
+.ssh-workspace__snippet-item:focus-within .ssh-workspace__snippet-actions {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+.ssh-workspace__snippet-launcher {
+  position: absolute;
+  right: 10px;
+  bottom: 12px;
+  z-index: 6;
+}
+
+.ssh-workspace__snippet-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--border-color) 52%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-1) 52%, transparent);
+  color: color-mix(in srgb, var(--text-color) 78%, transparent);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(8px);
+  opacity: 0.74;
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    opacity 0.18s ease,
+    color 0.18s ease,
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.ssh-workspace__snippet-trigger:hover {
+  transform: translateY(-1px);
+  opacity: 1;
+  color: var(--text-color);
+  border-color: color-mix(in srgb, var(--strong-border) 88%, transparent);
+  background: color-mix(in srgb, var(--surface-1) 84%, transparent);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+}
+
+.ssh-workspace__snippet-trigger:focus-visible {
+  outline: none;
+  opacity: 1;
+  color: var(--text-color);
+  border-color: var(--strong-border);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--primary-color) 18%, transparent),
+    0 10px 24px rgba(0, 0, 0, 0.16);
+}
+
+.ssh-workspace__snippet-trigger.is-open {
+  opacity: 1;
+  color: var(--text-color);
+  border-color: color-mix(in srgb, var(--strong-border) 96%, transparent);
+  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
+  transform: translateY(-1px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+}
+
+.ssh-workspace__snippet-trigger strong {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-1) 96%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  color: var(--muted-color);
+  font-size: 10px;
+  line-height: 1;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+.ssh-workspace__snippet-sheet {
+  position: absolute;
+  right: 10px;
+  width: min(380px, calc(100% - 20px));
+  bottom: 56px;
+  z-index: 5;
+  display: grid;
+  gap: 6px;
+  max-height: min(360px, 52vh);
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-1) 88%, var(--workspace-terminal-bg));
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(12px);
+  overflow: auto;
+}
+
+.ssh-workspace-snippet-sheet-enter-active,
+.ssh-workspace-snippet-sheet-leave-active {
+  transition:
+    opacity 0.18s ease,
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    filter 0.18s ease;
+  transform-origin: bottom right;
+}
+
+.ssh-workspace-snippet-sheet-enter-from,
+.ssh-workspace-snippet-sheet-leave-to {
+  opacity: 0;
+  filter: blur(4px);
+  transform: translateY(10px) scale(0.988);
+}
+
+.ssh-workspace-snippet-sheet-enter-to,
+.ssh-workspace-snippet-sheet-leave-from {
+  opacity: 1;
+  filter: blur(0);
+  transform: translateY(0) scale(1);
+}
+
+.ssh-workspace__snippet-search {
+  min-width: 0;
+}
+
 .ssh-pane-grid {
   display: grid;
   flex: 1 1 auto;
@@ -647,7 +1061,7 @@ onBeforeUnmount(async () => {
 }
 
 .ssh-workspace__terminal.has-inline-files .ssh-pane-grid {
-  min-height: 120px;
+  min-height: 160px;
 }
 
 .ssh-pane-card {

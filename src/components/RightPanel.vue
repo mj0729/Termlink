@@ -13,6 +13,16 @@
       />
 
       <div v-else class="panel-content download-content">
+        <div v-if="defaultUploadConflictStrategyLabel" class="transfer-default-strategy">
+          <div class="transfer-default-strategy__copy">
+            <span class="transfer-default-strategy__label">默认同名文件策略</span>
+            <strong>{{ defaultUploadConflictStrategyLabel }}</strong>
+          </div>
+          <a-button type="text" size="small" @click="clearDefaultUploadConflictStrategy">
+            清除
+          </a-button>
+        </div>
+
         <div class="transfer-toolbar" v-if="transfers.length > 0">
           <a-segmented
             v-model:value="transferFilter"
@@ -52,6 +62,9 @@
               </div>
 
               <div v-if="group.note" class="transfer-note">{{ group.note }}</div>
+              <div v-if="group.count > 1 && group.statusSummary" class="transfer-batch-summary">
+                {{ group.statusSummary }}
+              </div>
 
               <div class="download-status">
                 <template v-if="group.status === 'running'">
@@ -83,7 +96,7 @@
               </a-button>
 
               <a-button
-                v-if="group.items[0]?.targetPath"
+                v-if="group.direction === 'download' && group.items[0]?.targetPath"
                 type="text"
                 size="small"
                 @click="openFileLocation(group.items[0].targetPath)"
@@ -159,6 +172,7 @@ const emit = defineEmits(['toggle', 'tab-change'])
 const activeTab = ref<MonitorTab>(props.activeTab)
 const {
   transfers,
+  defaultUploadConflictStrategyLabel,
   transferFilter,
   transferFilterOptions,
   visibleTransferGroups,
@@ -169,6 +183,7 @@ const {
   openFileLocation,
   removeTransferGroup,
   clearCompleted,
+  clearDefaultUploadConflictStrategy,
 } = useRightPanelTransfers(activeTab)
 
 const formatSize = formatBytes
@@ -254,6 +269,29 @@ defineExpose({
   flex: 1;
   display: flex;
   flex-direction: column;
+}
+
+.transfer-default-strategy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.transfer-default-strategy__copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.transfer-default-strategy__label {
+  font-size: 11px;
+  color: var(--muted-color);
 }
 
 .transfer-toolbar {
@@ -397,6 +435,12 @@ defineExpose({
 .transfer-note {
   margin-top: 4px;
   color: var(--warning-color);
+  font-size: 10px;
+}
+
+.transfer-batch-summary {
+  margin-top: 6px;
+  color: var(--muted-color);
   font-size: 10px;
 }
 

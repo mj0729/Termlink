@@ -863,6 +863,19 @@ body[data-theme="dark"] .ant-input-search-button.ant-btn-primary:active {
   word-break: break-all;
 }
 
+.termlink-confirm-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-color);
+  font-size: 13px;
+}
+
+.termlink-confirm-check input {
+  margin: 0;
+  accent-color: var(--primary-color);
+}
+
 .termlink-confirm-input {
   width: 100%;
   height: 42px;

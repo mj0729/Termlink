@@ -11,6 +11,11 @@ import type {
 } from '../types/app'
 
 type UploadConflictAction = 'overwrite' | 'rename' | 'skip'
+type UploadConflictDecision = {
+  action: UploadConflictAction
+  rememberAsDefault: boolean
+  applyToBatch: boolean
+}
 
 export interface TransferTask extends TransferItem {
   downloadRequest?: DownloadRequest
@@ -23,9 +28,32 @@ export interface TransferTask extends TransferItem {
 const transfers = ref<TransferTask[]>([])
 let transferIdCounter = 0
 let listenersReady: Promise<void> | null = null
+const UPLOAD_CONFLICT_STRATEGY_KEY = 'termlink_upload_conflict_strategy'
+const uploadConflictStrategyByBatch = new Map<string, UploadConflictAction>()
+
+function loadStoredUploadConflictStrategy(): UploadConflictAction | null {
+  if (typeof window === 'undefined') return null
+  const raw = window.localStorage.getItem(UPLOAD_CONFLICT_STRATEGY_KEY)
+  if (raw === 'overwrite' || raw === 'rename' || raw === 'skip') {
+    return raw
+  }
+  return null
+}
+
+const defaultUploadConflictStrategy = ref<UploadConflictAction | null>(loadStoredUploadConflictStrategy())
 
 function getTransferTask(transferId: number) {
   return transfers.value.find((item) => item.id === transferId) || null
+}
+
+function persistUploadConflictStrategy(strategy: UploadConflictAction | null) {
+  defaultUploadConflictStrategy.value = strategy
+  if (typeof window === 'undefined') return
+  if (!strategy) {
+    window.localStorage.removeItem(UPLOAD_CONFLICT_STRATEGY_KEY)
+    return
+  }
+  window.localStorage.setItem(UPLOAD_CONFLICT_STRATEGY_KEY, strategy)
 }
 
 function dispatchTransferComplete(transfer: TransferItem) {
@@ -90,15 +118,81 @@ async function resolveDownloadTarget(request: DownloadRequest) {
   }
 }
 
-function promptUploadConflictAction(request: UploadRequest): Promise<UploadConflictAction> {
+export function describeUploadConflictAction(action: UploadConflictAction) {
+  if (action === 'overwrite') return '覆盖'
+  if (action === 'rename') return '自动重命名'
+  return '跳过'
+}
+
+function buildUploadConflictNote(action: UploadConflictAction, source: 'prompt' | 'batch' | 'default', resolvedPath?: string, originalPath?: string) {
+  const sourceLabel = source === 'default'
+    ? '已按默认策略'
+    : source === 'batch'
+      ? '已沿用本批次策略'
+      : '已选择'
+
+  if (action === 'skip') {
+    return `检测到同名远程文件，${sourceLabel}跳过上传`
+  }
+
+  if (action === 'overwrite') {
+    return `检测到同名远程文件，${sourceLabel}覆盖上传`
+  }
+
+  const renamed = resolvedPath && originalPath && resolvedPath !== originalPath
+  return renamed
+    ? `检测到同名远程文件，${sourceLabel}自动重命名`
+    : `检测到同名远程文件，${sourceLabel}以新名称上传`
+}
+
+function extractTransferErrorMessage(error: unknown) {
+  const text = String(error ?? '').trim()
+  const tauriInvokePrefix = 'Error invoking'
+  if (text.startsWith(tauriInvokePrefix)) {
+    const detail = text.match(/:\s(.+)$/)?.[1]
+    return detail?.trim() || text
+  }
+  return text || '未知错误'
+}
+
+function formatTransferError(direction: 'download' | 'upload', error: unknown) {
+  const detail = extractTransferErrorMessage(error)
+
+  if (detail.includes('传输已取消')) {
+    return '传输已取消'
+  }
+  if (detail.includes('No such file') || detail.includes('文件不存在') || detail.includes('找不到')) {
+    return direction === 'download' ? '远程文件不存在或已被移除' : '本地文件不存在或远程目标路径无效'
+  }
+  if (detail.includes('Permission denied') || detail.includes('权限') || detail.includes('permission')) {
+    return direction === 'download' ? '没有权限下载该文件或写入目标位置' : '没有权限上传到目标位置'
+  }
+  if (detail.includes('连接') || detail.toLowerCase().includes('connection')) {
+    return '连接已断开，请重试'
+  }
+  if (detail.includes('空间') || detail.toLowerCase().includes('no space')) {
+    return direction === 'download' ? '本地磁盘空间不足' : '远程磁盘空间不足'
+  }
+
+  return detail
+}
+
+function promptUploadConflictAction(request: UploadRequest): Promise<UploadConflictDecision> {
   return new Promise((resolve) => {
     let settled = false
     let modalInstance: { destroy: () => void } | null = null
+    let rememberAsDefault = false
+    let applyToBatch = Boolean(request.batchId)
+
     const finish = (action: UploadConflictAction) => {
       if (settled) return
       settled = true
       modalInstance?.destroy()
-      resolve(action)
+      resolve({
+        action,
+        rememberAsDefault,
+        applyToBatch,
+      })
     }
 
     modalInstance = Modal.confirm({
@@ -106,6 +200,28 @@ function promptUploadConflictAction(request: UploadRequest): Promise<UploadConfl
       content: h('div', { class: 'termlink-confirm-stack' }, [
         h('div', { class: 'termlink-confirm-path' }, request.targetPath),
         h('div', { class: 'termlink-confirm-text' }, `请选择如何处理“${request.fileName}”`),
+        request.batchId
+          ? h('label', { class: 'termlink-confirm-check' }, [
+              h('input', {
+                type: 'checkbox',
+                checked: applyToBatch,
+                onChange: (event: Event) => {
+                  applyToBatch = (event.target as HTMLInputElement).checked
+                },
+              }),
+              h('span', '本批次后续同名文件沿用这个策略'),
+            ])
+          : null,
+        h('label', { class: 'termlink-confirm-check' }, [
+          h('input', {
+            type: 'checkbox',
+            checked: rememberAsDefault,
+            onChange: (event: Event) => {
+              rememberAsDefault = (event.target as HTMLInputElement).checked
+            },
+          }),
+          h('span', '记住为默认处理策略'),
+        ]),
       ]),
       okCancel: false,
       closable: false,
@@ -147,21 +263,36 @@ async function resolveUploadTarget(request: UploadRequest) {
     }
   }
 
-  const action = await promptUploadConflictAction(request)
+  const batchAction = request.batchId ? uploadConflictStrategyByBatch.get(request.batchId) : null
+  const defaultAction = defaultUploadConflictStrategy.value
+  const source = batchAction ? 'batch' : defaultAction ? 'default' : 'prompt'
+  const decision = batchAction
+    ? { action: batchAction, rememberAsDefault: false, applyToBatch: true }
+    : defaultAction
+      ? { action: defaultAction, rememberAsDefault: false, applyToBatch: true }
+      : await promptUploadConflictAction(request)
 
-  if (action === 'skip') {
+  if (request.batchId && decision.applyToBatch) {
+    uploadConflictStrategyByBatch.set(request.batchId, decision.action)
+  }
+
+  if (decision.rememberAsDefault) {
+    persistUploadConflictStrategy(decision.action)
+  }
+
+  if (decision.action === 'skip') {
     return {
-      action,
+      action: decision.action,
       targetPath: request.targetPath,
-      note: '检测到同名远程文件，已跳过上传',
+      note: buildUploadConflictNote(decision.action, source),
     }
   }
 
-  if (action === 'overwrite') {
+  if (decision.action === 'overwrite') {
     return {
-      action,
+      action: decision.action,
       targetPath: request.targetPath,
-      note: '检测到同名远程文件，已选择覆盖上传',
+      note: buildUploadConflictNote(decision.action, source),
     }
   }
 
@@ -171,9 +302,9 @@ async function resolveUploadTarget(request: UploadRequest) {
   })
 
   return {
-    action,
+    action: decision.action,
     targetPath: resolvedPath,
-    note: resolvedPath !== request.targetPath ? '检测到同名远程文件，已自动重命名' : '',
+    note: buildUploadConflictNote(decision.action, source, resolvedPath, request.targetPath),
   }
 }
 
@@ -207,9 +338,9 @@ async function startDownload(transfer: TransferTask) {
     const task = getTransferTask(transfer.id) || transfer
     if (task.status !== 'cancelled') {
       task.status = 'error'
-      task.error = String(error)
+      task.error = formatTransferError('download', error)
       task.speed = 0
-      message.error(`下载失败: ${task.fileName}`)
+      message.error(`下载失败: ${task.fileName}，${task.error}`)
       dispatchTransferComplete(task)
     }
   }
@@ -262,9 +393,9 @@ async function startUpload(transfer: TransferTask, upload: UploadRequest) {
     const task = getTransferTask(transfer.id) || transfer
     if (task.status !== 'cancelled') {
       task.status = 'error'
-      task.error = String(error)
+      task.error = formatTransferError('upload', error)
       task.speed = 0
-      message.error(`上传失败: ${task.fileName}`)
+      message.error(`上传失败: ${task.fileName}，${task.error}`)
       dispatchTransferComplete(task)
     }
   }
@@ -392,6 +523,10 @@ export function useTransferManager() {
     transfers.value = transfers.value.filter((item) => item.status === 'running' || item.status === 'error')
   }
 
+  function clearDefaultUploadConflictStrategy() {
+    persistUploadConflictStrategy(null)
+  }
+
   async function openFileLocation(filePath: string) {
     try {
       await invoke('open_file_location', { path: filePath })
@@ -402,6 +537,7 @@ export function useTransferManager() {
 
   return {
     transfers,
+    defaultUploadConflictStrategy,
     enqueueDownload,
     enqueueUpload,
     cancelTransfer,
@@ -409,6 +545,7 @@ export function useTransferManager() {
     retryTransfer,
     removeTransfer,
     clearCompleted,
+    clearDefaultUploadConflictStrategy,
     openFileLocation,
   }
 }

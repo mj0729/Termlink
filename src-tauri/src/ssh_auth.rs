@@ -435,6 +435,8 @@ pub async fn authenticate_session(
     session: &mut client::Handle<Client>,
     request: &SshAuthRequest,
 ) -> Result<AuthMethod, String> {
+    let mut private_key_error: Option<String> = None;
+
     // 优先尝试私钥认证
     if let Some(ref key_path) = request.private_key_path {
         match load_keypair(key_path, request.passphrase.as_deref()) {
@@ -460,14 +462,21 @@ pub async fn authenticate_session(
                     }
                     Ok(_) => {
                         println!("✗ 私钥认证失败");
+                        private_key_error = Some(if request.passphrase.is_some() {
+                            "私钥认证失败: 密码短语错误或私钥与当前用户不匹配".to_string()
+                        } else {
+                            "私钥认证失败: 私钥无效、与当前用户不匹配，或该私钥需要密码短语".to_string()
+                        });
                     }
                     Err(e) => {
                         println!("✗ 私钥认证错误: {}", e);
+                        private_key_error = Some(format!("私钥认证失败: {}", e));
                     }
                 }
             }
             Err(e) => {
                 println!("✗ 加载私钥失败: {}", e);
+                private_key_error = Some(e);
             }
         }
     }
@@ -490,6 +499,10 @@ pub async fn authenticate_session(
                 return Err(format!("密码认证过程失败: {}", e));
             }
         }
+    }
+
+    if let Some(private_key_error) = private_key_error {
+        return Err(private_key_error);
     }
 
     Err("没有可用的认证方法".to_string())

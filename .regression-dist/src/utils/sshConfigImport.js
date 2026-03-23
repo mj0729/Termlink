@@ -27,6 +27,9 @@ export function createImportedSshProfile(entry, aliasToId, existingAliasMap, par
         ssh_config_source: '~/.ssh/config',
         ssh_config_host: entry.alias,
         port_forwards: entry.portForwards,
+        command_snippets: [],
+        startup_tasks: [],
+        env_templates: [],
     };
     return profile;
 }

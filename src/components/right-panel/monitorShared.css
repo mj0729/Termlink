@@ -1,0 +1,125 @@
+.right-panel-monitor .dashboard-hero-card,
+.right-panel-monitor .dashboard-card {
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.right-panel-monitor .dashboard-hero-card .ant-card-body,
+.right-panel-monitor .dashboard-card .ant-card-body {
+  padding: 14px 16px !important;
+}
+
+.right-panel-monitor .dashboard-hero-card--embedded .ant-card-body,
+.right-panel-monitor .dashboard-card--embedded .ant-card-body {
+  padding: 10px 12px !important;
+}
+
+.right-panel-monitor .dashboard-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.right-panel-monitor .dashboard-section-head h4 {
+  margin: 0;
+  color: var(--text-color);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.right-panel-monitor .dashboard-section-head__meta {
+  color: var(--muted-color);
+}
+
+.right-panel-monitor .dashboard-hero__title-row h3 {
+  margin: 0;
+  color: var(--text-color);
+}
+
+.right-panel-monitor .dashboard-hero__copy p,
+.right-panel-monitor .dashboard-hero__timestamp {
+  color: var(--muted-color);
+}
+
+.right-panel-monitor .dashboard-card--embedded .dashboard-section-head {
+  margin-bottom: 4px;
+}
+
+.right-panel-monitor .dashboard-card--embedded .dashboard-section-head h4 {
+  font-size: 11px;
+}
+
+.right-panel-monitor .process-summary-chip,
+.right-panel-monitor .section-action-btn,
+.right-panel-monitor .dense-inline-pill {
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted-color);
+}
+
+.right-panel-monitor .dashboard-health-pill.is-healthy {
+  color: var(--success-color);
+  border-color: color-mix(in srgb, var(--success-color) 30%, var(--border-color));
+  background: color-mix(in srgb, var(--success-color) 12%, var(--surface-2));
+}
+
+.right-panel-monitor .dashboard-health-pill.is-warning {
+  color: var(--warning-color);
+  border-color: color-mix(in srgb, var(--warning-color) 32%, var(--border-color));
+  background: color-mix(in srgb, var(--warning-color) 14%, var(--surface-2));
+}
+
+.right-panel-monitor .dashboard-health-pill.is-danger {
+  color: var(--error-color);
+  border-color: color-mix(in srgb, var(--error-color) 32%, var(--border-color));
+  background: color-mix(in srgb, var(--error-color) 14%, var(--surface-2));
+}
+
+.right-panel-monitor .dashboard-health-pill.is-offline {
+  color: var(--muted-color);
+  border-color: var(--border-color);
+  background: var(--surface-2);
+}
+
+body[data-theme="dark"] .right-panel-monitor .dashboard-section-head h4,
+body[data-theme="dark"] .right-panel-monitor .dashboard-hero__title-row h3 {
+  color: #f5f5f5 !important;
+}
+
+body[data-theme="dark"] .right-panel-monitor .dashboard-section-head__meta,
+body[data-theme="dark"] .right-panel-monitor .dashboard-hero__copy p,
+body[data-theme="dark"] .right-panel-monitor .dashboard-hero__timestamp {
+  color: #a3a3a3 !important;
+}
+
+body[data-theme="dark"] .right-panel-monitor .process-summary-chip,
+body[data-theme="dark"] .right-panel-monitor .section-action-btn,
+body[data-theme="dark"] .right-panel-monitor .dense-inline-pill {
+  background: #1f1f1f !important;
+  border-color: #303030 !important;
+  color: #f5f5f5 !important;
+}
+
+body[data-theme="dark"] .right-panel-monitor .collapse-btn {
+  background: transparent !important;
+  border-color: #303030 !important;
+  color: #f5f5f5 !important;
+}
+
+body[data-theme="dark"] .right-panel-monitor .collapse-btn:hover {
+  background: #1f1f1f !important;
+  border-color: #404040 !important;
+}
+
+body[data-theme="dark"] .right-panel-monitor .hero-refresh-btn {
+  background: #1f1f1f !important;
+  border-color: #303030 !important;
+  color: #f5f5f5 !important;
+  box-shadow: none !important;
+}

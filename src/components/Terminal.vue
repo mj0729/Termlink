@@ -19,6 +19,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import '@xterm/xterm/css/xterm.css'
 import SshService from '../services/SshService'
+import { hideTerminalContextMenu, showTerminalContextMenu } from '../utils/terminalContextMenu'
 import type { ITheme, Terminal as XTermTerminal } from '@xterm/xterm'
 import type { FitAddon as XTermFitAddon } from '@xterm/addon-fit'
 import type { TerminalConfig, ThemeName, WorkspaceDensity } from '../types/app'
@@ -57,19 +58,21 @@ const terminal = ref<XTermTerminal | null>(null)
 const fitAddon = ref<XTermFitAddon | null>(null)
 const SSH_CWD_MARKER_PREFIX = '\u001fTERMLINK_CWD:'
 let lastReceivedSeq = 0
-let commandBuffer = ''
 let shellCwd = ''
-let previousShellCwd = ''
-let homeCwd = ''
 let sshOutputBuffer = ''
 let promptBuffer = ''
 let pendingReconnectEnter = false
 let hasShownConnectingNotice = false
+let contextMenuCleanup: (() => void) | null = null
 const hasScrollContent = computed(() => {
   if (!terminal.value) return false
   return terminal.value.buffer.active.viewportY > 0
 })
 const density = computed<WorkspaceDensity>(() => props.config.density || 'balanced')
+
+function isSshTerminal() {
+  return props.type === 'ssh' || props.id.startsWith('ssh-')
+}
 
 // 主题配置
 const themes: Record<ThemeName, ITheme> = {
@@ -213,35 +216,8 @@ function updateShellDirectory(nextPath: string) {
   const normalized = normalizePosixPath(nextPath)
   if (!normalized || normalized === shellCwd) return
 
-  previousShellCwd = shellCwd || previousShellCwd
   shellCwd = normalized
-  if (!homeCwd) {
-    homeCwd = normalized
-  }
   emit('currentDirectoryChange', normalized)
-}
-
-function trackTerminalInput(data: string) {
-  for (const char of data) {
-    if (char === '\r') {
-      commandBuffer = ''
-      continue
-    }
-
-    if (char === '\u007f') {
-      commandBuffer = commandBuffer.slice(0, -1)
-      continue
-    }
-
-    if (char === '\u0015' || char === '\u0003' || char === '\u001b') {
-      commandBuffer = ''
-      continue
-    }
-
-    if (char >= ' ') {
-      commandBuffer += char
-    }
-  }
 }
 
 function syncDirectoryFromPrompt(output: string) {
@@ -288,15 +264,13 @@ function syncDirectoryFromPrompt(output: string) {
 }
 
 async function syncInitialDirectory() {
-  if (!props.id.startsWith('ssh-')) return
+  if (!isSshTerminal()) return
   if (shellCwd) return
 
   try {
     const pwd = await SshService.executeCommand(props.id, 'pwd')
     if (pwd) {
       shellCwd = normalizePosixPath(pwd)
-      homeCwd = shellCwd
-      previousShellCwd = shellCwd
       emit('currentDirectoryChange', shellCwd)
     }
   } catch (error) {
@@ -306,16 +280,13 @@ async function syncInitialDirectory() {
 
 function resetSshSessionState() {
   lastReceivedSeq = 0
-  commandBuffer = ''
   shellCwd = ''
-  previousShellCwd = ''
-  homeCwd = ''
   sshOutputBuffer = ''
   promptBuffer = ''
 }
 
 function renderConnectingNotice(force = false) {
-  if (!props.id.startsWith('ssh-') || !terminal.value) return
+  if (!isSshTerminal() || !terminal.value) return
   if (!force && hasShownConnectingNotice) return
   terminal.value.writeln('\r\n正在建立 SSH 连接，请稍候...')
   hasShownConnectingNotice = true
@@ -365,11 +336,11 @@ async function createTerminal() {
   term.onData(data => {
     // 只有当这个终端实例是激活状态时才发送数据
     if (props.active) {
-      if (props.id.startsWith('ssh-') && props.sshState === 'connecting') {
+      if (isSshTerminal() && props.sshState === 'connecting') {
         renderConnectingNotice()
         return
       }
-      if (props.id.startsWith('ssh-') && props.sshState === 'disconnected') {
+      if (isSshTerminal() && props.sshState === 'disconnected') {
         if (data === '\r') {
           pendingReconnectEnter = true
           terminal.value?.writeln('\r\n正在尝试重连...')
@@ -377,11 +348,8 @@ async function createTerminal() {
         }
         return
       }
-      if (props.id.startsWith('ssh-')) {
-        trackTerminalInput(data)
-      }
       emit('terminalInput', data)
-      if (props.id.startsWith('ssh-')) {
+      if (isSshTerminal()) {
         // SSH终端
         SshService.writeTerminal(props.id, data).catch(() => {})
       } else {
@@ -411,7 +379,7 @@ async function createTerminal() {
   // 监听终端大小变化，自动同步PTY大小
   term.onResize(({ cols, rows }) => {
     if (props.active) {
-      if (props.id.startsWith('ssh-')) {
+      if (isSshTerminal()) {
         // SSH终端
         SshService.resizeTerminal(props.id, cols, rows).catch(() => {})
       } else {
@@ -427,22 +395,23 @@ async function createTerminal() {
   // 打开终端
   term.open(container.value)
   fit.fit()
-  
-  // 等待终端完全初始化后再添加事件监听器
-  setTimeout(() => {
-    if (term.element) {
-      term.element.addEventListener('contextmenu', (event) => {
-        event.preventDefault()
-        showContextMenu(event, term)
-      })
+
+  if (term.element) {
+    const handleContextMenu = (event: MouseEvent) => {
+      event.preventDefault()
+      showContextMenu(event, term)
     }
-  }, 100)
+    term.element.addEventListener('contextmenu', handleContextMenu)
+    contextMenuCleanup = () => {
+      term.element?.removeEventListener('contextmenu', handleContextMenu)
+    }
+  }
 }
 
 // 绑定会话
 async function bindSession() {
   // 根据终端类型绑定不同的事件
-  if (props.id.startsWith('ssh-')) {
+  if (isSshTerminal()) {
     if (props.sshState !== 'connected') {
       return async () => {}
     }
@@ -603,7 +572,7 @@ function showContextMenu(event: MouseEvent, term: XTermTerminal) {
     action: () => {
       navigator.clipboard.readText().then(text => {
         if (props.active) {
-          if (props.id.startsWith('ssh-')) {
+          if (isSshTerminal()) {
             SshService.writeTerminal(props.id, text).catch(() => {})
           } else {
             invoke('write_pty', { id: props.id, data: text }).catch(() => {})
@@ -630,82 +599,8 @@ function showContextMenu(event: MouseEvent, term: XTermTerminal) {
       term.clear()
     }
   })
-  
-  // 显示菜单
-  showMenu(event, menuItems)
-}
 
-// 显示菜单
-function showMenu(event, items) {
-  // 移除已存在的菜单
-  const existingMenu = document.querySelector('.terminal-context-menu')
-  if (existingMenu) {
-    existingMenu.remove()
-  }
-  
-  // 创建菜单
-  const menu = document.createElement('div')
-  menu.className = 'terminal-context-menu'
-  menu.style.cssText = `
-    position: fixed;
-    left: ${event.clientX}px;
-    top: ${event.clientY}px;
-    background: var(--panel-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    z-index: 10000;
-    min-width: 120px;
-    padding: 4px 0;
-  `
-  
-  // 添加菜单项
-  items.forEach(item => {
-    const menuItem = document.createElement('div')
-    menuItem.style.cssText = `
-      padding: 8px 16px;
-      cursor: pointer;
-      color: var(--text-color);
-      font-size: 14px;
-      transition: background-color 0.2s;
-    `
-    menuItem.textContent = item.label
-    menuItem.addEventListener('mouseenter', () => {
-      menuItem.style.backgroundColor = 'var(--hover-bg)'
-    })
-    menuItem.addEventListener('mouseleave', () => {
-      menuItem.style.backgroundColor = 'transparent'
-    })
-    menuItem.addEventListener('click', () => {
-      item.action()
-      menu.remove()
-    })
-    menu.appendChild(menuItem)
-  })
-  
-  // 添加到页面
-  document.body.appendChild(menu)
-  
-  // 点击其他地方关闭菜单
-  const closeMenu = (e) => {
-    if (!menu.contains(e.target)) {
-      menu.remove()
-      document.removeEventListener('click', closeMenu)
-      document.removeEventListener('contextmenu', closeMenu)
-    }
-  }
-  
-  // 右键点击也关闭菜单
-  const closeMenuOnRightClick = (e) => {
-    menu.remove()
-    document.removeEventListener('click', closeMenu)
-    document.removeEventListener('contextmenu', closeMenu)
-  }
-  
-  setTimeout(() => {
-    document.addEventListener('click', closeMenu)
-    document.addEventListener('contextmenu', closeMenuOnRightClick)
-  }, 0)
+  showTerminalContextMenu(event, menuItems)
 }
 
 // 监听主题变化
@@ -719,50 +614,77 @@ watch(() => props.config, () => {
   applySize()
 }, { deep: true })
 
-// 监听活动状态变化
+let unbindSession: (() => Promise<void>) | null = null
+
+async function cleanupSession() {
+  if (!unbindSession) return
+  const cleanup = unbindSession
+  unbindSession = null
+  await cleanup()
+}
+
+async function syncSessionBinding() {
+  if (!isSshTerminal()) {
+    if (!unbindSession) {
+      unbindSession = await bindSession()
+    }
+    return
+  }
+
+  if (!props.active || props.sshState !== 'connected') {
+    await cleanupSession()
+    return
+  }
+
+  if (!unbindSession) {
+    unbindSession = await bindSession()
+    await syncInitialDirectory()
+  }
+}
+
 watch(() => props.active, (isActive) => {
   if (isActive) {
-    // 激活时调整大小
     setTimeout(() => {
       applySize()
     }, 0)
   }
+
+  if (isSshTerminal()) {
+    void syncSessionBinding()
+  }
 })
 
 watch(() => props.sshState, (nextState, prevState) => {
+  if (!isSshTerminal()) return
+
   if (nextState === 'connecting' && prevState !== 'connecting') {
     hasShownConnectingNotice = false
     resetSshSessionState()
-    if (unbindSession) {
-      Promise.resolve(unbindSession()).then(() => {
-        unbindSession = null
-      })
-    }
-    renderConnectingNotice(true)
+    void cleanupSession().then(() => {
+      renderConnectingNotice(true)
+    })
     return
   }
 
-  if (nextState === 'connected' && prevState !== 'connected' && !unbindSession) {
+  if (nextState === 'connected' && prevState !== 'connected') {
     hasShownConnectingNotice = false
     resetSshSessionState()
-    Promise.resolve(bindSession()).then(async (cleanup) => {
-      unbindSession = cleanup
-      await syncInitialDirectory()
-    })
+    void syncSessionBinding()
+  }
+
+  if (nextState !== 'connected' && prevState === 'connected') {
+    void cleanupSession()
   }
 
   if (nextState === 'connected' && prevState === 'disconnected' && pendingReconnectEnter) {
     pendingReconnectEnter = false
     setTimeout(() => {
-      if (props.id.startsWith('ssh-')) {
+      if (isSshTerminal()) {
         SshService.writeTerminal(props.id, '\r').catch(() => {})
       }
     }, 120)
   }
 })
-
-// 生命周期钩子
-let unbindSession = null
 
 onMounted(async () => {
   resetSshSessionState()
@@ -772,11 +694,10 @@ onMounted(async () => {
   // 创建终端
   await createTerminal()
 
-  if (props.id.startsWith('ssh-') && props.sshState === 'connecting') {
+  if (isSshTerminal() && props.sshState === 'connecting') {
     renderConnectingNotice(true)
   } else {
-    unbindSession = await bindSession()
-    await syncInitialDirectory()
+    await syncSessionBinding()
   }
   
   // 应用主题和配置
@@ -795,10 +716,10 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(async () => {
-  // 解绑会话
-  if (unbindSession) {
-    await unbindSession()
-  }
+  await cleanupSession()
+  contextMenuCleanup?.()
+  contextMenuCleanup = null
+  hideTerminalContextMenu()
   
   // 销毁终端
   if (terminal.value) {

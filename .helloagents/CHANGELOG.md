@@ -1,5 +1,43 @@
 # 变更记录
 
+## [0.0.29] - 2026-03-22
+
+### 变更
+
+- **[workspace-ui]**: 对主工作区前端运行时做了一轮结构收口；`Terminal` 现在会在 SSH 标签隐藏时解除会话订阅、重新激活时再按快照恢复，右键菜单抽到共享工具函数，`RemoteFileWorkbench` 把重命名/创建/删除/移动/权限修改统一收口到 `useRemoteFileActions`，`RightPanel` 仅在监控面板真实可见时才继续轮询系统信息，同时 `App.vue` 的卸载资源清理改为批量关闭；已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603221721_frontend-workspace-runtime-refactor](plan/202603221721_frontend-workspace-runtime-refactor/)
+  - 决策: frontend-workspace-runtime-refactor#D001(优先重构工作区编排边界，而不是仅做文件级拆分)
+
+### 快速修改
+
+- **[workspace-ui]**: 为右侧监控展示补上共享样式基座；新增 `monitorShared.css` 收口 `Resources / Processes / StorageNetwork` 三个卡片型子组件重复的卡片壳层、标题、chip 与暗色态规则，让子组件本地样式只保留布局差异与紧凑模式细节，同时保持嵌入式左栏监控布局不回退；已通过 `pnpm run build` 验证 — by Codex
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/right-panel/monitorShared.css:1-67, src/components/right-panel/RightPanelMonitorResources.vue:98-286, src/components/right-panel/RightPanelMonitorProcesses.vue:75-184, src/components/right-panel/RightPanelMonitorStorageNetwork.vue:163-389
+
+- **[workspace-ui]**: 修正共享样式基座的接入方式；此前每个监控子组件各自 `scoped` 引入 `monitorShared.css`，源码层复用了，但构建产物仍会重复输出。现已改为由 `RightPanelMonitorView` 单点引入，并给共享规则加上 `.right-panel-monitor` 前缀约束，样式作用域保持稳定，同时 `RightPanel` 相关 CSS 体积从约 `35.2 kB` 回落到约 `29.9 kB`；已通过 `pnpm run build` 验证 — by Codex
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/right-panel/monitorShared.css:1-109, src/components/right-panel/RightPanelMonitorView.vue:122-158, src/components/right-panel/RightPanelMonitorHero.vue:189-638, src/components/right-panel/RightPanelMonitorResources.vue:98-286, src/components/right-panel/RightPanelMonitorProcesses.vue:75-184, src/components/right-panel/RightPanelMonitorStorageNetwork.vue:163-389
+
+- **[workspace-ui]**: 修正 `RightPanel` 监控继续拆分后的嵌入式样式回归；此前紧凑模式样式仍停留在父级作用域，拆成子组件后无法继续命中，导致 SSH 左侧监控栏出现字号、间距和表格密度偏松的问题。现已将紧凑模式规则分别下沉到 `Hero / Resources / Processes / StorageNetwork` 子组件中，恢复窄栏监控的可读密度；已通过 `pnpm run build` 验证 — by Codex
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/right-panel/RightPanelMonitorHero.vue:433-600, src/components/right-panel/RightPanelMonitorResources.vue:265-319, src/components/right-panel/RightPanelMonitorProcesses.vue:168-198, src/components/right-panel/RightPanelMonitorStorageNetwork.vue:380-441, src/components/right-panel/RightPanelMonitorView.vue:24-35
+
+- **[workspace-ui]**: 继续细化 `RightPanel` 的监控展示边界；本轮把 `RightPanelMonitorView` 再拆成 `Hero / Resources / Processes / StorageNetwork` 四个无状态展示组件，并新增 `monitorViewTypes` 统一共享展示模型，容器组件自身只保留监控数据接线与布局编排，进一步降低模板耦合与样式堆叠复杂度；已通过 `pnpm run build` 验证 — by Codex
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/right-panel/RightPanelMonitorView.vue:1-158, src/components/right-panel/RightPanelMonitorHero.vue:1-501, src/components/right-panel/RightPanelMonitorResources.vue:1-264, src/components/right-panel/RightPanelMonitorProcesses.vue:1-195, src/components/right-panel/RightPanelMonitorStorageNetwork.vue:1-379, src/components/right-panel/monitorViewTypes.ts:1-57
+
+- **[workspace-ui]**: 继续完成 `RightPanel` 的壳层化重构；本轮新增 `RightPanelMonitorView` 承载系统监控模板、样式与监控组合式逻辑接线，父组件只保留监控/传输视图切换和传输队列装配，`RightPanel.vue` 由巨型单文件收口到数百行级别，同时监控样式覆盖链被整体内聚到子组件；已通过 `pnpm run build` 验证 — by Codex
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/RightPanel.vue:1-447, src/components/right-panel/RightPanelMonitorView.vue:1-1284, src/composables/rightPanelMonitorDerived.ts:64-393
+
+- **[workspace-ui]**: 继续把 `RightPanel` 从“巨型脚本组件”往运行时壳层收口；本轮将系统监控拆为 `useRightPanelMonitor`（轮询/主题/拉取）与 `rightPanelMonitorDerived`（排序/告警/展示派生）两层，`RightPanel.vue` 仅保留面板装配与事件透传，同时将重复失败提示收敛为“恢复前仅提示一次”，并移除未参与展示的历史缓存；已通过 `pnpm run build` 验证 — by Codex
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/RightPanel.vue:463-566, src/composables/useRightPanelMonitor.ts:1-204, src/composables/rightPanelMonitorDerived.ts:1-471
+
+- **[workspace-ui]**: 继续收口右侧面板职责；本轮把 `RightPanel` 的传输分组、筛选和队列操作抽到 `useRightPanelTransfers`，让组件自身更接近壳层装配角色，同时保持监控轮询与下载面板行为稳定；已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/RightPanel.vue:465-1120, src/composables/useRightPanelTransfers.ts:1-170
+
 ## [0.0.28] - 2026-03-22
 
 ### 变更

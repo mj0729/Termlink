@@ -133,8 +133,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, h, onBeforeUnmount, onMounted, reactive, ref, watch, provide } from 'vue'
-import { Modal, message, Input } from 'antdv-next'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { message } from 'antdv-next'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import type { UnlistenFn } from '@tauri-apps/api/event'
@@ -144,6 +144,7 @@ import type {
   UploadRequest, 
   WorkspaceDensity 
 } from '../types/app'
+import { useRemoteFileActions } from '../composables/useRemoteFileActions'
 
 // Sub-components
 const RemotePathBar = defineAsyncComponent(() => import('./remote-file/RemotePathBar.vue'))
@@ -242,7 +243,6 @@ const chownModal = reactive({
 })
 
 const uploadInputRef = ref<HTMLInputElement | null>(null)
-const pendingUploadTargetPath = ref('/')
 
 // --- Computed ---
 const visibleFiles = computed(() => {
@@ -252,12 +252,11 @@ const visibleFiles = computed(() => {
 const directories = computed(() => visibleFiles.value.filter(f => f.is_dir || f.is_directory))
 
 const sortedFiles = computed(() => {
-  const res = [...visibleFiles.value]
-  if (searchText.value) {
-    const kw = searchText.value.toLowerCase()
-    return res.filter(f => f.name.toLowerCase().includes(kw))
-  }
-  return res.sort((a, b) => {
+  const filtered = searchText.value
+    ? visibleFiles.value.filter((file) => file.name.toLowerCase().includes(searchText.value.toLowerCase()))
+    : visibleFiles.value
+
+  return [...filtered].sort((a, b) => {
     const isDirA = a.is_dir || a.is_directory
     const isDirB = b.is_dir || b.is_directory
     if (isDirA !== isDirB) return isDirA ? -1 : 1
@@ -289,6 +288,28 @@ function addAuditLog(command: string, status: 'success' | 'error' = 'success') {
 function refreshTree() {
   treeVersion.value += 1
 }
+
+const {
+  submitInlineRename,
+  createFolder,
+  deleteSelected,
+  moveEntriesToDirectory,
+  applyEntryPermissions,
+  applyChown,
+} = useRemoteFileActions({
+  connectionId: computed(() => props.connectionId || ''),
+  currentPath,
+  files,
+  selectedPaths,
+  contextMenuEntry: computed(() => contextMenu.entry),
+  renameState,
+  permissionModal,
+  chownModal,
+  refreshCurrentPath,
+  refreshTree,
+  addAuditLog,
+  cancelInlineRename,
+})
 
 function normalizeSyncPath(path: string) {
   const cleaned = path
@@ -427,175 +448,6 @@ function cancelInlineRename() {
   renameState.value = ''
 }
 
-async function submitInlineRename(path: string, value: string) {
-  const nextName = value.trim()
-  if (!path || path !== renameState.path) return
-  if (!nextName) {
-    message.warning('名称不能为空')
-    return
-  }
-
-  const currentEntry = files.value.find(file => file.path === path)
-    || (contextMenu.entry?.path === path ? contextMenu.entry : null)
-  const currentName = currentEntry?.name || path.split('/').filter(Boolean).pop() || ''
-  if (nextName === currentName) {
-    cancelInlineRename()
-    return
-  }
-
-  const parent = path.substring(0, path.lastIndexOf('/')) || '/'
-  const newPath = parent === '/' ? `/${nextName}` : `${parent}/${nextName}`
-
-  try {
-    await invoke('rename_sftp_file', { connectionId: props.connectionId, oldPath: path, newPath })
-    message.success('重命名成功')
-    cancelInlineRename()
-    refreshCurrentPath()
-    refreshTree()
-    addAuditLog(`mv ${path} ${newPath}`)
-  } catch (e) {
-    message.error('重命名失败')
-  }
-}
-
-function normalizeDirPrefix(path: string) {
-  return path.endsWith('/') ? path : `${path}/`
-}
-
-function isNestedMoveTarget(sourcePath: string, targetPath: string) {
-  return targetPath.startsWith(normalizeDirPrefix(sourcePath))
-}
-
-// File Operations
-async function createFolder() {
-  cancelInlineRename()
-  const folderName = ref('')
-  Modal.confirm({
-    title: '新建文件夹',
-    content: () => h(Input, {
-      value: folderName.value,
-      placeholder: '请输入名称',
-      'onUpdate:value': (v: string) => folderName.value = v
-    }),
-    onOk: async () => {
-      if (!folderName.value) return
-      const path = currentPath.value === '/' ? `/${folderName.value}` : `${currentPath.value}/${folderName.value}`
-      try {
-        await invoke('create_sftp_directory', { connectionId: props.connectionId, path })
-        message.success('创建成功')
-        refreshCurrentPath()
-        refreshTree()
-        addAuditLog(`mkdir ${path}`)
-      } catch (e) {
-        message.error('创建失败')
-      }
-    }
-  })
-}
-
-async function deleteSelected(entriesToDelete?: SftpFileEntry[]) {
-  cancelInlineRename()
-  const targets = entriesToDelete || files.value.filter(f => selectedPaths.value.includes(f.path))
-  if (!targets.length) return
-  Modal.confirm({
-    title: `确认删除这 ${targets.length} 项吗？`,
-    okType: 'danger',
-    onOk: async () => {
-      const deletedPaths: string[] = []
-      const failedPaths: string[] = []
-
-      for (const entry of targets) {
-        try {
-          if (entry.is_dir || entry.is_directory) {
-            await invoke('delete_sftp_directory', { connectionId: props.connectionId, path: entry.path })
-          } else {
-            await invoke('delete_sftp_file', { connectionId: props.connectionId, path: entry.path })
-          }
-          deletedPaths.push(entry.path)
-        } catch (e) {
-          console.error(`Delete failed: ${entry.path}`, e)
-          failedPaths.push(entry.path)
-        }
-      }
-
-      if (deletedPaths.length) {
-        refreshCurrentPath()
-        refreshTree()
-        addAuditLog(`rm -rf ${deletedPaths.join(' ')}`)
-      }
-
-      if (!failedPaths.length) {
-        message.success(`删除完成，共 ${deletedPaths.length} 项`)
-        return
-      }
-
-      if (!deletedPaths.length) {
-        message.error(`删除失败，共 ${failedPaths.length} 项`)
-        return
-      }
-
-      message.warning(`删除部分完成：成功 ${deletedPaths.length} 项，失败 ${failedPaths.length} 项`)
-    }
-  })
-}
-
-// Drag & Drop
-async function moveEntriesToDirectory(entries: SftpFileEntry[], targetPath: string) {
-  const movedEntries: string[] = []
-  const blockedEntries: string[] = []
-  const failedEntries: string[] = []
-
-  for (const entry of entries) {
-    const newPath = targetPath === '/' ? `/${entry.name}` : `${targetPath}/${entry.name}`
-    if (entry.path === newPath) continue
-
-    if ((entry.is_dir || entry.is_directory) && isNestedMoveTarget(entry.path, targetPath)) {
-      blockedEntries.push(entry.name)
-      continue
-    }
-
-    try {
-      await invoke('rename_sftp_file', { 
-        connectionId: props.connectionId, 
-        oldPath: entry.path, 
-        newPath 
-      })
-      movedEntries.push(entry.name)
-    } catch (e) {
-      failedEntries.push(entry.name)
-    }
-  }
-
-  refreshCurrentPath()
-  refreshTree()
-
-  if (movedEntries.length) {
-    addAuditLog(`mv ${movedEntries.join(' ')} -> ${targetPath}`)
-  }
-
-  if (movedEntries.length && !failedEntries.length && !blockedEntries.length) {
-    message.success(`已移动 ${movedEntries.length} 项到 ${targetPath}`)
-    return
-  }
-
-  if (movedEntries.length) {
-    const details = [
-      `已移动 ${movedEntries.length} 项`,
-      blockedEntries.length ? `${blockedEntries.length} 项因目标位于自身子目录而跳过` : '',
-      failedEntries.length ? `${failedEntries.length} 项移动失败` : '',
-    ].filter(Boolean)
-    message.warning(details.join('，'))
-    return
-  }
-
-  if (blockedEntries.length && !failedEntries.length) {
-    message.warning('不能把文件夹拖入它自己的子目录')
-    return
-  }
-
-  message.error(failedEntries.length > 1 ? '部分文件移动失败' : `移动 ${failedEntries[0] || '文件'} 失败`)
-}
-
 function handleExternalDrop(fileList: FileList, targetPath: string) {
   const uploadPath = targetPath || currentPath.value
   for (let i = 0; i < fileList.length; i++) {
@@ -688,44 +540,11 @@ function openChmod(file: SftpFileEntry) {
   permissionModal.open = true
 }
 
-async function applyEntryPermissions(mode: number, recursive: boolean, scope: string) {
-  permissionModal.loading = true
-  try {
-    const cmd = recursive ? `chmod -R ${mode.toString(8)} ${permissionModal.path}` : `chmod ${mode.toString(8)} ${permissionModal.path}`
-    await invoke('execute_ssh_command', { connectionId: props.connectionId, command: cmd })
-    message.success('修改成功')
-    permissionModal.open = false
-    refreshCurrentPath()
-    addAuditLog(cmd)
-  } catch (e) {
-    message.error('修改失败')
-  } finally {
-    permissionModal.loading = false
-  }
-}
-
 function openChown(file: SftpFileEntry) {
   chownModal.path = file.path
   chownModal.currentOwner = '' // Would need stat for accurate current owner
   chownModal.currentGroup = ''
   chownModal.open = true
-}
-
-async function applyChown(user: string, group: string, recursive: boolean) {
-  chownModal.loading = true
-  try {
-    const target = group ? `${user}:${group}` : user
-    const cmd = recursive ? `chown -R ${target} ${chownModal.path}` : `chown ${target} ${chownModal.path}`
-    await invoke('execute_ssh_command', { connectionId: props.connectionId, command: cmd })
-    message.success('修改成功')
-    chownModal.open = false
-    refreshCurrentPath()
-    addAuditLog(cmd)
-  } catch (e) {
-    message.error('修改失败')
-  } finally {
-    chownModal.loading = false
-  }
 }
 
 function openEntry(file: SftpFileEntry) {
@@ -844,8 +663,6 @@ watch(() => props.sshState, (nextState, prevState) => {
 
   openEntry(action.entry)
 })
-
-provide('connectionId', props.connectionId)
 </script>
 
 <style scoped>

@@ -203,7 +203,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, h, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, h, onMounted, onBeforeUnmount, ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { CloseOutlined } from '@antdv-next/icons'
 import { theme as antdTheme } from 'antdv-next'
@@ -446,10 +446,6 @@ function getActiveProfileId() {
 }
 
 // 获取活动标签页（兼容旧调用）
-function getActiveTab() {
-  return currentTab.value
-}
-
 const {
   isClosingSshTab,
   markClosingSshTab,
@@ -472,14 +468,6 @@ const {
   showLongError,
   closeSshModal,
 })
-
-// 新建本地会话
-async function newLocal() {
-  const id = `local-${Date.now()}`
-  openTabWithMotion({ id, title: '本地终端', type: 'local' })
-  
-  await invoke('start_pty', { id, cols: 120, rows: 30 })
-}
 
 // 打开文件预览
 async function openFilePreview(fileInfo: SftpFileEntry) {
@@ -594,8 +582,7 @@ onBeforeUnmount(() => {
   unsubscribeThemeService = null
   cleanupWorkspaceTabState()
 
-  // 关闭所有连接
-  tabs.value.forEach(async tab => {
+  void Promise.all(tabs.value.map(async (tab) => {
     if (tab.type === 'ssh') {
       if (!isClosingSshTab(tab.id)) {
         await SshService.closeConnection(tab.id)
@@ -603,7 +590,7 @@ onBeforeUnmount(() => {
     } else if (tab.type === 'local') {
       await invoke('close_pty', { id: tab.id })
     }
-  })
+  }))
 })
 </script>
 

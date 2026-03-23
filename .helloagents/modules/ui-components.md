@@ -7,6 +7,20 @@
 
 ## 本次迁移更新
 
+- `Terminal` 已把终端右键菜单抽到共享工具函数，并收掉一批未实际参与行为判断的 SSH 会话本地缓存；SSH 终端在隐藏标签页时现在会解除事件订阅，重新激活时再按快照回放恢复，避免隐藏工作区持续消费 SSH 输出流
+- `RemoteFileWorkbench` 已把重命名、创建目录、删除、拖拽移动、`chmod/chown` 等变更型操作统一抽到 `useRemoteFileActions`，共享“执行命令 → 刷新列表 → 刷新树 → 记录审计”的副作用链，搜索结果也恢复为“先过滤、再排序”的一致数据流
+- `RightPanel` 现在会把“监控是否可见”作为轮询前置条件：切到下载面板或折叠后会立即停止刷新，不再在用户根本没看监控时继续拉系统信息
+- `RightPanel` 的传输分组、筛选和队列操作已继续下沉到 `useRightPanelTransfers`，组件本身开始从“同时管理监控和传输细节”向“壳层 + 视图装配”收口
+- `RightPanel` 的系统监控现已正式拆成 `useRightPanelMonitor` 与 `rightPanelMonitorDerived` 两层：前者只负责 SSH 批量拉取、轮询启停与主题监听，后者只负责派生视图状态、告警、排序和格式化，让监控运行时与展示模型职责分离
+- `RightPanel` 的监控刷新失败现在在恢复成功前只提示一次，不再因为轮询持续失败而把同一条错误反复刷满；同时移除了未参与展示的 CPU / 内存 / 磁盘历史缓存，减少无意义响应式更新
+- `RightPanel` 现已进一步收口为面板切换壳层：系统监控模板与样式整体下沉到 `RightPanelMonitorView`，父组件仅保留“监控视图 / 传输视图”切换、传输队列装配与对外暴露方法，`RightPanel.vue` 体积已从数千行降到数百行级别
+- `RightPanel` 的监控样式也同步去重重写为子组件内聚样式，避免历史叠加的多轮覆盖规则继续滞留在父组件；本轮构建产物中 `RightPanel` 相关 CSS 体积已明显收缩
+- `RightPanelMonitorView` 又继续往下拆成 `RightPanelMonitorHero`、`RightPanelMonitorResources`、`RightPanelMonitorProcesses`、`RightPanelMonitorStorageNetwork` 四个无状态展示组件，并补了一层 `monitorViewTypes` 共享展示模型，避免拆分后再次出现重复 props 形状和隐式数据契约
+- 拆分后 `RightPanelMonitorView` 自身只保留监控组合式接线与布局编排，监控区从“单组件模板 + 大段样式”转成“容器编排 + 展示块职责分离”；相关 CSS 产物继续从约 `26 kB` 收缩到约 `22.6 kB`
+- 继续拆分后暴露出的一个问题是：原先嵌入式监控的紧凑样式有一部分仍停留在父级作用域，`scoped` 后无法继续作用到子组件内部；现已把这批“嵌入式紧凑模式”样式分别下沉到 `Hero / Resources / Processes / StorageNetwork` 子组件中，恢复 SSH 左侧监控在窄栏里的可读密度
+- 当前又补了一层共享样式基座 `monitorShared.css`：`Resources / Processes / StorageNetwork` 共同复用卡片外壳、分区标题、通用 chip 和暗色态基准样式，各子组件只保留自己的布局细节与紧凑态差异，重复样式规则明显减少
+- 共享样式层后续又进一步修正为“容器单点引入”模式：`monitorShared.css` 现在只由 `RightPanelMonitorView` 引入一次，并通过 `.right-panel-monitor` 前缀约束作用域，避免此前每个子组件各自 `scoped` 引入同一份共享样式导致构建产物重复膨胀
+- `SshWorkspace` 已清理 pane 结构里的无效 `title` 状态，并把 `filesDrawerOpen` 的重复 watcher 合并为单一路径，减少布局恢复副作用的重复触发点
 - `RemoteFileWorkbench` 与 `RemoteDirectoryTree` 已收紧嵌入式文件管理区的视觉密度：aggressive 模式下移除内容区圆角，左侧目录树进一步压到接近系统文件树的极窄横向占位，并同步压缩节点高度、缩进与内边距，但保留正常可读字号，整体更接近桌面文件管理器的硬朗紧凑观感
 - `RemoteDirectoryTree` 已取消树节点整行铺满的 `block-node` 呈现，并把节点 wrapper 从整列占满改为内容自适应宽度，避免短目录名（如 `/`、`boot`）右侧继续残留大块“伪空白”
 - `RemoteDirectoryTree` 的 Ant Tree 外层默认留白也已被进一步收掉：aggressive 模式下继续压缩缩进宽度、箭头占位和节点 wrapper 自带 padding，让树节点更贴近系统文件树的紧凑层级

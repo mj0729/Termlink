@@ -8,6 +8,7 @@
 
 ## 本次迁移更新
 
+- `App.vue` 已清理未使用的旧壳层辅助函数，并把卸载阶段的 SSH / PTY 资源释放从 `forEach(async ...)` 收口为 `Promise.all(...)` 批量关闭，避免顶层销毁阶段的异步清理变得不可追踪
 - `App.vue` 现在统一通过 `openTabWithMotion()` 打开新标签页，并用 `freshTabId / activatingWorkspaceId` 为 tab 与工作区提供一次性 reveal 动效，连接中心进入 SSH 工作区不再是硬切
 - `App.vue` 与 `SshService.ts` 现在会在连接中心点击 SSH 卡片后立即创建 `connecting` 标签页，再异步完成建连，避免 UI 被完整 SSH 握手阻塞 1-2 秒
 - `App.vue` 向 `RightPanel` 下发的 `connectionId` 现已收紧为仅在 `sshState === 'connected'` 时有效，避免连接中阶段提前触发监控/传输侧逻辑

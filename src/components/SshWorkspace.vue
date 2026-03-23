@@ -186,7 +186,6 @@ import type {
 
 type WorkspacePane = {
   id: string
-  title: string
   sshState: NonNullable<ConnectionTab['sshState']>
   autoPassword: string | null
   isPrimary: boolean
@@ -253,7 +252,6 @@ const workspaceDensity = computed<WorkspaceDensity>(() => props.config.density |
 
 const primaryPane = computed<WorkspacePane>(() => ({
   id: props.id,
-  title: '主会话',
   sshState: props.sshState || 'connected',
   autoPassword: props.autoPassword || null,
   isPrimary: true,
@@ -419,7 +417,6 @@ async function addPane() {
   const paneId = `ssh-pane-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
   const nextPane: WorkspacePane = {
     id: paneId,
-    title: `分屏 ${workspacePanes.value.length + 1}`,
     sshState: 'connecting',
     autoPassword: null,
     isPrimary: false,
@@ -506,11 +503,9 @@ watch(() => props.id, (nextId) => {
   activePaneId.value = nextId
 })
 
-watch(() => props.filesDrawerOpen, () => {
-  scheduleLayoutRecovery()
-})
-
 watch(() => props.filesDrawerOpen, async (nextOpen, previousOpen) => {
+  scheduleLayoutRecovery()
+
   if (!nextOpen || nextOpen === previousOpen) return
   if (!isPaneSplitActive.value) return
 

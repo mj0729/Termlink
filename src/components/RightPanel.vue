@@ -1,5 +1,15 @@
 <template>
-  <div class="right-panel" :class="[`right-panel--${activeTab}`, `right-panel--${placement}`, { 'right-panel--embedded': embedded }]">
+  <div
+    class="right-panel"
+    :class="[
+      `right-panel--${activeTab}`,
+      `right-panel--${placement}`,
+      {
+        'right-panel--embedded': embedded,
+        'right-panel--collapsed': collapsed,
+      },
+    ]"
+  >
     <div class="panel-content-wrapper" :class="{ collapsed }">
       <RightPanelMonitorView
         v-if="activeTab === 'monitor'"
@@ -205,27 +215,50 @@ defineExpose({
 
 <style scoped>
 .right-panel {
+  --panel-width: 286px;
   display: flex;
   height: 100%;
   min-height: 0;
+  min-width: 0;
+  width: var(--panel-width);
+  flex: 0 0 var(--panel-width);
+  overflow: hidden;
   background: transparent;
   position: relative;
+  transition:
+    flex-basis 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    width 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.right-panel--collapsed {
+  width: 0;
+  flex-basis: 0;
+}
+
+.right-panel--embedded {
+  width: auto;
+  flex: 1 1 auto;
+  transition: none;
 }
 
 .panel-content-wrapper {
+  --panel-shift: 14px;
   display: flex;
   flex-direction: column;
-  width: 286px;
+  width: 100%;
+  flex: 1 1 auto;
   overflow: hidden;
-  flex-shrink: 0;
   background: var(--surface-1);
   border-left: 1px solid var(--border-color);
+  will-change: opacity, transform;
+  contain: paint;
   transition:
-    width 0.28s ease,
-    opacity 0.28s ease;
+    opacity 0.14s ease,
+    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .right-panel--left .panel-content-wrapper {
+  --panel-shift: -14px;
   border-left: none;
   border-right: 1px solid var(--border-color);
 }
@@ -233,12 +266,19 @@ defineExpose({
 .right-panel--embedded.right-panel--monitor .panel-content-wrapper {
   width: 100%;
   border-right: none;
+  will-change: opacity;
+  contain: paint;
+  transition: opacity 0.16s ease;
 }
 
 .panel-content-wrapper.collapsed {
-  width: 0;
   opacity: 0;
+  transform: translateX(var(--panel-shift));
   pointer-events: none;
+}
+
+.right-panel--embedded.right-panel--monitor .panel-content-wrapper.collapsed {
+  transform: none;
 }
 
 .panel-content {
@@ -480,8 +520,8 @@ defineExpose({
 }
 
 @media (max-width: 768px) {
-  .panel-content-wrapper {
-    width: 236px;
+  .right-panel {
+    --panel-width: 236px;
   }
 
   .right-panel--embedded.right-panel--monitor .panel-content-wrapper {

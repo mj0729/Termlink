@@ -1,6 +1,7 @@
 import { computed, ref, watch } from 'vue'
 import { message } from 'antdv-next'
 import type { ConnectionStatus, ConnectionTab, DownloadRequest, MonitorTab, UploadRequest } from '../types/app'
+import { markMainRightPanelTransition } from '../utils/rightPanelTransition'
 
 type RightPanelRef = {
   addDownload: (fileName: string, remotePath: string, savePath: string, connectionId: string) => void
@@ -59,12 +60,18 @@ export function useWorkspaceChrome({ currentTab, appMode, rightPanelRef }: UseWo
     }
   })
 
+  function triggerMainRightPanelTransition() {
+    if (isHostCenterLayout.value) return
+    markMainRightPanelTransition()
+  }
+
   function handleStartDownload(downloadInfo: DownloadRequest) {
     if (appMode === 'remote-files') {
       message.info('独立文件窗口暂不展示传输队列，请在主窗口查看下载进度。')
     }
     rightPanelTab.value = 'download'
     rightPanelCollapsed.value = false
+    triggerMainRightPanelTransition()
     rightPanelRef.value?.addDownload(
       downloadInfo.fileName,
       downloadInfo.remotePath,
@@ -79,6 +86,7 @@ export function useWorkspaceChrome({ currentTab, appMode, rightPanelRef }: UseWo
     }
     rightPanelTab.value = 'download'
     rightPanelCollapsed.value = false
+    triggerMainRightPanelTransition()
     rightPanelRef.value?.addUpload(uploadInfo)
   }
 
@@ -91,16 +99,19 @@ export function useWorkspaceChrome({ currentTab, appMode, rightPanelRef }: UseWo
 
       rightPanelTab.value = tab
       embeddedMonitorCollapsed.value = false
+      triggerMainRightPanelTransition()
       return
     }
 
     if (rightPanelTab.value === tab) {
       rightPanelCollapsed.value = !rightPanelCollapsed.value
+      triggerMainRightPanelTransition()
       return
     }
 
     rightPanelTab.value = tab
     rightPanelCollapsed.value = false
+    triggerMainRightPanelTransition()
   }
 
   return {

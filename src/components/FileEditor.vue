@@ -128,6 +128,7 @@ import type { PropType } from 'vue'
 import SftpService from '../services/SftpService'
 import type { DownloadRequest, SftpFileEntry, ThemeName } from '../types/app'
 import { formatBytes } from '../utils/formatters'
+import { isMainRightPanelTransitionActive, RIGHT_PANEL_TRANSITION_END_EVENT } from '../utils/rightPanelTransition'
 
 type MonacoApi = typeof import('monaco-editor')
 type MonacoEditorInstance = editor.IStandaloneCodeEditor
@@ -200,6 +201,10 @@ let monacoPromise: Promise<MonacoApi> | null = null
 let monacoEditorInstance: MonacoEditorInstance | null = null
 let monacoModel: MonacoModel | null = null
 let monacoDisposables: MonacoDisposable[] = []
+
+function handleRightPanelTransitionEnd() {
+  monacoEditorInstance?.layout()
+}
 let monacoResizeObserver: ResizeObserver | null = null
 
 function ensureMonacoEnvironment() {
@@ -330,6 +335,7 @@ async function initMonacoEditor() {
 
   monacoResizeObserver?.disconnect()
   monacoResizeObserver = new ResizeObserver(() => {
+    if (isMainRightPanelTransitionActive()) return
     monacoEditorInstance?.layout()
   })
   monacoResizeObserver.observe(monacoContainer.value)
@@ -835,6 +841,7 @@ watch(() => props.theme, async () => {
 
 onMounted(async () => {
   window.addEventListener('keydown', handleGlobalKeydown)
+  window.addEventListener(RIGHT_PANEL_TRANSITION_END_EVENT, handleRightPanelTransitionEnd as EventListener)
   resetEditorMode()
   if (props.active) {
     await loadFileContent()
@@ -843,6 +850,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleGlobalKeydown)
+  window.removeEventListener(RIGHT_PANEL_TRANSITION_END_EVENT, handleRightPanelTransitionEnd as EventListener)
   disposeMonacoEditor()
 })
 </script>

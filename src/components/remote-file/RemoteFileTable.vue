@@ -113,6 +113,7 @@ import {
 } from './RemoteFileIcons'
 import type { SftpFileEntry, WorkspaceDensity } from '../../types/app'
 import { formatBytes, formatUnixTimestamp } from '../../utils/formatters'
+import { isMainRightPanelTransitionActive, RIGHT_PANEL_TRANSITION_END_EVENT } from '../../utils/rightPanelTransition'
 
 const REMOTE_TABLE_COLUMN_WIDTHS_KEY = 'termlink_remote_file_table_column_widths'
 const DEFAULT_COLUMN_WIDTHS: Record<'name' | 'kind' | 'size' | 'modified' | 'permissions' | 'ownerUser', number> = {
@@ -159,6 +160,10 @@ const renameInputRef = ref<HTMLInputElement | null>(null)
 const isDragOver = ref(false)
 const isFocused = ref(false)
 let tableResizeObserver: ResizeObserver | null = null
+
+function handleRightPanelTransitionEnd() {
+  updateTableViewportWidth()
+}
 
 const selectedPathSet = computed(() => new Set(props.selectedPaths))
 const orderedVisiblePaths = computed(() => props.files.map(getFilePath))
@@ -712,6 +717,7 @@ watch(() => props.renameView, (view) => {
 onMounted(() => {
   const el = tableWrapRef.value
   if (!el) return
+  window.addEventListener(RIGHT_PANEL_TRANSITION_END_EVENT, handleRightPanelTransitionEnd as EventListener)
   updateTableViewportWidth()
   // Use native listeners to avoid Vue's .prevent swallowing events
   el.addEventListener('dragover', onNativeDragOver, true)
@@ -720,12 +726,14 @@ onMounted(() => {
   el.addEventListener('drop', onNativeDrop, true)
   el.addEventListener('pointerdown', handlePointerDown as EventListener)
   tableResizeObserver = new ResizeObserver(() => {
+    if (isMainRightPanelTransitionActive()) return
     updateTableViewportWidth()
   })
   tableResizeObserver.observe(el)
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener(RIGHT_PANEL_TRANSITION_END_EVENT, handleRightPanelTransitionEnd as EventListener)
   const el = tableWrapRef.value
   if (el) {
     el.removeEventListener('dragover', onNativeDragOver, true)

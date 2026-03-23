@@ -34,6 +34,7 @@ import { listen } from '@tauri-apps/api/event'
 import '@xterm/xterm/css/xterm.css'
 import SshService from '../services/SshService'
 import { hideTerminalContextMenu, showTerminalContextMenu } from '../utils/terminalContextMenu'
+import { RIGHT_PANEL_TRANSITION_END_EVENT } from '../utils/rightPanelTransition'
 import type { ITheme, Terminal as XTermTerminal } from '@xterm/xterm'
 import type { FitAddon as XTermFitAddon } from '@xterm/addon-fit'
 import type { TerminalConfig, ThemeName, WorkspaceDensity } from '../types/app'
@@ -127,6 +128,11 @@ const overlayHint = computed(() => {
 
 function isSshTerminal() {
   return props.type === 'ssh' || props.id.startsWith('ssh-')
+}
+
+function handleRightPanelTransitionEnd() {
+  if (!props.active) return
+  debouncedApplySize()
 }
 
 // 主题配置
@@ -788,6 +794,7 @@ onMounted(async () => {
   
   // 监听窗口大小变化
   window.addEventListener('resize', debouncedApplySize)
+  window.addEventListener(RIGHT_PANEL_TRANSITION_END_EVENT, handleRightPanelTransitionEnd as EventListener)
 })
 
 onBeforeUnmount(async () => {
@@ -812,6 +819,7 @@ onBeforeUnmount(async () => {
   
   // 移除事件监听
   window.removeEventListener('resize', debouncedApplySize)
+  window.removeEventListener(RIGHT_PANEL_TRANSITION_END_EVENT, handleRightPanelTransitionEnd as EventListener)
 })
 </script>
 

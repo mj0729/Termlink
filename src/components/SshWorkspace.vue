@@ -334,9 +334,12 @@ const showEmbeddedMonitor = computed(() => (
   && !props.embeddedMonitorCollapsed
   && !isPaneSplitActive.value
 ))
+const EMBEDDED_MONITOR_TRANSITION_MS = 320
 let resizeFrame = 0
 let activateSyncFrame = 0
 let resizeObserver: ResizeObserver | null = null
+let layoutRecoveryTimer: ReturnType<typeof setTimeout> | null = null
+let suppressResizeSyncUntil = 0
 const workspaceDensity = computed<WorkspaceDensity>(() => props.config.density || 'balanced')
 
 const primaryPane = computed<WorkspacePane>(() => ({
@@ -419,6 +422,20 @@ function emitWindowResize() {
   resizeFrame = requestAnimationFrame(() => {
     window.dispatchEvent(new Event('resize'))
   })
+}
+
+function deferResizeSync(durationMs = EMBEDDED_MONITOR_TRANSITION_MS) {
+  suppressResizeSyncUntil = Date.now() + durationMs
+
+  if (layoutRecoveryTimer) {
+    clearTimeout(layoutRecoveryTimer)
+  }
+
+  layoutRecoveryTimer = setTimeout(() => {
+    layoutRecoveryTimer = null
+    if (!props.active) return
+    emitWindowResize()
+  }, durationMs)
 }
 
 function scheduleLayoutRecovery() {
@@ -656,6 +673,7 @@ onMounted(async () => {
   if (workspaceRef.value) {
     resizeObserver = new ResizeObserver(() => {
       workspaceWidth.value = workspaceRef.value?.clientWidth || 0
+      if (Date.now() < suppressResizeSyncUntil) return
       emitWindowResize()
     })
     resizeObserver.observe(workspaceRef.value)
@@ -693,6 +711,11 @@ watch(showSnippetPanel, () => {
   scheduleLayoutRecovery()
 })
 
+watch(showEmbeddedMonitor, (visible, previousVisible) => {
+  if (visible === previousVisible) return
+  deferResizeSync()
+})
+
 watch(() => props.filesDrawerOpen, async (nextOpen, previousOpen) => {
   scheduleLayoutRecovery()
 
@@ -706,6 +729,7 @@ watch(() => props.filesDrawerOpen, async (nextOpen, previousOpen) => {
 onBeforeUnmount(async () => {
   if (resizeFrame) cancelAnimationFrame(resizeFrame)
   if (activateSyncFrame) cancelAnimationFrame(activateSyncFrame)
+  if (layoutRecoveryTimer) clearTimeout(layoutRecoveryTimer)
   resizeObserver?.disconnect()
   document.removeEventListener('click', handleGlobalPointerDown)
 
@@ -723,28 +747,21 @@ onBeforeUnmount(async () => {
 }
 
 .ssh-workspace__monitor {
-  flex: 0 0 var(--ssh-monitor-width);
-  width: var(--ssh-monitor-width);
-  max-width: var(--ssh-monitor-width);
-  min-width: 256px;
+  flex: 0 0 clamp(256px, var(--ssh-monitor-width), 360px);
   min-height: 0;
   opacity: 1;
   transform: translateX(0);
   overflow: hidden;
-  will-change: width, max-width, opacity, transform;
+  contain: layout paint;
+  will-change: flex-basis, opacity, transform;
   transition:
     flex-basis 0.3s cubic-bezier(0.22, 1, 0.36, 1),
-    width 0.3s cubic-bezier(0.22, 1, 0.36, 1),
-    max-width 0.3s cubic-bezier(0.22, 1, 0.36, 1),
     opacity 0.2s ease,
     transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .ssh-workspace__monitor.is-hidden {
   flex: 0 0 0;
-  width: 0;
-  max-width: 0;
-  min-width: 0;
   opacity: 0;
   transform: translateX(-14px);
   overflow: hidden;

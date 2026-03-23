@@ -214,7 +214,7 @@ const props = withDefaults(defineProps<{
     cursorBlink: true,
     cursorStyle: 'block',
     density: 'compact',
-    connectionHubViewMode: 'list',
+    hostCenterViewMode: 'list',
   }),
   autoPassword: '',
   profile: null,

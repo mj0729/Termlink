@@ -103,7 +103,7 @@
         
         <!-- 未连接状态 -->
         <div v-else class="no-connection">
-          <a-empty description="从顶部连接带或连接中心选择 SSH 后再浏览远程文件" size="small" />
+          <a-empty description="从顶部主机栏或主机中心选择主机后再浏览远程文件" size="small" />
         </div>
       </div>
     </div>
@@ -891,18 +891,18 @@ async function createNewFolder() {
 async function deleteProfile(profile: SshProfile) {
   Modal.confirm({
     title: '确认删除',
-    content: `确定要删除连接 "${profile.username ? `${profile.username}@${profile.host}` : profile.host}" 吗？此操作无法撤销。`,
+    content: `确定要删除主机 "${profile.username ? `${profile.username}@${profile.host}` : profile.host}" 吗？此操作无法撤销。`,
     okText: '删除',
     okType: 'danger',
     cancelText: '取消',
     async onOk() {
       try {
         await invoke('delete_ssh_profile', { profileId: profile.id })
-        message.success('连接已删除')
+        message.success('主机已删除')
         emit('refreshProfiles')
       } catch (error) {
-        console.error('删除连接失败:', error)
-        message.error('删除连接失败')
+        console.error('删除主机失败:', error)
+        message.error('删除主机失败')
       }
     }
   })

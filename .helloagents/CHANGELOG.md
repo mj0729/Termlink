@@ -1,5 +1,31 @@
 # 变更记录
 
+## [0.0.30] - 2026-03-23
+
+### 变更
+
+- **[workspace-ui]**: 将设置弹窗重构为“左侧分类导航 + 右侧内容区”的双栏偏好设置面板；`SettingsModal` 现已按常规、终端、外观、存储与导入四个分区重组现有设置项，保留原有保存、主题、导入导出与 Tauri 交互逻辑，同时补齐窄宽度退化布局，更接近桌面 IDE 的设置中心使用体验；已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603231227_settings-modal-two-pane-layout](plan/202603231227_settings-modal-two-pane-layout/)
+  - 决策: settings-modal-two-pane-layout#D001(采用单组件内双栏重构而非拆分成完整设置子页面体系)
+
+### 快速修改
+
+- **[workspace-ui]**: 将设置弹窗尺寸固定为稳定的桌面高度；`SettingsModal` 现在在常规桌面窗口下统一保持固定外框高度，切换常规/终端/外观/存储分区时不再因为内容多少出现整体忽高忽低，仍保留中间内容区滚动与底部按钮固定的行为；已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/SettingsModal.vue
+
+- **[workspace-ui]**: 将新建主机弹窗改为固定高度并让表单区内部滚动；`SshModal` 现在会把滚动限制在中间表单内容区，底部“取消 / 确定”按钮始终固定在可视范围内，不会再因为高级 SSH 或端口转发项较多而被挤出屏幕；已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/SshModal.vue
+
+- **[workspace-ui]**: 继续统一文件操作弹窗的固定高度与滚动行为；`ChmodModal` 与 `ChownModal` 现已和设置/新建主机弹窗保持同类交互规范，外框高度固定、正文区自滚、底部按钮固定，避免权限或所有者修改弹窗在内容增长时再次把 footer 挤出可视区域；已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/remote-file/ChmodModal.vue, src/components/remote-file/ChownModal.vue
+
+- **[workspace-ui]**: 继续收紧设置弹窗样式密度并修正滚动行为；去掉左栏和内容头部的说明性文案，压缩导航与分组留白，使整体更贴近现有黑白桌面工具风格，同时将 modal 内容区改为内部滚动，确保设置项再多时底部“取消 / 确定”按钮仍固定在可视区域内；已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 类型: 快速修改（无方案包）
+  - 文件: src/components/SettingsModal.vue
+
 ## [0.0.29] - 2026-03-22
 
 ### 变更
@@ -9,6 +35,26 @@
   - 决策: frontend-workspace-runtime-refactor#D001(优先重构工作区编排边界，而不是仅做文件级拆分)
 
 ### 快速修改
+
+- **[workspace-ui]**: 将主按钮的 hover 反馈从位移/阴影改回纯颜色变化；用户希望悬停时能明显感知到 hover，但不希望按钮产生“动一下”的位移感。现已移除主按钮的上浮与阴影变化，改为浅色主题下黑→深灰、深色主题下白→浅灰的颜色反馈，按下态则进一步加深/恢复，保持静态但可感知；已通过 `pnpm run build` 验证 — by Codex
+  - 类型: 快速修改（无方案包）
+  - 文件: src/style.css
+
+- **[workspace-ui]**: 为全局主按钮补回明确的 hover / active 反馈；在修复文字不可见后，主按钮悬停时视觉变化仍不够明显。现已为 `ant-btn-primary` 增加轻微上浮与阴影增强，按下时回落，保证“新增主机”等主按钮在浅色和深色主题下都能明显感知到鼠标进入与点击状态；已通过 `pnpm run build` 验证 — by Codex
+  - 类型: 快速修改（无方案包）
+  - 文件: src/style.css
+
+- **[workspace-ui]**: 修复主按钮 hover 后文字消失的问题；此前通用 `.ant-btn:hover` 会把主按钮文字改成普通文本色，导致浅色主题下出现黑底黑字。现已为全局主按钮 hover 显式保留前景色，浅色主题维持白字，深色主题维持深字，避免“新增主机”等主按钮悬停时文案不可见；已通过 `pnpm run build` 验证 — by Codex
+  - 类型: 快速修改（无方案包）
+  - 文件: src/style.css
+
+- **[workspace-ui]**: 继续统一主机对象层内部命名；主机中心组件与组合式函数改为 `HostCenter / useHostCatalog`，主机中心标签类型、打开函数和视图配置也从 `Connection*` 语义切到 `Host*`，同时保留 `connectionId / connect / disconnect` 等连接行为命名，并为本地视图配置增加旧 key 兼容读取；已通过 `pnpm run build` 验证 — by Codex
+  - 类型: 快速修改（无方案包）
+  - 文件: src/App.vue, src/components/HostCenter.vue, src/composables/useHostCatalog.ts, src/composables/useWorkspaceTabs.ts, src/composables/useWorkspaceChrome.ts, src/services/ThemeService.ts, src/types/app.ts, src/components/SettingsModal.vue, src/components/TabManager.vue, src/components/TopMenu.vue, src/components/Terminal.vue, src/components/SshWorkspace.vue, src/components.d.ts, README.md, CLAUDE.md
+
+- **[workspace-ui]**: 统一主机对象层文案，连接中心入口、主机列表、设置页导入导出、主机编辑弹窗、状态栏与删除确认等位置改用“主机”表述，同时保留“连接中 / 已连接 / 建立连接”等动作与状态语义，避免对象层和连接行为混用；已通过 `pnpm run build` 验证 — by Codex
+  - 类型: 快速修改（无方案包）
+  - 文件: src/App.vue, src/components/HostCenter.vue, src/components/SettingsModal.vue, src/components/SshModal.vue, src/components/StatusBar.vue, src/components/Sidebar.vue, src/composables/useHostCatalog.ts
 
 - **[workspace-ui]**: 为右侧监控展示补上共享样式基座；新增 `monitorShared.css` 收口 `Resources / Processes / StorageNetwork` 三个卡片型子组件重复的卡片壳层、标题、chip 与暗色态规则，让子组件本地样式只保留布局差异与紧凑模式细节，同时保持嵌入式左栏监控布局不回退；已通过 `pnpm run build` 验证 — by Codex
   - 类型: 快速修改（无方案包）

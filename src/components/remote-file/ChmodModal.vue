@@ -88,6 +88,7 @@ const closeIconNode = computed(() => h(CloseOutlined, { class: 'modal-close-icon
 const modalClasses = {
   container: 'chmod-modal__container',
 }
+const CHMOD_MODAL_FIXED_HEIGHT = 'min(560px, calc(100vh - 24px))'
 const modalStyles = {
   mask: {
     background: 'var(--overlay-mask-bg)',
@@ -97,13 +98,14 @@ const modalStyles = {
     background: 'var(--overlay-panel-solid)',
     border: '1px solid var(--border-color)',
     boxShadow: 'none',
+    height: CHMOD_MODAL_FIXED_HEIGHT,
+    minHeight: CHMOD_MODAL_FIXED_HEIGHT,
+    maxHeight: CHMOD_MODAL_FIXED_HEIGHT,
+    display: 'flex',
+    flexDirection: 'column',
     padding: '0',
     overflow: 'hidden',
     borderRadius: '14px',
-  },
-  content: {
-    background: 'var(--overlay-panel-solid)',
-    padding: '0',
   },
   header: {
     background: 'var(--overlay-panel-solid)',
@@ -114,11 +116,15 @@ const modalStyles = {
   body: {
     background: 'var(--overlay-panel-solid)',
     color: 'var(--text-color)',
+    flex: '1 1 auto',
+    minHeight: '0',
+    overflowY: 'auto',
     padding: '16px 20px 12px',
   },
   footer: {
     background: 'var(--overlay-panel-solid)',
     borderTop: '1px solid var(--overlay-divider-color)',
+    flex: 'none',
     padding: '12px 20px 18px',
   },
 }
@@ -175,6 +181,8 @@ function handleCancel() {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
+  display: flex;
+  flex-direction: column;
   padding: 0 !important;
   overflow: hidden !important;
   border-radius: 14px !important;

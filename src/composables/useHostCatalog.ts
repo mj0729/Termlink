@@ -4,7 +4,7 @@ import { invoke } from '@tauri-apps/api/core'
 import SshService from '../services/SshService'
 import type { SshProfile } from '../types/app'
 
-export function useConnectionCatalog() {
+export function useHostCatalog() {
   const profiles = ref<SshProfile[]>([])
   const groups = ref<string[]>([])
   const showSshModal = ref(false)
@@ -49,7 +49,7 @@ export function useConnectionCatalog() {
   async function deleteProfile(profile: SshProfile) {
     Modal.confirm({
       title: '确认删除',
-      content: `确定要删除连接 "${profile.username ? `${profile.username}@${profile.host}` : profile.host}" 吗？此操作无法撤销。`,
+      content: `确定要删除主机 "${profile.username ? `${profile.username}@${profile.host}` : profile.host}" 吗？此操作无法撤销。`,
       okText: '删除',
       okType: 'danger',
       cancelText: '取消',
@@ -57,10 +57,10 @@ export function useConnectionCatalog() {
         try {
           await invoke('delete_ssh_profile', { profileId: profile.id })
           await refreshConnectionData()
-          message.success('连接已删除')
+          message.success('主机已删除')
         } catch (error) {
-          console.error('删除连接失败:', error)
-          message.error('删除连接失败')
+          console.error('删除主机失败:', error)
+          message.error('删除主机失败')
         }
       },
     })

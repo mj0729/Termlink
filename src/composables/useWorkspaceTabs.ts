@@ -5,8 +5,8 @@ type OpenTabOptions = {
   markFresh?: boolean
 }
 
-export function useWorkspaceTabs(createConnectionCenterTab: () => ConnectionTab) {
-  const tabs = ref<ConnectionTab[]>([createConnectionCenterTab()])
+export function useWorkspaceTabs(createHostCenterTab: () => ConnectionTab) {
+  const tabs = ref<ConnectionTab[]>([createHostCenterTab()])
   const activeId = ref(tabs.value[0]?.id || '')
   const freshTabId = ref('')
   const activatingWorkspaceId = ref('')
@@ -121,14 +121,14 @@ export function useWorkspaceTabs(createConnectionCenterTab: () => ConnectionTab)
     workspaceFileDrawerState.value = nextDrawerState
   }
 
-  function openConnectionCenter() {
-    const existingTab = tabs.value.find((tab) => tab.type === 'connections')
+  function openHostCenter() {
+    const existingTab = tabs.value.find((tab) => tab.type === 'hosts')
     if (existingTab) {
       activeId.value = existingTab.id
       return
     }
 
-    openTabWithMotion(createConnectionCenterTab())
+    openTabWithMotion(createHostCenterTab())
   }
 
   watch(activeId, (nextId, prevId) => {
@@ -164,7 +164,7 @@ export function useWorkspaceTabs(createConnectionCenterTab: () => ConnectionTab)
     getWorkspaceFileDrawerState,
     toggleCurrentWorkspaceFileDrawer,
     removeTabState,
-    openConnectionCenter,
+    openHostCenter,
     cleanupWorkspaceTabState,
   }
 }

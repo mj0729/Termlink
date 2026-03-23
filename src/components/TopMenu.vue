@@ -11,7 +11,7 @@
     </div>
 
     <div class="top-menu__connections">
-      <a-button type="text" class="connection-add" @click="$emit('openConnectionCenter')">
+      <a-button type="text" class="connection-add" @click="$emit('openHostCenter')">
         <PlusOutlined />
       </a-button>
     </div>
@@ -28,7 +28,7 @@ defineProps({
   },
 })
 
-defineEmits(['showSettings', 'openConnectionCenter'])
+defineEmits(['showSettings', 'openHostCenter'])
 </script>
 
 <style scoped>

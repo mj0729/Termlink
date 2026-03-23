@@ -18,20 +18,20 @@ export function useWorkspaceChrome({ currentTab, appMode, rightPanelRef }: UseWo
   const embeddedMonitorCollapsed = ref(false)
   const rightPanelTab = ref<MonitorTab>('monitor')
 
-  const isConnectionCenterLayout = computed(() => currentTab.value?.type === 'connections')
+  const isHostCenterLayout = computed(() => currentTab.value?.type === 'hosts')
   const isSshWorkspaceLayout = computed(() => currentTab.value?.type === 'ssh')
   const shouldEmbedMonitorInSsh = computed(() => (
     isSshWorkspaceLayout.value && rightPanelTab.value === 'monitor'
   ))
   const effectiveRightPanelCollapsed = computed(() => (
-    shouldEmbedMonitorInSsh.value || isConnectionCenterLayout.value
+    shouldEmbedMonitorInSsh.value || isHostCenterLayout.value
       ? true
       : rightPanelCollapsed.value
   ))
 
   const activeConnection = computed(() => {
     const tab = currentTab.value
-    if (!tab || tab.type === 'connections') return ''
+    if (!tab || tab.type === 'hosts') return ''
     if (tab.type === 'ssh') {
       const username = tab.profile?.username
       const host = tab.profile?.host
@@ -107,7 +107,7 @@ export function useWorkspaceChrome({ currentTab, appMode, rightPanelRef }: UseWo
     rightPanelCollapsed,
     embeddedMonitorCollapsed,
     rightPanelTab,
-    isConnectionCenterLayout,
+    isHostCenterLayout,
     isSshWorkspaceLayout,
     shouldEmbedMonitorInSsh,
     effectiveRightPanelCollapsed,

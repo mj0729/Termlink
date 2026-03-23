@@ -26,7 +26,7 @@
 ### 界面
 - **主题切换** - 深色/浅色主题，CSS 变量驱动
 - **可折叠面板** - 左侧边栏、右侧面板均可折叠
-- **连接中心** - ConnectionHub 集中管理所有连接配置
+- **主机中心** - HostCenter 集中管理所有主机配置
 - **状态栏** - 显示连接状态和系统信息
 
 ### 快捷键
@@ -108,7 +108,7 @@ Termlink/
 │   │   ├── TabManager.vue        # 标签页管理
 │   │   ├── Sidebar.vue           # 左侧边栏
 │   │   ├── RightPanel.vue        # 右侧面板（监控/下载）
-│   │   ├── ConnectionHub.vue     # 连接中心
+│   │   ├── HostCenter.vue        # 主机中心
 │   │   ├── SshWorkspace.vue      # SSH 工作区
 │   │   ├── SshModal.vue          # SSH 连接对话框
 │   │   ├── FileManager.vue       # 远程文件管理器

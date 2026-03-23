@@ -2,188 +2,269 @@
   <a-modal
     :open="visible"
     title="程序配置"
-    width="640px"
+    width="980px"
     wrap-class-name="settings-modal"
     :classes="modalClasses"
     :styles="modalStyles"
     :close-icon="closeIconNode"
     @cancel="handleCancel"
   >
-    <a-form layout="vertical">
-      <a-divider>终端设置</a-divider>
-      <a-row :gutter="16">
-        <a-col :span="12">
-          <a-form-item label="字体大小">
-            <a-input-number 
-              v-model:value="config.fontSize" 
-              :min="8" 
-              :max="32" 
-              style="width: 100%" 
-            />
-          </a-form-item>
-        </a-col>
-        <a-col :span="12">
-          <a-form-item label="字体族">
-            <a-select
-              v-model:value="config.fontFamily"
-              :options="fontFamilyOptions"
-              style="width: 100%"
-            />
-          </a-form-item>
-        </a-col>
-      </a-row>
-      <a-row :gutter="16">
-        <a-col :span="12">
-          <a-form-item label="光标闪烁">
-            <a-switch v-model:checked="config.cursorBlink" />
-          </a-form-item>
-        </a-col>
-        <a-col :span="12">
-          <a-form-item label="光标样式">
-            <a-select
-              v-model:value="config.cursorStyle"
-              :options="cursorStyleOptions"
-              style="width: 100%"
-            />
-          </a-form-item>
-        </a-col>
-      </a-row>
-      <a-form-item label="界面密度">
-        <a-segmented
-          block
-          :options="densityOptions"
-          v-model:value="config.density"
-        />
-        <div style="margin-top: 6px; color: var(--muted-color); font-size: 12px;">
-          紧凑模式会优先给终端和文件区更多有效显示空间，适合 SSH、日志和文件巡检。
+    <div class="settings-layout">
+      <aside class="settings-sidebar">
+        <div class="settings-sidebar__intro">
+          <div class="settings-sidebar__eyebrow">Preferences</div>
+          <div class="settings-sidebar__title">程序配置</div>
         </div>
-      </a-form-item>
-      <a-form-item label="连接中心视图">
-        <a-segmented
-          block
-          :options="connectionHubViewOptions"
-          v-model:value="config.connectionHubViewMode"
-        />
-        <div style="margin-top: 6px; color: var(--muted-color); font-size: 12px;">
-          控制连接中心默认使用列表还是卡片视图。
-        </div>
-      </a-form-item>
-      
-      <a-divider>主题设置</a-divider>
-      <a-form-item label="主题模式">
-        <a-segmented
-          block
-          :options="themeModeOptions"
-          v-model:value="themeConfig.mode"
-        />
-        <div class="settings-hint">
-          系统模式会跟随 macOS / Windows 当前配色方案，适合长期使用。
-        </div>
-      </a-form-item>
-      <a-row :gutter="16">
-        <a-col :span="14">
-          <a-form-item label="主题预设">
-            <a-select
-              v-model:value="themeConfig.presetId"
-              :options="themePresetOptions"
-              style="width: 100%"
-              @change="handlePresetChange"
-            />
-            <div class="settings-hint">
-              {{ currentPresetDescription }}
-            </div>
-          </a-form-item>
-        </a-col>
-        <a-col :span="10">
-          <a-form-item label="状态色强度">
-            <a-segmented
-              block
-              :options="statusSaturationOptions"
-              v-model:value="themeConfig.statusSaturation"
-            />
-          </a-form-item>
-        </a-col>
-      </a-row>
-      <a-form-item label="强调色">
-        <div class="theme-accent-row">
-          <label class="theme-accent-swatch" aria-label="强调色选择器">
-            <input
-              class="theme-accent-native"
-              type="color"
-              :value="themeConfig.accentColor"
-              @input="handleAccentPickerInput"
-            />
-          </label>
-          <a-input
-            :value="themeConfig.accentColor"
-            placeholder="#111111"
-            @update:value="handleAccentTextInput"
-          />
-          <a-button class="settings-modal__button" @click="resetAccentColor">
-            跟随预设
-          </a-button>
-        </div>
-        <div class="settings-hint">
-          强调色会统一驱动按钮、焦点态、进度高亮和 antdv-next 的主色 token。
-        </div>
-      </a-form-item>
-      <div class="theme-summary-grid">
-        <div class="theme-summary-card">
-          <div class="theme-summary-card__label">当前主题方案</div>
-          <div class="theme-summary-card__value">{{ currentPresetLabel }}</div>
-          <div class="theme-summary-card__meta">
-            {{ currentModeLabel }} · {{ currentSaturationLabel }}
-          </div>
-        </div>
-        <div class="theme-summary-card">
-          <div class="theme-summary-card__label">状态语义</div>
-          <div class="theme-status-row">
-            <span class="theme-status-pill theme-status-pill--connected">成功</span>
-            <span class="theme-status-pill theme-status-pill--connecting">连接中</span>
-            <span class="theme-status-pill theme-status-pill--disconnected">断开</span>
-          </div>
-          <div class="theme-summary-card__meta">
-            三种状态颜色统一来自同一份主题配置。
-          </div>
-        </div>
-      </div>
-      
-      <a-divider>存储设置</a-divider>
-      <a-form-item label="配置文件位置">
-        <a-space-compact block>
-          <a-input
-            :value="profilesDir" 
-            readonly 
-            placeholder="获取中..."
-          />
-          <a-button class="settings-modal__button" @click="openProfilesDir" style="width: 60px">打开</a-button>
-          <a-button class="settings-modal__button settings-modal__button--icon" @click="getProfilesDirectory" style="width: 40px" title="刷新">
-            <ReloadOutlined />
-          </a-button>
-        </a-space-compact>
-        <div style="margin-top: 4px; color: var(--muted-color); font-size: 12px;">
-          SSH连接配置和密码存储在此目录中
-        </div>
-      </a-form-item>
 
-      <a-form-item label="连接导入导出">
-        <div class="storage-actions">
-          <a-button class="settings-modal__button" @click="exportConnections(false)">导出连接配置</a-button>
-          <a-button
-            type="primary"
-            class="settings-modal__button settings-modal__primary-button"
-            @click="exportConnections(true)"
+        <nav class="settings-nav" aria-label="设置分类">
+          <button
+            v-for="section in settingsSections"
+            :key="section.key"
+            type="button"
+            class="settings-nav__item"
+            :class="{ 'is-active': activeSection === section.key }"
+            @click="activeSection = section.key"
           >
-            导出连接和密码
-          </a-button>
-          <a-button class="settings-modal__button" @click="triggerImport">导入连接包</a-button>
-          <a-button class="settings-modal__button" @click="importFromSshConfig">导入 ~/.ssh/config</a-button>
-        </div>
-        <div style="margin-top: 4px; color: var(--muted-color); font-size: 12px;">
-          导出文件格式为 .tlink。包含密码的导出包会额外要求设置导出密码。
-        </div>
-      </a-form-item>
-    </a-form>
+            <span class="settings-nav__accent" />
+            <span class="settings-nav__label">{{ section.label }}</span>
+          </button>
+        </nav>
+      </aside>
+
+      <section class="settings-content">
+        <header class="settings-content__header">
+          <div class="settings-content__eyebrow">{{ currentSection.eyebrow }}</div>
+          <h2 class="settings-content__title">{{ currentSection.label }}</h2>
+        </header>
+
+        <a-form layout="vertical" class="settings-form">
+          <template v-if="activeSection === 'general'">
+            <section class="settings-group">
+              <div class="settings-group__header">
+                <h3>工作区体验</h3>
+              </div>
+
+              <a-form-item label="界面密度">
+                <a-segmented
+                  block
+                  :options="densityOptions"
+                  v-model:value="config.density"
+                />
+                <div class="settings-hint">
+                  紧凑模式会优先给终端和文件区更多有效显示空间，适合 SSH、日志和文件巡检。
+                </div>
+              </a-form-item>
+
+              <a-form-item label="主机中心视图">
+                <a-segmented
+                  block
+                  :options="hostCenterViewOptions"
+                  v-model:value="config.hostCenterViewMode"
+                />
+                <div class="settings-hint">
+                  控制主机中心默认使用列表还是卡片视图。
+                </div>
+              </a-form-item>
+            </section>
+          </template>
+
+          <template v-else-if="activeSection === 'terminal'">
+            <section class="settings-group">
+              <div class="settings-group__header">
+                <h3>终端显示</h3>
+              </div>
+
+              <a-row :gutter="16">
+                <a-col :xs="24" :sm="12">
+                  <a-form-item label="字体大小">
+                    <a-input-number
+                      v-model:value="config.fontSize"
+                      :min="8"
+                      :max="32"
+                      class="settings-field--full"
+                    />
+                  </a-form-item>
+                </a-col>
+                <a-col :xs="24" :sm="12">
+                  <a-form-item label="字体族">
+                    <a-select
+                      v-model:value="config.fontFamily"
+                      :options="fontFamilyOptions"
+                      class="settings-field--full"
+                    />
+                  </a-form-item>
+                </a-col>
+              </a-row>
+
+              <a-row :gutter="16">
+                <a-col :xs="24" :sm="12">
+                  <a-form-item label="光标闪烁">
+                    <div class="settings-toggle-row">
+                      <span class="settings-toggle-row__label">启用</span>
+                      <a-switch v-model:checked="config.cursorBlink" />
+                    </div>
+                  </a-form-item>
+                </a-col>
+                <a-col :xs="24" :sm="12">
+                  <a-form-item label="光标样式">
+                    <a-select
+                      v-model:value="config.cursorStyle"
+                      :options="cursorStyleOptions"
+                      class="settings-field--full"
+                    />
+                  </a-form-item>
+                </a-col>
+              </a-row>
+            </section>
+          </template>
+
+          <template v-else-if="activeSection === 'appearance'">
+            <section class="settings-group">
+              <div class="settings-group__header">
+                <h3>主题与状态色</h3>
+              </div>
+
+              <a-form-item label="主题模式">
+                <a-segmented
+                  block
+                  :options="themeModeOptions"
+                  v-model:value="themeConfig.mode"
+                />
+                <div class="settings-hint">
+                  系统模式会跟随 macOS / Windows 当前配色方案，适合长期使用。
+                </div>
+              </a-form-item>
+
+              <a-row :gutter="16">
+                <a-col :xs="24" :sm="14">
+                  <a-form-item label="主题预设">
+                    <a-select
+                      v-model:value="themeConfig.presetId"
+                      :options="themePresetOptions"
+                      class="settings-field--full"
+                      @change="handlePresetChange"
+                    />
+                    <div class="settings-hint">
+                      {{ currentPresetDescription }}
+                    </div>
+                  </a-form-item>
+                </a-col>
+                <a-col :xs="24" :sm="10">
+                  <a-form-item label="状态色强度">
+                    <a-segmented
+                      block
+                      :options="statusSaturationOptions"
+                      v-model:value="themeConfig.statusSaturation"
+                    />
+                  </a-form-item>
+                </a-col>
+              </a-row>
+
+              <a-form-item label="强调色">
+                <div class="theme-accent-row">
+                  <label class="theme-accent-swatch" aria-label="强调色选择器">
+                    <input
+                      class="theme-accent-native"
+                      type="color"
+                      :value="themeConfig.accentColor"
+                      @input="handleAccentPickerInput"
+                    />
+                  </label>
+                  <a-input
+                    :value="themeConfig.accentColor"
+                    placeholder="#111111"
+                    @update:value="handleAccentTextInput"
+                  />
+                  <a-button class="settings-modal__button" @click="resetAccentColor">
+                    跟随预设
+                  </a-button>
+                </div>
+                <div class="settings-hint">
+                  强调色会统一驱动按钮、焦点态、进度高亮和 antdv-next 的主色 token。
+                </div>
+              </a-form-item>
+
+              <div class="theme-summary-grid">
+                <div class="theme-summary-card">
+                  <div class="theme-summary-card__label">当前主题方案</div>
+                  <div class="theme-summary-card__value">{{ currentPresetLabel }}</div>
+                  <div class="theme-summary-card__meta">
+                    {{ currentModeLabel }} · {{ currentSaturationLabel }}
+                  </div>
+                </div>
+                <div class="theme-summary-card">
+                  <div class="theme-summary-card__label">状态语义</div>
+                  <div class="theme-status-row">
+                    <span class="theme-status-pill theme-status-pill--connected">成功</span>
+                    <span class="theme-status-pill theme-status-pill--connecting">连接中</span>
+                    <span class="theme-status-pill theme-status-pill--disconnected">断开</span>
+                  </div>
+                  <div class="theme-summary-card__meta">
+                    三种状态颜色统一来自同一份主题配置。
+                  </div>
+                </div>
+              </div>
+            </section>
+          </template>
+
+          <template v-else-if="activeSection === 'storage'">
+            <section class="settings-group">
+              <div class="settings-group__header">
+                <h3>配置文件与数据目录</h3>
+              </div>
+
+              <a-form-item label="配置文件位置">
+                <a-space-compact block class="settings-storage-path">
+                  <a-input
+                    :value="profilesDir"
+                    readonly
+                    placeholder="获取中..."
+                  />
+                  <a-button class="settings-modal__button settings-modal__button--fixed" @click="openProfilesDir">
+                    打开
+                  </a-button>
+                  <a-button
+                    class="settings-modal__button settings-modal__button--icon settings-modal__button--compact"
+                    @click="getProfilesDirectory"
+                    title="刷新"
+                  >
+                    <ReloadOutlined />
+                  </a-button>
+                </a-space-compact>
+                <div class="settings-hint">
+                  SSH 主机配置和密码存储在此目录中。
+                </div>
+              </a-form-item>
+            </section>
+
+            <section class="settings-group">
+              <div class="settings-group__header">
+                <h3>导入与导出</h3>
+              </div>
+
+              <a-form-item label="主机导入导出">
+                <div class="storage-actions">
+                  <a-button class="settings-modal__button" @click="exportConnections(false)">导出主机配置</a-button>
+                  <a-button
+                    type="primary"
+                    class="settings-modal__button settings-modal__primary-button"
+                    @click="exportConnections(true)"
+                  >
+                    导出主机和密码
+                  </a-button>
+                  <a-button class="settings-modal__button" @click="triggerImport">导入主机包</a-button>
+                  <a-button class="settings-modal__button" @click="importFromSshConfig">导入 ~/.ssh/config</a-button>
+                </div>
+                <div class="settings-hint">
+                  导出文件格式为 `.tlink`。包含密码的导出包会额外要求设置导出密码。
+                </div>
+              </a-form-item>
+            </section>
+          </template>
+        </a-form>
+      </section>
+    </div>
+
     <input
       ref="importInputRef"
       type="file"
@@ -227,6 +308,14 @@ import type {
   ThemeStatusSaturation,
 } from '../types/app'
 
+type SettingsSectionKey = 'general' | 'terminal' | 'appearance' | 'storage'
+
+type SettingsSection = {
+  key: SettingsSectionKey
+  label: string
+  eyebrow: string
+}
+
 const DEFAULT_THEME_CONFIG: ThemeCenterConfig = {
   mode: 'light',
   presetId: 'minimal-black',
@@ -258,7 +347,7 @@ const props = withDefaults(defineProps<{
     cursorBlink: true,
     cursorStyle: 'block',
     density: 'compact',
-    connectionHubViewMode: 'grid',
+    hostCenterViewMode: 'grid',
   }),
   themeConfig: () => ({
     mode: 'light',
@@ -277,6 +366,7 @@ const config = ref<TerminalConfig>({ ...props.terminalConfig })
 const themeConfig = ref<ThemeCenterConfig>({ ...props.themeConfig })
 const profilesDir = ref('')
 const importInputRef = ref<HTMLInputElement | null>(null)
+const activeSection = ref<SettingsSectionKey>('general')
 const closeIconNode = computed(() => h(CloseOutlined, { class: 'modal-close-icon' }))
 const modalClasses = {
   container: 'settings-modal__container',
@@ -290,14 +380,14 @@ const modalStyles = {
     background: 'var(--overlay-panel-solid)',
     border: '1px solid var(--border-color)',
     boxShadow: 'var(--shadow-soft)',
+    height: '680px',
+    maxHeight: '680px',
+    minHeight: '680px',
+    display: 'flex',
+    flexDirection: 'column',
     padding: '0',
     overflow: 'hidden',
     borderRadius: '20px',
-  },
-  content: {
-    background: 'var(--overlay-panel-solid)',
-    padding: '0',
-    backdropFilter: 'blur(16px)',
   },
   header: {
     background: 'var(--overlay-header-bg)',
@@ -308,11 +398,15 @@ const modalStyles = {
   body: {
     background: 'var(--overlay-panel-solid)',
     color: 'var(--text-color)',
-    padding: '18px 24px 16px',
+    flex: '1 1 auto',
+    minHeight: '0',
+    overflow: 'hidden',
+    padding: '0',
   },
   footer: {
     background: 'color-mix(in srgb, var(--overlay-header-bg) 88%, transparent)',
     borderTop: '1px solid var(--overlay-divider-color)',
+    flex: 'none',
     padding: '14px 24px 18px',
   },
 }
@@ -347,7 +441,7 @@ const themePresetOptions = computed<SelectOption[]>(() => (
     value: option.value,
   }))
 ))
-const connectionHubViewOptions: SelectOption[] = [
+const hostCenterViewOptions: SelectOption[] = [
   { label: '列表视图', value: 'list' },
   { label: '卡片视图', value: 'grid' },
 ]
@@ -355,6 +449,31 @@ const currentPreset = computed(() => (
   props.themePresetOptions.find((option) => option.value === themeConfig.value.presetId)
   || props.themePresetOptions[0]
   || null
+))
+const settingsSections: SettingsSection[] = [
+  {
+    key: 'general',
+    label: '常规',
+    eyebrow: 'General',
+  },
+  {
+    key: 'terminal',
+    label: '终端',
+    eyebrow: 'Terminal',
+  },
+  {
+    key: 'appearance',
+    label: '外观',
+    eyebrow: 'Appearance',
+  },
+  {
+    key: 'storage',
+    label: '存储与导入',
+    eyebrow: 'Storage',
+  },
+]
+const currentSection = computed(() => (
+  settingsSections.find((section) => section.key === activeSection.value) || settingsSections[0]
 ))
 const currentPresetDescription = computed(() => (
   currentPreset.value?.description || '预设会统一控制浅色 / 深色表面的层次和基调。'
@@ -391,6 +510,12 @@ watch(() => props.themeConfig, (newConfig) => {
     accentColor: normalizeAccentColor(newConfig?.accentColor, fallbackAccent),
   }
 }, { deep: true, immediate: true })
+
+watch(() => props.visible, (visible) => {
+  if (visible) {
+    activeSection.value = 'general'
+  }
+})
 
 // 保存配置
 function handleSave() {
@@ -505,7 +630,7 @@ async function promptText(
 async function exportConnections(includePasswords: boolean) {
   try {
     if (!props.profiles.length) {
-      message.warning('当前没有可导出的连接')
+      message.warning('当前没有可导出的主机')
       return
     }
 
@@ -514,7 +639,7 @@ async function exportConnections(includePasswords: boolean) {
       exportPassword = await promptText(
         '设置导出密码',
         '请输入导出密码',
-        '导出连接和密码需要设置一个导出密码。导入该文件时需要再次输入。',
+        '导出主机和密码需要设置一个导出密码。导入该文件时需要再次输入。',
         true,
       )
 
@@ -527,7 +652,7 @@ async function exportConnections(includePasswords: boolean) {
       includePasswords,
       exportPassword || undefined,
     )
-    const fileName = `termlink-connections-${Date.now()}.tlink`
+    const fileName = `termlink-hosts-${Date.now()}.tlink`
     const savePath = await invoke<string | null>('select_download_location', { fileName })
 
     if (!savePath) {
@@ -537,8 +662,8 @@ async function exportConnections(includePasswords: boolean) {
     await ImportExportService.saveExportPackage(savePath, content)
     message.success(`导出成功: ${savePath}`)
   } catch (error) {
-    console.error('导出连接失败:', error)
-    message.error(`导出连接失败: ${error}`)
+    console.error('导出主机失败:', error)
+    message.error(`导出主机失败: ${error}`)
   }
 }
 
@@ -586,15 +711,15 @@ async function confirmImport(preview: ImportPreview, content: string) {
     .map((item) => `- ${item.name} (${item.username}@${item.host})`)
     .join('\n')
   const remaining = preview.connections.length > 5
-    ? `\n- 以及另外 ${preview.connections.length - 5} 条连接`
+    ? `\n- 以及另外 ${preview.connections.length - 5} 台主机`
     : ''
 
   Modal.confirm({
-    title: '确认导入连接',
+    title: '确认导入主机',
     content: h(
       'div',
       { style: 'white-space: pre-line; line-height: 1.6;' },
-      `将导入 ${preview.connectionCount} 条连接。\n冲突策略固定为“保留副本”。\n\n${summary}${remaining}`,
+      `将导入 ${preview.connectionCount} 台主机。\n冲突策略固定为“保留副本”。\n\n${summary}${remaining}`,
     ),
     okText: '导入',
     cancelText: '取消',
@@ -610,8 +735,8 @@ async function confirmImport(preview: ImportPreview, content: string) {
           `导入完成：新增 ${result.importedCount}，跳过 ${result.skippedCount}，覆盖 ${result.overwrittenCount}`,
         )
       } catch (error) {
-        console.error('导入连接失败:', error)
-        message.error(`导入连接失败: ${error}`)
+        console.error('导入主机失败:', error)
+        message.error(`导入主机失败: ${error}`)
       }
     },
   })
@@ -663,7 +788,7 @@ async function importFromSshConfig() {
         }
 
         emit('refreshProfiles')
-        message.success(`已从 ~/.ssh/config 导入 ${profilesToImport.length} 条连接`)
+        message.success(`已从 ~/.ssh/config 导入 ${profilesToImport.length} 台主机`)
       },
     })
   } catch (error) {
@@ -694,8 +819,11 @@ onMounted(() => {
 }
 
 :deep(.settings-modal .ant-modal-body) {
+  flex: 1 1 auto;
   background: var(--overlay-panel-solid);
-  padding: 18px 24px 16px !important;
+  min-height: 0;
+  padding: 0 !important;
+  overflow: hidden;
 }
 
 :deep(.settings-modal .ant-modal-header) {
@@ -725,7 +853,7 @@ onMounted(() => {
 }
 
 :deep(.ant-form-item) {
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 :deep(.ant-form-item-label > label) {
@@ -734,7 +862,8 @@ onMounted(() => {
 }
 
 :deep(.ant-input-number),
-:deep(.ant-select) {
+:deep(.ant-input),
+:deep(.ant-select .ant-select-selector) {
   background: var(--surface-1);
   border-color: var(--border-color);
   color: var(--text-color);
@@ -778,26 +907,181 @@ onMounted(() => {
   box-shadow: var(--shadow-card);
 }
 
-:deep(.ant-divider) {
-  margin-block: 24px 18px;
+.settings-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
 }
 
-:deep(.ant-divider-inner-text) {
-  color: var(--text-color) !important;
+.settings-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 14px;
+  border-right: 1px solid var(--overlay-divider-color);
+  background: color-mix(in srgb, var(--surface-1) 88%, transparent);
+}
+
+.settings-sidebar__intro {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-sidebar__eyebrow,
+.settings-content__eyebrow {
+  font-size: 11px;
   font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-color);
+}
+
+.settings-sidebar__title {
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--text-color);
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-nav__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-color);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.settings-nav__item:hover {
+  background: color-mix(in srgb, var(--surface-2) 74%, transparent);
+  border-color: color-mix(in srgb, var(--border-color) 78%, transparent);
+}
+
+.settings-nav__item.is-active {
+  background: var(--surface-1);
+  border-color: color-mix(in srgb, var(--text-color) 14%, var(--border-color));
+}
+
+.settings-nav__accent {
+  display: inline-flex;
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-color) 16%, transparent);
+}
+
+.settings-nav__item.is-active .settings-nav__accent {
+  background: var(--text-color);
+}
+
+.settings-nav__label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-color);
+}
+
+.settings-content {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  min-width: 0;
+  padding: 18px 20px 16px;
+  overflow-y: auto;
+}
+
+.settings-content__header {
+  margin-bottom: 10px;
+}
+
+.settings-content__title {
+  margin: 4px 0 0;
+  color: var(--text-color);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-group {
+  padding: 14px 16px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: var(--surface-1);
+}
+
+.settings-group + .settings-group {
+  margin-top: 0;
+}
+
+.settings-group__header {
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
+}
+
+.settings-group__header h3 {
+  margin: 0;
+  color: var(--text-color);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.settings-field--full {
+  width: 100%;
+}
+
+.settings-toggle-row {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--surface-1);
+}
+
+.settings-toggle-row__label {
+  color: var(--text-color);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .settings-hint {
-  margin-top: 6px;
+  margin-top: 4px;
   color: var(--muted-color);
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .theme-accent-row {
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr) auto;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
 }
 
@@ -824,15 +1108,15 @@ onMounted(() => {
 .theme-summary-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 4px;
+  gap: 10px;
+  margin-top: 2px;
 }
 
 .theme-summary-card {
-  min-height: 108px;
-  padding: 14px;
+  min-height: 86px;
+  padding: 12px;
   border: 1px solid var(--border-color);
-  border-radius: 14px;
+  border-radius: 12px;
   background: var(--surface-1);
 }
 
@@ -843,24 +1127,24 @@ onMounted(() => {
 }
 
 .theme-summary-card__value {
-  margin-top: 10px;
+  margin-top: 8px;
   color: var(--text-color);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
 }
 
 .theme-summary-card__meta {
-  margin-top: 8px;
+  margin-top: 6px;
   color: var(--muted-color);
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .theme-status-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
+  gap: 6px;
+  margin-top: 8px;
 }
 
 .theme-status-pill {
@@ -868,10 +1152,10 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   min-height: 28px;
-  padding: 0 10px;
+  padding: 0 9px;
   border-radius: 999px;
   border: 1px solid transparent;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -895,14 +1179,18 @@ onMounted(() => {
 
 .storage-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
+}
+
+.settings-storage-path {
+  width: 100%;
 }
 
 .settings-modal__footer {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 8px;
 }
 
 :global(.settings-modal__button) {
@@ -923,9 +1211,17 @@ onMounted(() => {
   padding-inline: 0 !important;
 }
 
+:global(.settings-modal__button--fixed) {
+  width: 64px !important;
+}
+
+:global(.settings-modal__button--compact) {
+  width: 40px !important;
+}
+
 :global(.settings-modal__action) {
-  min-width: 78px;
-  border-radius: 12px !important;
+  min-width: 80px;
+  border-radius: 10px !important;
   font-weight: 700;
 }
 
@@ -964,12 +1260,46 @@ onMounted(() => {
 }
 
 @media (max-width: 720px) {
+  .settings-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-sidebar {
+    gap: 10px;
+    padding: 14px 16px 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--overlay-divider-color);
+  }
+
+  .settings-nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-content {
+    padding: 14px 16px;
+  }
+
   .theme-accent-row {
     grid-template-columns: 40px minmax(0, 1fr);
   }
 
   .theme-summary-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .settings-nav {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-content__title {
+    font-size: 17px;
+  }
+
+  .settings-group {
+    padding: 12px;
   }
 }
 </style>

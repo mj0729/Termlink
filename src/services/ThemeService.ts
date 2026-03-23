@@ -1,5 +1,5 @@
 import type {
-  ConnectionHubViewMode,
+  HostCenterViewMode,
   TerminalConfig,
   TerminalCursorStyle,
   ThemeCenterConfig,
@@ -60,6 +60,8 @@ type AntdThemeTokens = {
 
 const THEME_STORAGE_KEY = 'termlink_theme_center'
 const LEGACY_THEME_STORAGE_KEY = 'termlink_theme'
+const HOST_CENTER_VIEW_MODE_STORAGE_KEY = 'termlink_hostCenterViewMode'
+const LEGACY_HOST_CENTER_VIEW_MODE_STORAGE_KEY = 'termlink_connectionHubViewMode'
 
 const DEFAULT_TERMINAL_CONFIG: TerminalConfig = {
   fontSize: 13,
@@ -67,7 +69,7 @@ const DEFAULT_TERMINAL_CONFIG: TerminalConfig = {
   cursorBlink: true,
   cursorStyle: 'block',
   density: 'compact',
-  connectionHubViewMode: 'grid',
+  hostCenterViewMode: 'grid',
 }
 
 const DEFAULT_THEME_CENTER_CONFIG: ThemeCenterConfig = {
@@ -479,7 +481,10 @@ class ThemeService {
       cursorBlink: localStorage.getItem('termlink_cursorBlink') !== 'false',
       cursorStyle: (localStorage.getItem('termlink_cursorStyle') as TerminalCursorStyle | null) || DEFAULT_TERMINAL_CONFIG.cursorStyle,
       density: (localStorage.getItem('termlink_density') as WorkspaceDensity | null) || DEFAULT_TERMINAL_CONFIG.density,
-      connectionHubViewMode: (localStorage.getItem('termlink_connectionHubViewMode') as ConnectionHubViewMode | null) || DEFAULT_TERMINAL_CONFIG.connectionHubViewMode,
+      hostCenterViewMode: (
+        localStorage.getItem(HOST_CENTER_VIEW_MODE_STORAGE_KEY)
+        || localStorage.getItem(LEGACY_HOST_CENTER_VIEW_MODE_STORAGE_KEY)
+      ) as HostCenterViewMode | null || DEFAULT_TERMINAL_CONFIG.hostCenterViewMode,
     }
     this.terminalTheme = {
       light: buildTerminalTheme('light', this.themeCenterConfig.accentColor),
@@ -665,7 +670,7 @@ class ThemeService {
     localStorage.setItem('termlink_cursorBlink', String(this.terminalConfig.cursorBlink))
     localStorage.setItem('termlink_cursorStyle', this.terminalConfig.cursorStyle)
     localStorage.setItem('termlink_density', this.terminalConfig.density)
-    localStorage.setItem('termlink_connectionHubViewMode', this.terminalConfig.connectionHubViewMode)
+    localStorage.setItem(HOST_CENTER_VIEW_MODE_STORAGE_KEY, this.terminalConfig.hostCenterViewMode)
 
     return { ...this.terminalConfig }
   }

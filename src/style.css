@@ -636,6 +636,10 @@ body {
   background: var(--primary-color) !important;
   border-color: var(--primary-color) !important;
   color: #ffffff !important;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease !important;
 }
 
 body[data-theme="dark"] .ant-btn-primary,
@@ -645,13 +649,27 @@ body[data-theme="dark"] .ant-input-search-button.ant-btn-primary {
 
 .ant-btn-primary:hover,
 .ant-input-search-button.ant-btn-primary:hover {
-  background: #000000 !important;
-  border-color: #000000 !important;
+  background: #1f1f1f !important;
+  border-color: #1f1f1f !important;
+  color: #ffffff !important;
   opacity: 1;
 }
 
 body[data-theme="dark"] .ant-btn-primary:hover,
 body[data-theme="dark"] .ant-input-search-button.ant-btn-primary:hover {
+  background: #e5e5e5 !important;
+  border-color: #e5e5e5 !important;
+  color: #111111 !important;
+}
+
+.ant-btn-primary:active,
+.ant-input-search-button.ant-btn-primary:active {
+  background: #080808 !important;
+  border-color: #080808 !important;
+}
+
+body[data-theme="dark"] .ant-btn-primary:active,
+body[data-theme="dark"] .ant-input-search-button.ant-btn-primary:active {
   background: #ffffff !important;
   border-color: #ffffff !important;
 }

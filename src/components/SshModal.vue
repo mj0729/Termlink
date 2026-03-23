@@ -1,7 +1,7 @@
 <template>
   <a-modal
     :open="visible"
-    :title="editMode ? '编辑连接' : '新建连接'"
+    :title="editMode ? '编辑主机' : '新建主机'"
     width="500px"
     wrap-class-name="ssh-modal"
     :classes="modalClasses"
@@ -11,8 +11,8 @@
     :confirmLoading="loading"
   >
     <a-form layout="vertical" :model="form" ref="formRef">
-      <a-form-item label="连接名称" name="name">
-        <a-input v-model:value="form.name" placeholder="给连接起个名字" />
+      <a-form-item label="主机名称" name="name">
+        <a-input v-model:value="form.name" placeholder="给主机起个名字" />
       </a-form-item>
       
       <a-row :gutter="16">
@@ -131,7 +131,7 @@
           @change="handleProxyJumpChange"
         />
         <div style="margin-top: 6px; color: var(--muted-color); font-size: 12px;">
-          选择已保存连接作为跳板机。建立连接时会先经过该主机。
+          选择已保存主机作为跳板机。建立连接时会先经过该主机。
         </div>
       </a-form-item>
 
@@ -176,7 +176,7 @@
       
     <a-form-item>
         <a-checkbox v-model:checked="form.savePassword">
-          保存连接配置
+          保存主机配置
         </a-checkbox>
         <div v-if="form.savePassword" style="margin-top: 8px; color: var(--muted-color); font-size: 12px;">
           配置将保存在本地，密码会被安全加密存储
@@ -226,6 +226,7 @@ const emit = defineEmits(['update:visible', 'submit'])
 
 const formRef = ref()
 const loading = ref(false)
+const SSH_MODAL_FIXED_HEIGHT = 'min(760px, calc(100vh - 24px))'
 const closeIconNode = computed(() => h(CloseOutlined, { class: 'modal-close-icon' }))
 const modalClasses = {
   container: 'ssh-modal__container',
@@ -239,14 +240,14 @@ const modalStyles = {
     background: 'var(--overlay-panel-solid)',
     border: '1px solid var(--border-color)',
     boxShadow: 'var(--shadow-soft)',
+    height: SSH_MODAL_FIXED_HEIGHT,
+    minHeight: SSH_MODAL_FIXED_HEIGHT,
+    maxHeight: SSH_MODAL_FIXED_HEIGHT,
+    display: 'flex',
+    flexDirection: 'column',
     padding: '0',
     overflow: 'hidden',
     borderRadius: '20px',
-  },
-  content: {
-    background: 'var(--overlay-panel-solid)',
-    padding: '0',
-    backdropFilter: 'blur(16px)',
   },
   header: {
     background: 'var(--overlay-header-bg)',
@@ -257,11 +258,15 @@ const modalStyles = {
   body: {
     background: 'var(--overlay-panel-solid)',
     color: 'var(--text-color)',
+    flex: '1 1 auto',
+    minHeight: '0',
+    overflowY: 'auto',
     padding: '18px 24px 16px',
   },
   footer: {
     background: 'color-mix(in srgb, var(--overlay-header-bg) 88%, transparent)',
     borderTop: '1px solid var(--overlay-divider-color)',
+    flex: 'none',
     padding: '14px 24px 18px',
   },
 }
@@ -509,6 +514,8 @@ watch(() => props.editProfile, () => {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
+  display: flex;
+  flex-direction: column;
   padding: 0 !important;
   overflow: hidden;
   border-radius: 20px;
@@ -526,7 +533,10 @@ watch(() => props.editProfile, () => {
 }
 
 :deep(.ssh-modal .ant-modal-body) {
+  flex: 1 1 auto;
   background: var(--overlay-panel-solid);
+  min-height: 0;
+  overflow-y: auto;
   padding: 18px 24px 16px !important;
 }
 

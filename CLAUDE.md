@@ -38,7 +38,7 @@ graph TD
     D --> D11["SystemMonitor.vue"];
     D --> D12["FileManager.vue"];
     D --> D13["DownloadManager.vue"];
-    D --> D14["ConnectionHub.vue"];
+    D --> D14["HostCenter.vue"];
     D --> D15["RemoteFileWorkbench.vue"];
     D --> D16["SshWorkspace.vue"];
 
@@ -161,7 +161,7 @@ pnpm run build
   - 服务文件从 `.js` 改为 `.ts`
   - 添加 `tsconfig.json` 和类型定义 (`src/types/app.ts`)
   - Vite 配置从 `.js` 改为 `.ts`
-  - 新增组件：`ConnectionHub.vue`、`RemoteFileWorkbench.vue`、`SshWorkspace.vue`
+  - 新增组件：`HostCenter.vue`、`RemoteFileWorkbench.vue`、`SshWorkspace.vue`
   - 完整覆盖率达成
 - **2026-03-18T08:46:36**: 初始项目扫描和 CLAUDE.md 生成。完整覆盖率达成。
 

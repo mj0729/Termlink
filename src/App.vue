@@ -35,7 +35,7 @@
                   @change="activeId = $event"
                   @close="closeTab"
                   @menu-action="handleTabMenuAction"
-                  @open-connection-center="openConnectionCenter"
+                  @open-host-center="openHostCenter"
                 />
                 
                 <div
@@ -95,13 +95,13 @@
                         @close="closeTab(tab.id)"
                       />
 
-                      <ConnectionHub
-                        v-else-if="tab.type === 'connections'"
+                      <HostCenter
+                        v-else-if="tab.type === 'hosts'"
                         :profiles="profiles"
                         :groups="groups"
                         :active-profile-id="getActiveProfileId()"
                         :theme="theme"
-                        :view-mode="terminalConfig.connectionHubViewMode"
+                        :view-mode="terminalConfig.hostCenterViewMode"
                         @launch-profile="launchSavedProfile"
                         @edit-profile="editProfile"
                         @delete-profile="deleteProfile"
@@ -226,7 +226,7 @@ const SshModal = defineAsyncComponent(() => import('./components/SshModal.vue'))
 const SettingsModal = defineAsyncComponent(() => import('./components/SettingsModal.vue'))
 const Terminal = defineAsyncComponent(() => import('./components/Terminal.vue'))
 const RightPanel = defineAsyncComponent(() => import('./components/RightPanel.vue'))
-const ConnectionHub = defineAsyncComponent(() => import('./components/ConnectionHub.vue'))
+const HostCenter = defineAsyncComponent(() => import('./components/HostCenter.vue'))
 const SshWorkspace = defineAsyncComponent(() => import('./components/SshWorkspace.vue'))
 const FileEditor = defineAsyncComponent(() => import('./components/FileEditor.vue'))
 const RemoteFileWorkbench = defineAsyncComponent(() => import('./components/RemoteFileWorkbench.vue'))
@@ -236,7 +236,7 @@ import SshService from './services/SshService'
 import ThemeService from './services/ThemeService'
 import { useWorkspaceTabs } from './composables/useWorkspaceTabs'
 import { useSshConnectionFlow } from './composables/useSshConnectionFlow'
-import { useConnectionCatalog } from './composables/useConnectionCatalog'
+import { useHostCatalog } from './composables/useHostCatalog'
 import { useWorkspaceChrome } from './composables/useWorkspaceChrome'
 
 const launchParams = new URLSearchParams(window.location.search)
@@ -350,7 +350,7 @@ const {
   createGroup,
   renameGroup,
   deleteGroup,
-} = useConnectionCatalog()
+} = useHostCatalog()
 
 const {
   tabs,
@@ -367,19 +367,19 @@ const {
   getWorkspaceFileDrawerState,
   toggleCurrentWorkspaceFileDrawer,
   removeTabState,
-  openConnectionCenter,
+  openHostCenter,
   cleanupWorkspaceTabState,
-} = useWorkspaceTabs(createConnectionCenterTab)
+} = useWorkspaceTabs(createHostCenterTab)
 
 function handleStandaloneFilePreview() {
   message.info('独立文件窗口暂不提供文件预览，请在主工作区内打开文件。')
 }
 
-function createConnectionCenterTab(): ConnectionTab {
+function createHostCenterTab(): ConnectionTab {
   return {
-    id: `connections-${Date.now()}`,
-    title: '连接中心',
-    type: 'connections'
+    id: `hosts-${Date.now()}`,
+    title: '主机中心',
+    type: 'hosts'
   }
 }
 
@@ -508,7 +508,7 @@ async function closeTab(id: string, options: { skipDisconnect?: boolean } = {}) 
   removeTabState(id)
 
   if (tabs.value.length === 0) {
-    const tab = createConnectionCenterTab()
+    const tab = createHostCenterTab()
     openTabWithMotion(tab)
     return
   }
@@ -699,7 +699,7 @@ onBeforeUnmount(() => {
 }
 
 .workspace-view--ssh,
-.workspace-view--connections,
+.workspace-view--hosts,
 .workspace-view--file {
   backdrop-filter: blur(10px);
 }
@@ -796,7 +796,7 @@ onBeforeUnmount(() => {
 }
 
 .workspace-view--ssh,
-.workspace-view--connections,
+.workspace-view--hosts,
 .workspace-view--file {
   backdrop-filter: none;
 }

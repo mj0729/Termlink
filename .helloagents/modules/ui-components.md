@@ -36,6 +36,7 @@
 - `TabManager` 已改为 `items` 模式标签页，减少对旧 `TabPane` 结构的依赖
 - `TabManager` 现在支持右键菜单，视觉复用远程文件工作台的 `FileContextMenu`；所有标签都可右键，非 SSH 标签的连接类动作会自动置灰，SSH 标签会根据已连接/已断开状态切换“连接 / 断开”的可用性
 - `SettingsModal`、`SshModal` 已将 `Input.Group` 风格写法替换为 `Space.Compact`
+- `SettingsModal` 已从单列表单重构为“左侧分类导航 + 右侧设置内容”的双栏设置中心，现有终端、主题与存储项被重新组织为常规/终端/外观/存储四个分区，后续可继续沿分类配置化扩展，而不必再次重写整体布局
 - `Sidebar` 的连接列表已改为原生结构渲染，避免继续依赖旧 `List` 子组件层级
 - `ConnectionHub` 的分组筛选与连接卡片已统一为 `a-segmented`、`a-card`、`a-tag` 组合，保留高密度 SSH 工作台信息布局
 - `StatusBar` 的设置、监控和传输入口已统一为 `a-button` 文本按钮，和其他工作台工具控件共享交互反馈

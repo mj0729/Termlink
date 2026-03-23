@@ -7,7 +7,7 @@
       ></span>
       <div class="status-connection-group">
         <span class="status-connection">
-          {{ activeConnection || '从顶部连接带或连接中心开始' }}
+          {{ activeConnection || '从顶部主机栏或主机中心开始' }}
         </span>
         <a-button
           v-if="activeConnectionCopyText"

@@ -16,7 +16,7 @@
         type="text"
         size="small"
         class="tabs-container__add"
-        @click="$emit('openConnectionCenter')"
+        @click="$emit('openHostCenter')"
       >
         <PlusOutlined />
       </a-button>
@@ -58,7 +58,7 @@ const props = defineProps({
 const emit = defineEmits<{
   change: [id: string]
   close: [id: string]
-  openConnectionCenter: []
+  openHostCenter: []
   menuAction: [payload: { action: TabContextMenuAction, tabId: string }]
 }>()
 
@@ -104,7 +104,7 @@ const tabItems = computed(() => (props.tabs as ConnectionTab[]).map((tab) => ({
     'data-tab-id': tab.id,
     onContextmenu: (event: MouseEvent) => openContextMenu(event, tab),
   }, [
-    h('span', { class: ['tab-kind', `tab-kind--${tab.type}`] }, tab.type === 'ssh' ? 'SSH' : tab.type === 'file' ? 'FILE' : tab.type === 'connections' ? 'HUB' : 'LOCAL'),
+    h('span', { class: ['tab-kind', `tab-kind--${tab.type}`] }, tab.type === 'ssh' ? 'SSH' : tab.type === 'file' ? 'FILE' : tab.type === 'hosts' ? 'HUB' : 'LOCAL'),
     ((tab.type === 'ssh') || (tab.type === 'file' && tab.connectionId))
       ? h('span', {
           class: ['tab-status', getTabStatusClass(tab)],
@@ -262,7 +262,7 @@ function onEditTab(targetKeyOrEvent: string | MouseEvent, action: 'add' | 'remov
   color: var(--warning-color);
 }
 
-.tab-kind--connections {
+.tab-kind--hosts {
   background: rgba(148, 102, 255, 0.12);
   color: #7758d8;
 }
@@ -415,7 +415,7 @@ function onEditTab(targetKeyOrEvent: string | MouseEvent, action: 'add' | 'remov
 .tab-kind--ssh,
 .tab-kind--local,
 .tab-kind--file,
-.tab-kind--connections {
+.tab-kind--hosts {
   background: transparent;
   color: var(--muted-color);
 }

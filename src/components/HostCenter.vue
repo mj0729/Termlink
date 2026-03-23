@@ -1,7 +1,7 @@
 <template>
   <div class="connection-hub">
     <section class="hub-workbench">
-      <aside class="hub-sidebar" aria-label="连接目录">
+      <aside class="hub-sidebar" aria-label="主机目录">
         <section class="hub-sidebar__section">
           <div class="hub-sidebar__title-row">
             <h2>分组</h2>
@@ -93,7 +93,7 @@
             <a-input
               :id="searchInputId"
               v-model:value="searchText"
-              aria-label="搜索连接"
+              aria-label="搜索主机"
               autocomplete="off"
               name="connection-search"
               placeholder="搜索主机 / 用户 / 分组 / 标签…"
@@ -103,7 +103,7 @@
           </label>
 
           <div class="hub-toolbar__actions">
-            <a-button type="primary" class="hub-action" @click="$emit('newSsh')">新增连接</a-button>
+            <a-button type="primary" class="hub-action" @click="$emit('newSsh')">新增主机</a-button>
           </div>
 
           <div class="hub-main__summary">
@@ -111,15 +111,9 @@
           </div>
         </div>
 
-        <div class="hub-content" aria-labelledby="connection-library-title">
-          <div class="hub-content__head">
-            <div>
-              <h2 id="connection-library-title">连接列表</h2>
-            </div>
-          </div>
-
+        <div class="hub-content" aria-label="主机列表">
           <template v-if="filteredProfiles.length">
-            <div v-if="props.viewMode === 'list'" class="hub-list" role="table" aria-label="连接列表">
+            <div v-if="props.viewMode === 'list'" class="hub-list" role="table" aria-label="主机列表">
               <div class="hub-list__head" role="row">
                 <span role="columnheader">目标</span>
                 <span role="columnheader">地址</span>
@@ -181,8 +175,8 @@
                   <button
                     type="button"
                     class="hub-icon-action"
-                    aria-label="编辑连接"
-                    title="编辑连接"
+                    aria-label="编辑主机"
+                    title="编辑主机"
                     @click.stop="emit('editProfile', profile)"
                   >
                     <EditOutlined aria-hidden="true" />
@@ -190,8 +184,8 @@
                   <button
                     type="button"
                     class="hub-icon-action hub-icon-action--danger"
-                    aria-label="删除连接"
-                    title="删除连接"
+                    aria-label="删除主机"
+                    title="删除主机"
                     @click.stop="emit('deleteProfile', profile)"
                   >
                     <DeleteOutlined aria-hidden="true" />
@@ -215,7 +209,6 @@
               >
                 <div class="hub-card__top">
                   <div class="hub-card__lead">
-                    <span class="hub-card__avatar">{{ getProfileMonogram(profile) }}</span>
                     <div class="hub-card__identity">
                       <span class="hub-card__name">{{ getProfileDisplayName(profile) }}</span>
                       <span class="hub-card__endpoint">{{ profile.username }}@{{ profile.host }}:{{ profile.port }}</span>
@@ -226,8 +219,8 @@
                     <button
                       type="button"
                       class="hub-icon-action"
-                      aria-label="编辑连接"
-                      title="编辑连接"
+                      aria-label="编辑主机"
+                      title="编辑主机"
                       @click.stop="emit('editProfile', profile)"
                     >
                       <EditOutlined aria-hidden="true" />
@@ -235,8 +228,8 @@
                     <button
                       type="button"
                       class="hub-icon-action hub-icon-action--danger"
-                      aria-label="删除连接"
-                      title="删除连接"
+                      aria-label="删除主机"
+                      title="删除主机"
                       @click.stop="emit('deleteProfile', profile)"
                     >
                       <DeleteOutlined aria-hidden="true" />
@@ -245,25 +238,28 @@
                 </div>
 
                 <div class="hub-card__meta">
-                  <span v-if="profile.group" class="hub-chip">{{ profile.group }}</span>
-                  <span class="hub-chip hub-chip--accent">{{ getAuthLabel(profile) }}</span>
-                  <span v-if="profile.tags?.length" class="hub-card__tags" aria-label="连接标签">
-                    <span
-                      v-for="tag in getVisibleTags(profile)"
-                      :key="tag"
-                      class="hub-tag-icon"
-                      :style="getTagIconStyle(tag)"
-                      :title="tag"
-                      :aria-label="`标签 ${tag}`"
-                    ></span>
-                    <span
-                      v-if="getHiddenTagCount(profile) > 0"
-                      class="hub-chip hub-chip--counter"
-                      :title="`还有 ${getHiddenTagCount(profile)} 个标签`"
-                    >
-                      +{{ getHiddenTagCount(profile) }}
+                  <div class="hub-card__meta-main">
+                    <span v-if="profile.group" class="hub-card__meta-text">{{ profile.group }}</span>
+                    <span v-if="profile.group" class="hub-card__meta-separator" aria-hidden="true"></span>
+                    <span class="hub-card__meta-text hub-card__meta-text--strong">{{ getAuthLabel(profile) }}</span>
+                  </div>
+
+                  <span v-if="profile.tags?.length" class="hub-card__meta-tags" aria-label="主机标签">
+                    <span class="hub-card__meta-tag-dots">
+                      <span
+                        v-for="tag in getVisibleTags(profile)"
+                        :key="tag"
+                        class="hub-tag-icon"
+                        :style="getTagIconStyle(tag)"
+                        :title="tag"
+                        :aria-label="`标签 ${tag}`"
+                      ></span>
+                    </span>
+                    <span class="hub-card__meta-text" :title="`${profile.tags.length} 个标签`">
+                      {{ profile.tags.length }} 标签
                     </span>
                   </span>
+                  <span v-else class="hub-card__meta-text hub-card__meta-text--muted">无标签</span>
                 </div>
               </div>
             </div>
@@ -273,9 +269,9 @@
             <div class="hub-empty__icon">
               <SearchOutlined aria-hidden="true" />
             </div>
-            <h3>{{ profiles.length ? '没有匹配结果' : '还没有连接配置' }}</h3>
-            <p>{{ profiles.length ? '换个关键词或筛选条件再试一次。' : '创建第一个 SSH 目标后，这里会成为你的连接工作台。' }}</p>
-            <a-button type="primary" @click="$emit('newSsh')">创建连接</a-button>
+            <h3>{{ profiles.length ? '没有匹配结果' : '还没有主机配置' }}</h3>
+            <p>{{ profiles.length ? '换个关键词或筛选条件再试一次。' : '创建第一个 SSH 主机后，这里会成为你的主机工作台。' }}</p>
+            <a-button type="primary" @click="$emit('newSsh')">创建主机</a-button>
           </div>
         </div>
       </section>
@@ -286,14 +282,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { DeleteOutlined, EditOutlined, PlusOutlined, SearchOutlined } from '@antdv-next/icons'
-import type { ConnectionHubViewMode, SshProfile, ThemeName } from '../types/app'
+import type { HostCenterViewMode, SshProfile, ThemeName } from '../types/app'
 import { PROFILE_TAG_PRESETS, getProfileTagPreset } from '../constants/profileTags'
 
 const props = withDefaults(defineProps<{
   profiles?: SshProfile[]
   groups?: string[]
   activeProfileId?: string
-  viewMode?: ConnectionHubViewMode
+  viewMode?: HostCenterViewMode
   theme?: ThemeName
 }>(), {
   profiles: () => [],
@@ -710,27 +706,11 @@ watch(tagItems, (nextTags) => {
 
 .hub-content {
   display: grid;
-  gap: 8px;
+  gap: 10px;
   min-height: 0;
-  padding: 8px;
+  padding: 6px 8px 8px;
   align-content: start;
   grid-auto-rows: max-content;
-}
-
-.hub-content__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.hub-content__head h2 {
-  margin: 0;
-  color: var(--text-color);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
 }
 
 .hub-list {
@@ -883,8 +863,8 @@ watch(tagItems, (nextTags) => {
 }
 
 .hub-tag-icon {
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   border-radius: 999px;
   flex: 0 0 auto;
 }
@@ -919,21 +899,70 @@ watch(tagItems, (nextTags) => {
 
 .hub-card__lead {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  align-items: start;
 }
 
 .hub-card__meta {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hub-card__meta-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.hub-card__meta-text {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  color: var(--muted-color);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.hub-card__meta-text--strong {
+  color: var(--text-color);
+}
+
+.hub-card__meta-text--muted {
+  margin-left: auto;
+}
+
+.hub-card__meta-separator {
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--border-color);
+  flex: 0 0 auto;
+}
+
+.hub-card__meta-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.hub-card__meta-tag-dots {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
 }
 
-.hub-card__tags {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
+.hub-card__meta-tags .hub-tag-icon {
+  width: 8px;
+  height: 8px;
 }
 
 .hub-card__actions {
@@ -1207,7 +1236,6 @@ watch(tagItems, (nextTags) => {
 }
 
 .hub-sidebar__title-row h2,
-.hub-content__head h2,
 .hub-list__head,
 .hub-toolbar__eyebrow,
 .hub-content__meta {
@@ -1345,9 +1373,13 @@ watch(tagItems, (nextTags) => {
   font-weight: 500;
 }
 
+.hub-card__identity {
+  gap: 4px;
+}
+
 .hub-card__meta {
   gap: 8px;
-  padding-top: 10px;
+  padding-top: 8px;
   border-top: 1px solid var(--border-subtle);
 }
 

@@ -35,7 +35,7 @@ The `src/` directory contains the entire frontend layer of Termlink. It renders 
 | `SystemMonitor.vue` | `src/components/SystemMonitor.vue` | Standalone floating system monitor panel (alternative to RightPanel's monitor). |
 | `DownloadManager.vue` | `src/components/DownloadManager.vue` | Standalone floating download manager (alternative to RightPanel's download tab). |
 | `SshModal.vue` | `src/components/SshModal.vue` | Modal dialog for creating/editing SSH connections. Supports password/private-key auth, groups, tags. |
-| `SettingsModal.vue` | `src/components/SettingsModal.vue` | Modal dialog for terminal settings (font, cursor) and theme selection. Shows profiles directory. |
+| `SettingsModal.vue` | `src/components/SettingsModal.vue` | Dual-pane preferences dialog with left-side category navigation for general, terminal, appearance, and storage settings. Keeps theme/terminal config editing plus profile import/export actions. |
 
 ## Services
 

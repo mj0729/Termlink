@@ -2,11 +2,11 @@ export type ThemeName = 'light' | 'dark'
 export type ThemeMode = 'light' | 'dark' | 'system'
 export type ThemePresetId = 'minimal-black' | 'soft-gray' | 'terminal-green' | 'cool-slate'
 export type ThemeStatusSaturation = 'soft' | 'normal'
-export type TabType = 'ssh' | 'local' | 'file' | 'connections'
+export type TabType = 'ssh' | 'local' | 'file' | 'hosts'
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected'
 export type TerminalCursorStyle = 'block' | 'underline' | 'bar'
 export type WorkspaceDensity = 'comfortable' | 'balanced' | 'compact'
-export type ConnectionHubViewMode = 'list' | 'grid'
+export type HostCenterViewMode = 'list' | 'grid'
 export type PortForwardType = 'local'
 
 export interface ThemeConfig {
@@ -51,7 +51,7 @@ export interface TerminalConfig {
   cursorBlink: boolean
   cursorStyle: TerminalCursorStyle
   density: WorkspaceDensity
-  connectionHubViewMode: ConnectionHubViewMode
+  hostCenterViewMode: HostCenterViewMode
 }
 
 export interface SshPortForward {

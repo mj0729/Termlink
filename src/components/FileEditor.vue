@@ -756,10 +756,7 @@ async function loadFileContent() {
     } else {
       const content = shouldUseProgressiveInitialLoad.value
         ? await readFullFileWithProgress()
-        : await invoke<string>('read_sftp_file', {
-            connectionId: props.connectionId,
-            path: props.fileInfo.path
-          })
+        : await SftpService.readFile(props.connectionId!, props.fileInfo.path)
       fileContent.value = content
       originalContent.value = content
       hasLoaded.value = true
@@ -806,11 +803,7 @@ async function saveFile() {
   saving.value = true
   try {
     const content = monacoModel?.getValue() ?? fileContent.value
-    await invoke('write_sftp_file', {
-      connectionId: props.connectionId,
-      path: props.fileInfo.path,
-      content
-    })
+    await SftpService.writeFile(props.connectionId!, props.fileInfo.path, content)
 
     originalContent.value = content
     updateDirtyState(content)

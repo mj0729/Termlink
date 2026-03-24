@@ -366,7 +366,7 @@ async function startUpload(transfer: TransferTask, upload: UploadRequest) {
     }
 
     if (upload.source.kind === 'file') {
-      const data = Array.from(new Uint8Array(await upload.source.file.arrayBuffer()))
+      const data = new Uint8Array(await upload.source.file.arrayBuffer())
       await invoke('upload_sftp_content', {
         connectionId: task.connectionId,
         remotePath: task.targetPath,

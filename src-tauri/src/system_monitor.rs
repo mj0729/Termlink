@@ -29,11 +29,6 @@ pub struct DynamicSystemInfo {
     pub process: ProcessInfo,
 }
 
-// SSH命令执行辅助函数
-async fn execute_ssh_command(connection_id: &str, command: &str) -> Result<String, String> {
-    // 使用真正的SSH命令执行
-    ssh_command::execute_ssh_command(connection_id.to_string(), command.to_string()).await
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SystemInfo {
@@ -391,7 +386,7 @@ echo "===TOP_PROCESS_INFO==="
 ps -eo rss=,pcpu=,comm= --sort=-rss | head -n 4
 "#;
 
-    let output = execute_ssh_command(&connection_id, batch_command).await?;
+    let output = ssh_command::execute_ssh_command(connection_id.clone(), batch_command.to_string()).await?;
 
     // 解析批量输出
     let mut sections: HashMap<&str, String> = HashMap::new();
@@ -783,7 +778,7 @@ echo "===TOP_PROCESS_INFO==="
 ps -eo rss=,pcpu=,comm= --sort=-rss | head -n 4
 "#;
 
-    let output = execute_ssh_command(&connection_id, batch_command).await?;
+    let output = ssh_command::execute_ssh_command(connection_id.clone(), batch_command.to_string()).await?;
 
     // 解析批量输出
     let mut sections: HashMap<&str, String> = HashMap::new();

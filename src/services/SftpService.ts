@@ -1,229 +1,109 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { FilePreviewInfo, SftpFileEntry } from '../types/app'
+import type { FilePreviewInfo, SftpDetailedEntry, SftpDiskUsageInfo, SftpFileEntry } from '../types/app'
 
-/**
- * SFTP服务 - 处理SFTP文件操作相关功能
- */
+const LANGUAGE_MAP: Record<string, string> = {
+  js: 'javascript',
+  ts: 'typescript',
+  jsx: 'javascript',
+  tsx: 'typescript',
+  html: 'html',
+  css: 'css',
+  scss: 'scss',
+  less: 'less',
+  json: 'json',
+  md: 'markdown',
+  py: 'python',
+  java: 'java',
+  c: 'c',
+  cpp: 'cpp',
+  h: 'c',
+  hpp: 'cpp',
+  cs: 'csharp',
+  go: 'go',
+  rs: 'rust',
+  php: 'php',
+  rb: 'ruby',
+  sh: 'shell',
+  bat: 'bat',
+  ps1: 'powershell',
+  sql: 'sql',
+  vue: 'vue',
+  xml: 'xml',
+  yaml: 'yaml',
+  yml: 'yaml',
+  toml: 'toml',
+  ini: 'ini',
+  conf: 'plaintext',
+  log: 'plaintext',
+  txt: 'plaintext',
+}
+
 class SftpService {
-  /**
-   * 列出SFTP目录文件
-   * @param {string} connectionId 连接ID
-   * @param {string} path 目录路径
-   * @param {boolean} showHidden 是否显示隐藏文件
-   * @returns {Array} 文件列表
-   */
+  private async call<T>(command: string, args: Record<string, unknown>, errorPrefix: string): Promise<T> {
+    try {
+      return await invoke<T>(command, args)
+    } catch (e) {
+      console.error(errorPrefix, e)
+      throw e
+    }
+  }
+
   async listFiles(connectionId: string, path: string, showHidden = false): Promise<SftpFileEntry[]> {
-    try {
-      const files = await invoke<SftpFileEntry[]>('list_sftp_files', { 
-        connectionId, 
-        path 
-      })
-      
-      // 如果不显示隐藏文件，过滤掉隐藏文件
-      if (!showHidden) {
-        return files.filter((file) => !file.name.startsWith('.') || file.name === '..')
-      }
-      
-      return files
-    } catch (e) {
-      console.error(`列出SFTP目录失败 (${path}):`, e)
-      throw e
-    }
+    const files = await this.call<SftpFileEntry[]>('list_sftp_files', { connectionId, path }, `列出SFTP目录失败 (${path}):`)
+    return showHidden ? files : files.filter((file) => !file.name.startsWith('.') || file.name === '..')
   }
-  
-  /**
-   * 读取SFTP文件内容
-   * @param {string} connectionId 连接ID
-   * @param {string} path 文件路径
-   * @returns {string} 文件内容
-   */
+
   async readFile(connectionId: string, path: string): Promise<string> {
-    try {
-      return await invoke<string>('read_sftp_file', { 
-        connectionId, 
-        path 
-      })
-    } catch (e) {
-      console.error(`读取SFTP文件失败 (${path}):`, e)
-      throw e
-    }
+    return this.call<string>('read_sftp_file', { connectionId, path }, `读取SFTP文件失败 (${path}):`)
   }
-  
-  /**
-   * 写入SFTP文件内容
-   * @param {string} connectionId 连接ID
-   * @param {string} path 文件路径
-   * @param {string} content 文件内容
-   */
+
   async writeFile(connectionId: string, path: string, content: string): Promise<void> {
-    try {
-      await invoke('write_sftp_file', { 
-        connectionId, 
-        path, 
-        content 
-      })
-    } catch (e) {
-      console.error(`写入SFTP文件失败 (${path}):`, e)
-      throw e
-    }
+    return this.call<void>('write_sftp_file', { connectionId, path, content }, `写入SFTP文件失败 (${path}):`)
   }
-  
-  /**
-   * 下载SFTP文件
-   * @param {string} connectionId 连接ID
-   * @param {string} remotePath 远程文件路径
-   * @param {string} localPath 本地文件路径
-   */
+
   async downloadFile(connectionId: string, remotePath: string, localPath: string): Promise<void> {
-    try {
-      await invoke('download_sftp_file', { 
-        connectionId, 
-        remotePath, 
-        localPath 
-      })
-    } catch (e) {
-      console.error(`下载SFTP文件失败 (${remotePath}):`, e)
-      throw e
-    }
+    return this.call<void>('download_sftp_file', { connectionId, remotePath, localPath }, `下载SFTP文件失败 (${remotePath}):`)
   }
-  
-  /**
-   * 上传文件到SFTP
-   * @param {string} connectionId 连接ID
-   * @param {string} localPath 本地文件路径
-   * @param {string} remotePath 远程文件路径
-   */
+
   async uploadFile(connectionId: string, localPath: string, remotePath: string): Promise<void> {
-    try {
-      await invoke('upload_sftp_file', { 
-        connectionId, 
-        localPath, 
-        remotePath 
-      })
-    } catch (e) {
-      console.error(`上传文件到SFTP失败 (${remotePath}):`, e)
-      throw e
-    }
+    return this.call<void>('upload_sftp_file', { connectionId, localPath, remotePath }, `上传文件到SFTP失败 (${remotePath}):`)
   }
-  
-  /**
-   * 删除SFTP文件
-   * @param {string} connectionId 连接ID
-   * @param {string} path 文件路径
-   */
+
   async deleteFile(connectionId: string, path: string): Promise<void> {
-    try {
-      await invoke('delete_sftp_file', { 
-        connectionId, 
-        path 
-      })
-    } catch (e) {
-      console.error(`删除SFTP文件失败 (${path}):`, e)
-      throw e
-    }
+    return this.call<void>('delete_sftp_file', { connectionId, path }, `删除SFTP文件失败 (${path}):`)
   }
-  
-  /**
-   * 创建SFTP目录
-   * @param {string} connectionId 连接ID
-   * @param {string} path 目录路径
-   */
+
+  async deleteEntry(connectionId: string, entry: Pick<SftpFileEntry, 'path' | 'is_dir' | 'is_directory'>): Promise<void> {
+    const command = entry.is_dir || entry.is_directory ? 'delete_sftp_directory' : 'delete_sftp_file'
+    return this.call<void>(command, { connectionId, path: entry.path }, `删除SFTP条目失败 (${entry.path}):`)
+  }
+
   async createDirectory(connectionId: string, path: string): Promise<void> {
-    try {
-      await invoke('create_sftp_directory', { 
-        connectionId, 
-        remotePath: path 
-      })
-    } catch (e) {
-      console.error(`创建SFTP目录失败 (${path}):`, e)
-      throw e
-    }
+    return this.call<void>('create_sftp_directory', { connectionId, remotePath: path }, `创建SFTP目录失败 (${path}):`)
   }
-  
-  /**
-   * 获取文件预览信息
-   * @param {string} connectionId 连接ID
-   * @param {Object} fileInfo 文件信息
-   * @returns {Object} 文件预览信息
-   */
+
   async getFilePreview(connectionId: string, fileInfo: SftpFileEntry): Promise<FilePreviewInfo | null> {
-    // 如果是目录，返回null
-    if (fileInfo.is_directory || fileInfo.is_dir) {
-      return null
-    }
-    
-    try {
-      // 获取文件内容
-      const content = await this.readFile(connectionId, fileInfo.path)
-      
-      // 根据文件扩展名确定语言
-      const extension = fileInfo.name.split('.').pop()?.toLowerCase() ?? ''
-      const language = this.getLanguageByExtension(extension)
-      
-      return {
-        content,
-        language,
-        path: fileInfo.path,
-        name: fileInfo.name,
-      }
-    } catch (e) {
-      console.error(`获取文件预览失败 (${fileInfo.path}):`, e)
-      throw e
+    if (fileInfo.is_directory || fileInfo.is_dir) return null
+    const content = await this.readFile(connectionId, fileInfo.path)
+    const extension = fileInfo.name.split('.').pop()?.toLowerCase() ?? ''
+    return {
+      content,
+      language: LANGUAGE_MAP[extension] ?? 'plaintext',
+      path: fileInfo.path,
+      name: fileInfo.name,
     }
   }
-  
-  /**
-   * 根据文件扩展名获取语言
-   * @param {string} extension 文件扩展名
-   * @returns {string} 语言
-   */
+
   getLanguageByExtension(extension: string): string {
-    const languageMap: Record<string, string> = {
-      'js': 'javascript',
-      'ts': 'typescript',
-      'jsx': 'javascript',
-      'tsx': 'typescript',
-      'html': 'html',
-      'css': 'css',
-      'scss': 'scss',
-      'less': 'less',
-      'json': 'json',
-      'md': 'markdown',
-      'py': 'python',
-      'java': 'java',
-      'c': 'c',
-      'cpp': 'cpp',
-      'h': 'c',
-      'hpp': 'cpp',
-      'cs': 'csharp',
-      'go': 'go',
-      'rs': 'rust',
-      'php': 'php',
-      'rb': 'ruby',
-      'sh': 'shell',
-      'bat': 'bat',
-      'ps1': 'powershell',
-      'sql': 'sql',
-      'vue': 'vue',
-      'xml': 'xml',
-      'yaml': 'yaml',
-      'yml': 'yaml',
-      'toml': 'toml',
-      'ini': 'ini',
-      'conf': 'plaintext',
-      'log': 'plaintext',
-      'txt': 'plaintext',
-    }
-    
-    return languageMap[extension] || 'plaintext'
+    return LANGUAGE_MAP[extension] ?? 'plaintext'
   }
 
-  async listDetailed(connectionId: string, path: string): Promise<import('../types/app').SftpDetailedEntry[]> {
-    return invoke<import('../types/app').SftpDetailedEntry[]>('sftp_list_detailed', { connectionId, path })
+  async listDetailed(connectionId: string, path: string): Promise<SftpDetailedEntry[]> {
+    return invoke<SftpDetailedEntry[]>('sftp_list_detailed', { connectionId, path })
   }
 
-  async stat(connectionId: string, path: string): Promise<import('../types/app').SftpDetailedEntry> {
-    return invoke<import('../types/app').SftpDetailedEntry>('sftp_stat', { connectionId, path })
+  async stat(connectionId: string, path: string): Promise<SftpDetailedEntry> {
+    return invoke<SftpDetailedEntry>('sftp_stat', { connectionId, path })
   }
 
   async chmod(connectionId: string, path: string, mode: string): Promise<void> {
@@ -238,10 +118,20 @@ class SftpService {
     await invoke('sftp_archive', { connectionId, paths, archiveFormat, outputPath })
   }
 
-  async diskUsage(connectionId: string, path: string): Promise<import('../types/app').SftpDiskUsageInfo> {
-    return invoke<import('../types/app').SftpDiskUsageInfo>('sftp_disk_usage', { connectionId, path })
+  async uploadContent(
+    connectionId: string,
+    remotePath: string,
+    data: Uint8Array,
+    uploadId?: number,
+  ): Promise<void> {
+    const args: Record<string, unknown> = { connectionId, remotePath, data }
+    if (uploadId !== undefined) args.uploadId = uploadId
+    return this.call<void>('upload_sftp_content', args, `上传内容到SFTP失败 (${remotePath}):`)
+  }
+
+  async diskUsage(connectionId: string, path: string): Promise<SftpDiskUsageInfo> {
+    return invoke<SftpDiskUsageInfo>('sftp_disk_usage', { connectionId, path })
   }
 }
 
-// 导出单例
 export default new SftpService()

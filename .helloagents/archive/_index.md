@@ -24,3 +24,5 @@
 | 202603231733 | remote-directory-tree-row-spacing-tighten | - | - | - | ✅完成 |
 | 202603231743 | remote-directory-tree-row-spacing-tighten-more | - | - | - | ✅完成 |
 | 202603231800 | remote-directory-tree-align-and-tighten | - | - | - | ✅完成 |
+| 202603241309 | ssh-cwd-sync-linux | - | - | - | ✅完成 |
+| 202603241320 | ssh-cwd-shell-hook | - | - | - | ✅完成 |

@@ -78,10 +78,16 @@ const container = ref<HTMLElement | null>(null)
 const terminal = ref<XTermTerminal | null>(null)
 const fitAddon = ref<XTermFitAddon | null>(null)
 const SSH_CWD_MARKER_PREFIX = '\u001fTERMLINK_CWD:'
+const SSH_BOOTSTRAP_ECHO_TOKEN = '__TERMLINK_BOOTSTRAP=1;'
 let lastReceivedSeq = 0
 let shellCwd = ''
+let previousShellCwd = ''
 let sshOutputBuffer = ''
+let sshEchoFilterBuffer = ''
 let promptBuffer = ''
+let inputBuffer = ''
+let pendingPromptDirectory = ''
+let pendingPromptDirectoryHasError = false
 let pendingReconnectEnter = false
 let hasShownConnectingNotice = false
 let contextMenuCleanup: (() => void) | null = null
@@ -232,6 +238,96 @@ function resolvePromptPath(token: string) {
   return ''
 }
 
+function clearPendingPromptDirectory() {
+  pendingPromptDirectory = ''
+  pendingPromptDirectoryHasError = false
+}
+
+function unquoteShellToken(token: string) {
+  if (token.length < 2) return token
+  const quote = token[0]
+  if ((quote === '\'' || quote === '"') && token[token.length - 1] === quote) {
+    return token.slice(1, -1)
+  }
+  return token
+}
+
+function resolveTrackedCdPath(rawTarget: string) {
+  const target = unquoteShellToken(rawTarget.trim())
+  if (!target || target === '~') {
+    return getUserHomePath()
+  }
+
+  if (target === '-') {
+    return previousShellCwd || ''
+  }
+
+  const promptPath = resolvePromptPath(target)
+  if (promptPath) {
+    return promptPath
+  }
+
+  if (!shellCwd) return ''
+  return normalizePosixPath(`${shellCwd}/${target}`)
+}
+
+function parseTrackedCdCommand(command: string) {
+  const trimmed = command.trim()
+  if (!trimmed) return ''
+  if (/[|&;()`]/.test(trimmed)) return ''
+  if (/^\s*(?:builtin\s+|command\s+)?cd(?:\s+--)?\s*$/.test(trimmed)) {
+    return getUserHomePath()
+  }
+
+  const matched = trimmed.match(/^\s*(?:builtin\s+|command\s+)?cd(?:\s+--)?\s+(.+?)\s*$/)
+  if (!matched) return ''
+
+  const target = matched[1].trim()
+  if (!target || /\s{2,}/.test(target)) return ''
+  if (/\s/.test(target) && !(target.startsWith('"') || target.startsWith('\''))) return ''
+
+  return resolveTrackedCdPath(target)
+}
+
+function trackSshInput(data: string) {
+  if (!isSshTerminal()) return
+  if (data.includes('\u001b')) {
+    inputBuffer = ''
+    return
+  }
+
+  for (const char of data) {
+    if (char === '\r' || char === '\n') {
+      const nextPath = parseTrackedCdCommand(inputBuffer)
+      if (nextPath) {
+        pendingPromptDirectory = nextPath
+        pendingPromptDirectoryHasError = false
+      } else {
+        clearPendingPromptDirectory()
+      }
+      inputBuffer = ''
+      continue
+    }
+
+    if (char === '\u007f') {
+      inputBuffer = inputBuffer.slice(0, -1)
+      continue
+    }
+
+    if (char === '\u0003' || char === '\u0004' || char === '\u0015' || char === '\u0018') {
+      inputBuffer = ''
+      clearPendingPromptDirectory()
+      continue
+    }
+
+    if (char < ' ' || char === '\u007f') {
+      continue
+    }
+
+    inputBuffer += char
+  }
+}
+
 function stripAnsi(value: string) {
   return value
     .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
@@ -239,8 +335,68 @@ function stripAnsi(value: string) {
     .replace(/\x1b[@-_]/g, '')
 }
 
+function getPromptPatterns() {
+  return [
+    /^\[[^@\]]+@[^ ]+\s+[^\]]+\][#$]\s*/,
+    /^[^@\s]+@[^:\s]+:[^\s]+[#$]\s*/,
+  ]
+}
+
+function getBootstrapEchoBufferStart(value: string) {
+  const maxLength = Math.min(value.length, SSH_BOOTSTRAP_ECHO_TOKEN.length - 1)
+
+  for (let length = maxLength; length > 0; length -= 1) {
+    if (SSH_BOOTSTRAP_ECHO_TOKEN.startsWith(value.slice(-length))) {
+      return value.length - length
+    }
+  }
+
+  return value.length
+}
+
+function trimTrailingPromptEcho(value: string) {
+  const promptEchoPatterns = getPromptPatterns().map((pattern) => new RegExp(`${pattern.source}$`))
+
+  for (const pattern of promptEchoPatterns) {
+    if (pattern.test(value)) {
+      return value.replace(pattern, '')
+    }
+  }
+
+  return value
+}
+
+function filterInjectedBootstrapEcho(output: string) {
+  const combined = sshEchoFilterBuffer + output
+  let cursor = 0
+  let filtered = ''
+
+  while (cursor < combined.length) {
+    const tokenStart = combined.indexOf(SSH_BOOTSTRAP_ECHO_TOKEN, cursor)
+    if (tokenStart === -1) {
+      const bufferStart = getBootstrapEchoBufferStart(combined.slice(cursor))
+      filtered += combined.slice(cursor, cursor + bufferStart)
+      sshEchoFilterBuffer = combined.slice(cursor + bufferStart)
+      return filtered
+    }
+
+    filtered += '\r\x1b[2K'
+    filtered += trimTrailingPromptEcho(combined.slice(cursor, tokenStart))
+    const markerStart = combined.indexOf(SSH_CWD_MARKER_PREFIX, tokenStart)
+    if (markerStart === -1) {
+      sshEchoFilterBuffer = combined.slice(tokenStart)
+      return filtered
+    }
+
+    cursor = markerStart
+  }
+
+  sshEchoFilterBuffer = ''
+  return filtered
+}
+
 function consumeSshOutput(rawOutput: string) {
-  const combined = sshOutputBuffer + rawOutput
+  const combined = sshOutputBuffer + filterInjectedBootstrapEcho(rawOutput)
   let cursor = 0
   let renderedOutput = ''
 
@@ -277,12 +433,48 @@ function updateShellDirectory(nextPath: string) {
   const normalized = normalizePosixPath(nextPath)
   if (!normalized || normalized === shellCwd) return
 
+  previousShellCwd = shellCwd
   shellCwd = normalized
+  clearPendingPromptDirectory()
   emit('currentDirectoryChange', normalized)
+}
+
+function markPendingPromptDirectoryError(output: string) {
+  if (!pendingPromptDirectory) return
+
+  const normalizedOutput = stripAnsi(output).toLowerCase()
+  const failurePatterns = [
+    /cd: .*no such file or directory/,
+    /cd: .*not a directory/,
+    /cd: .*permission denied/,
+    /cd: too many arguments/,
+    /can't cd to/,
+    /cannot change directory/,
+  ]
+
+  if (failurePatterns.some((pattern) => pattern.test(normalizedOutput))) {
+    pendingPromptDirectoryHasError = true
+  }
+}
+
+function applyPromptDirectoryFallback(matchedPath: string) {
+  const nextPath = resolvePromptPath(matchedPath)
+  if (nextPath) {
+    updateShellDirectory(nextPath)
+    return
+  }
+
+  if (pendingPromptDirectory && !pendingPromptDirectoryHasError) {
+    updateShellDirectory(pendingPromptDirectory)
+    return
+  }
+
+  clearPendingPromptDirectory()
 }
 
 function syncDirectoryFromPrompt(output: string) {
   const sanitizedOutput = stripAnsi(output)
+  markPendingPromptDirectoryError(sanitizedOutput)
   const combinedOutput = `${promptBuffer}${sanitizedOutput}`
   const lines = combinedOutput.split(/\r?\n/)
   const promptPatterns = [
@@ -301,10 +493,7 @@ function syncDirectoryFromPrompt(output: string) {
 
     if (!matchedPath) continue
 
-    const nextPath = resolvePromptPath(matchedPath)
-    if (nextPath) {
-      updateShellDirectory(nextPath)
-    }
+    applyPromptDirectoryFallback(matchedPath)
   }
 
   const trimmedTrailingLine = trailingLine.trim()
@@ -314,10 +503,7 @@ function syncDirectoryFromPrompt(output: string) {
       .find(Boolean)
 
     if (matchedPath) {
-      const nextPath = resolvePromptPath(matchedPath)
-      if (nextPath) {
-        updateShellDirectory(nextPath)
-      }
+      applyPromptDirectoryFallback(matchedPath)
     }
   }
 
@@ -342,8 +528,12 @@ async function syncInitialDirectory() {
 function resetSshSessionState() {
   lastReceivedSeq = 0
   shellCwd = ''
+  previousShellCwd = ''
   sshOutputBuffer = ''
+  sshEchoFilterBuffer = ''
   promptBuffer = ''
+  inputBuffer = ''
+  clearPendingPromptDirectory()
 }
 
 function renderConnectingNotice(force = false) {
@@ -392,8 +582,8 @@ async function createTerminal() {
     cursorStyle: props.config.cursorStyle,
     theme: themes[props.theme],
     scrollback: 10000, // 从 50000 降至 10000，每个终端减少约 50MB 内存
-    rows: 24, // 适中的行数
-    cols: 80, // 标准的列数，过大会导致输入位置问题
+    // 不指定 rows/cols，由 FitAddon.fit() 根据容器实际尺寸决定
+    // 硬编码 80 列会导致 shell 初始列宽与渲染宽度不一致，按上键时光标错位
     allowTransparency: true,
     fastScrollModifier: 'alt',
     fastScrollSensitivity: 5,
@@ -427,6 +617,7 @@ async function createTerminal() {
       }
       emit('terminalInput', data)
       if (isSshTerminal()) {
+        trackSshInput(data)
         // SSH终端
         SshService.writeTerminal(props.id, data).catch(() => {})
       } else {
@@ -454,15 +645,15 @@ async function createTerminal() {
   })
   
   // 监听终端大小变化，自动同步PTY大小
+  // 注意：不限制 props.active，否则非活动 tab 的 PTY 尺寸无法更新，
+  // 导致切回时 shell 仍使用旧列宽，按上键时光标位置错乱
   term.onResize(({ cols, rows }) => {
-    if (props.active) {
-      if (isSshTerminal()) {
-        // SSH终端
-        SshService.resizeTerminal(props.id, cols, rows).catch(() => {})
-      } else {
-        // 本地终端
-        invoke('resize_pty', { id: props.id, cols, rows }).catch(() => {})
-      }
+    if (isSshTerminal()) {
+      // SSH终端
+      SshService.resizeTerminal(props.id, cols, rows).catch(() => {})
+    } else {
+      // 本地终端
+      invoke('resize_pty', { id: props.id, cols, rows }).catch(() => {})
     }
   })
   

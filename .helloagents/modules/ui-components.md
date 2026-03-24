@@ -7,6 +7,8 @@
 
 ## 本次迁移更新
 
+- `SshService` 现已在 SSH 建连后的 bootstrap 中注入幂等 cwd shell hook：为 bash 拼接 `PROMPT_COMMAND`、为 zsh 注册 `precmd`，并在会话级重写 `cd` 成功路径后立即发出 `TERMLINK_CWD` marker，进一步修正 Rocky Linux 这类 prompt 不稳定场景下的目录同步；对应 bootstrap 现已压成单行注入，并由 `Terminal` 按 `__TERMLINK_BOOTSTRAP=1;` 到首个真实 cwd marker 的区间做流式剥离，避免连接首屏露出整段 hook 脚本
+- `Terminal` 的 SSH 当前目录同步已修正为“会话内推导优先”的兼容策略：保留 `TERMLINK_CWD` 标记和绝对路径提示符解析，同时移除 basename 提示符场景下走独立 `executeCommand('pwd')` 的错误兜底，改为跟踪简单 `cd` 命令并在下一次提示符返回时回填 cwd，避免 Rocky Linux 等服务器把文件管理误同步回登录目录
 - `RemoteDirectoryTree` 的左侧目录树已修正一次过度压缩带来的错行问题：aggressive 模式下的 `switcher/indent` 宽度从激进值回调一档，同时直接去掉 `.ant-tree-treenode` 默认外边距并固定 switcher 对齐，使展开箭头与文件夹图标重新回到同一行，且节点间距仍比初始状态更紧
 - `RemoteDirectoryTree` 的左侧目录树又继续收紧了一档：SSH 工作区 aggressive 模式下的节点最小高度从 `17px` 下调到 `15px`，节点行高从 `18px` 收到 `16px`，树内联编辑输入框高度也同步收口到 `15px`，仅继续压缩节点纵向占位，不改变缩进、图标和字体大小
 - `RemoteDirectoryTree` 的左侧目录树现已继续收紧节点高度：SSH 工作区 aggressive 模式下的节点最小高度从 `19px` 下调到 `17px`，重命名输入框高度也同步收口到 `17px`，仅压缩节点的纵向占位，不改变字体大小、图标尺寸和层级缩进

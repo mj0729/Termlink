@@ -1,5 +1,21 @@
 # 变更记录
 
+## [0.0.38] - 2026-03-24
+
+### 修复
+
+- **[workspace-ui]**: 为 SSH 建连后的 bootstrap 增加会话级 cwd shell hook；`SshService` 现在会在会话启动时定义 `__termlink_emit_cwd`，为 bash 拼接 `PROMPT_COMMAND`、为 zsh 注册 `precmd`，并在 `cd` 成功后立即输出 `TERMLINK_CWD` marker，使 Rocky Linux 这类 prompt 不稳定的服务器也能稳定驱动下方文件管理同步。后续又将 bootstrap 改为单行注入，并在 `Terminal` 端按 `__TERMLINK_BOOTSTRAP=1;` 到首个真实 cwd marker 的区间做流式剥离，避免首屏显示整段 hook 脚本；已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603241320_ssh-cwd-shell-hook](archive/2026-03/202603241320_ssh-cwd-shell-hook/)
+  - 决策: ssh-cwd-shell-hook#D001(在连接 bootstrap 中注入 cwd shell hook)
+
+## [0.0.37] - 2026-03-24
+
+### 修复
+
+- **[workspace-ui]**: 修正 SSH 终端与下方远程文件管理的工作目录联动；`Terminal` 现保留 `TERMLINK_CWD` 标记与绝对路径提示符解析，同时移除 basename 提示符场景下走独立 `executeCommand('pwd')` 的错误兜底，改为在当前会话内跟踪简单 `cd` 命令并在下一次提示符返回时回填 cwd，使 Rocky Linux 等服务器不再把文件管理误同步回登录目录；已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603241309_ssh-cwd-sync-linux](archive/2026-03/202603241309_ssh-cwd-sync-linux/)
+  - 决策: ssh-cwd-sync-linux#D001(用会话内命令推导替代独立 `pwd` 兜底)
+
 ## [0.0.36] - 2026-03-23
 
 ### 修复

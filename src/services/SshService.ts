@@ -240,8 +240,22 @@ class SshService {
     return `printf '${prefix}%s\\n' ${this.escapeShellValue(message)}`
   }
 
+  buildCwdSyncBootstrapCommand() {
+    return [
+      '__TERMLINK_BOOTSTRAP=1;',
+      'if [ -z "${TERMLINK_CWD_HOOK:-}" ]; then',
+      'TERMLINK_CWD_HOOK=1;',
+      "__termlink_emit_cwd(){ printf '\\037TERMLINK_CWD:%s\\037' \"$PWD\"; };",
+      '[ -n "${BASH_VERSION:-}" ] && PROMPT_COMMAND="__termlink_emit_cwd${PROMPT_COMMAND:+;$PROMPT_COMMAND}";',
+      'if [ -n "${ZSH_VERSION:-}" ]; then autoload -Uz add-zsh-hook 2>/dev/null; add-zsh-hook precmd __termlink_emit_cwd 2>/dev/null || precmd_functions=(__termlink_emit_cwd ${precmd_functions[@]}); fi;',
+      'cd(){ builtin cd "$@" && __termlink_emit_cwd; };',
+      'fi;',
+      '__termlink_emit_cwd'
+    ].join(' ')
+  }
+
   buildBootstrapCommands(profile: SshProfile) {
-    const commands: string[] = []
+    const commands: string[] = [this.buildCwdSyncBootstrapCommand()]
     const envTemplates = this.normalizeEnvTemplates(profile.env_templates)
       .filter((envItem) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(envItem.key))
     const enabledTasks = this.normalizeStartupTasks(profile.startup_tasks)

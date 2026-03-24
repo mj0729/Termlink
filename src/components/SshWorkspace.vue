@@ -124,6 +124,7 @@
                 :config="config"
                 :auto-password="pane.autoPassword"
                 :ssh-user="pane.profile?.username || profile?.username || ''"
+                :ssh-host="pane.profile?.host || profile?.host || ''"
                 :ssh-state="pane.sshState"
                 :connection-error="pane.isPrimary ? (lastError || '') : ''"
                 :reconnect-attempt="pane.isPrimary ? (reconnectAttempt || 0) : 0"

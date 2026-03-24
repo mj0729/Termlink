@@ -28,13 +28,13 @@ pub async fn start_ssh_terminal(
 }
 
 #[tauri::command]
-pub fn write_ssh_terminal(id: String, data: String) -> Result<(), String> {
-    connection_manager::write_terminal(id, data)
+pub async fn write_ssh_terminal(id: String, data: String) -> Result<(), String> {
+    connection_manager::write_terminal(id, data).await
 }
 
 #[tauri::command]
-pub fn resize_ssh_terminal(id: String, cols: u16, rows: u16) -> Result<(), String> {
-    connection_manager::resize_terminal(id, cols, rows)
+pub async fn resize_ssh_terminal(id: String, cols: u16, rows: u16) -> Result<(), String> {
+    connection_manager::resize_terminal(id, cols, rows).await
 }
 
 #[tauri::command]

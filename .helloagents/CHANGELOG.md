@@ -1,5 +1,30 @@
 # 变更记录
 
+## [0.0.41] - 2026-03-24
+
+### 变更
+
+- **[workspace-ui]**: 为终端后端链路补齐一轮性能收口；`connection_manager` 现在会把 SSH `ChannelMsg::Data` 在约 `8ms` 窗口内聚合后再统一生成 `TerminalChunk` 并推送到 `ssh_data://`，同时在快照读取、EOF/Close 与断连前强制 flush，避免尾部输出遗漏；SSH 命令队列也从无界改为 bounded `64`，`write_ssh_terminal` / `resize_ssh_terminal` 入口同步切到 async send。`terminal.rs` 的本地 PTY 输出则改为 reader → aggregator → emit 的批量推送路径，减少刷屏时的 emit 风暴；已通过 `cargo check --manifest-path src-tauri/Cargo.toml` 与 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603241624_terminal-output-batching-and-ssh-input-backpressure](plan/202603241624_terminal-output-batching-and-ssh-input-backpressure/)
+  - 决策: terminal-output-batching-and-ssh-input-backpressure#D001(保持现有事件协议，仅在后端增加聚合与背压)
+
+## [0.0.40] - 2026-03-24
+
+### 新增
+
+- **[workspace-ui]**: 终端新增基于本地历史的内联灰字联想；`Terminal` 现在会按 `terminalType + host + user + cwd` 查询 `TerminalSuggestionService` 中的历史命令，并通过 xterm decoration 在当前输入尾部渲染 ghost text，支持按 `Ctrl+E` 将建议尾巴真正写入本地 PTY 或 SSH 终端；已通过 `pnpm run build` 与 `cargo check --manifest-path src-tauri/Cargo.toml` 验证 — by 孟彦祖
+  - 方案: [202603241428_terminal-inline-autosuggest-phase2](archive/2026-03/202603241428_terminal-inline-autosuggest-phase2/)
+  - 决策: terminal-inline-autosuggest-phase2#D001(使用 xterm decoration 实现伪内联 ghost text)
+- **[workspace-ui]**: 继续补强终端联想命中质量；`TerminalSuggestionService` 现在会在保存当前目录命令的同时生成全局历史项，查询时优先返回当前目录精确命中，再回退到祖先目录和全局历史；SSH 预热也扩展为读取远端 `~/.bash_history`、`~/.zsh_history` 与 fish history，且已支持 `Tab` / `→` 直接接受建议。当前灰字展示已收口为应用侧 overlay，不再依赖 xterm proposed API；已通过 `pnpm run build` 验证 — by 孟彦祖
+
+## [0.0.39] - 2026-03-24
+
+### 变更
+
+- **[workspace-ui]**: 为本地 PTY 与 SSH 终端收口统一的 shell integration 基础协议；新增 `terminalShellIntegration.ts` 生成 bash/zsh 通用 bootstrap，`Terminal` 会在会话绑定后自动注入并解析 `PROMPT_START / PROMPT_END / CWD` marker，Rust 本地 PTY 默认 shell 也改为跟随用户 `SHELL`，SSH 侧则移除了后端 bash 专属 `PROMPT_COMMAND` 注入；已通过 `pnpm run build` 与 `cargo check --manifest-path src-tauri/Cargo.toml` 验证 — by 孟彦祖
+  - 方案: [202603241411_terminal-shell-integration-phase1](archive/2026-03/202603241411_terminal-shell-integration-phase1/)
+  - 决策: terminal-shell-integration-phase1#D001(使用前端 bootstrap 注入统一 bash/zsh integration)
+
 ## [0.0.38] - 2026-03-24
 
 ### 修复

@@ -5,6 +5,14 @@
   >
     <div class="terminal-frame">
       <div ref="container" class="terminal-container" />
+      <span ref="measureProbe" class="terminal-measure-probe" :style="measureProbeStyle">M</span>
+      <div
+        v-if="suggestionOverlayVisible"
+        class="terminal-inline-suggestion"
+        :style="suggestionOverlayStyle"
+      >
+        {{ suggestionSuffixText }}
+      </div>
       <div v-if="showConnectionOverlay" class="terminal-connection-overlay">
         <div class="terminal-connection-overlay__badge">
           {{ sshState === 'connecting' ? '连接中' : '连接已断开' }}
@@ -33,7 +41,13 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import '@xterm/xterm/css/xterm.css'
 import SshService from '../services/SshService'
+import TerminalSuggestionService from '../services/TerminalSuggestionService'
 import { hideTerminalContextMenu, showTerminalContextMenu } from '../utils/terminalContextMenu'
+import {
+  buildShellIntegrationBootstrap,
+  TERMLINK_BOOTSTRAP_ECHO_TOKEN,
+  TERMLINK_MARKER_PREFIX,
+} from '../utils/terminalShellIntegration'
 import { RIGHT_PANEL_TRANSITION_END_EVENT } from '../utils/rightPanelTransition'
 import type { ITheme, Terminal as XTermTerminal } from '@xterm/xterm'
 import type { FitAddon as XTermFitAddon } from '@xterm/addon-fit'
@@ -47,6 +61,7 @@ const props = withDefaults(defineProps<{
   config?: TerminalConfig
   autoPassword?: string
   sshUser?: string
+  sshHost?: string
   sshState?: 'connecting' | 'connected' | 'disconnected'
   connectionError?: string
   reconnectAttempt?: number
@@ -65,6 +80,7 @@ const props = withDefaults(defineProps<{
   }),
   autoPassword: '',
   sshUser: '',
+  sshHost: '',
   sshState: 'connected',
   connectionError: '',
   reconnectAttempt: 0,
@@ -75,24 +91,39 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits(['close', 'reconnect', 'currentDirectoryChange', 'terminalInput'])
 
 const container = ref<HTMLElement | null>(null)
+const measureProbe = ref<HTMLElement | null>(null)
 const terminal = ref<XTermTerminal | null>(null)
 const fitAddon = ref<XTermFitAddon | null>(null)
-const SSH_CWD_MARKER_PREFIX = '\u001fTERMLINK_CWD:'
-const SSH_BOOTSTRAP_ECHO_TOKEN = '__TERMLINK_BOOTSTRAP=1;'
 let lastReceivedSeq = 0
 let shellCwd = ''
 let previousShellCwd = ''
-let sshOutputBuffer = ''
-let sshEchoFilterBuffer = ''
+let shellIntegrationOutputBuffer = ''
+let shellIntegrationEchoFilterBuffer = ''
 let promptBuffer = ''
 let inputBuffer = ''
 let pendingPromptDirectory = ''
 let pendingPromptDirectoryHasError = false
 let pendingReconnectEnter = false
 let hasShownConnectingNotice = false
+let shellIntegrationInjected = false
+let shellPromptReady = false
+let suggestionHistoryHydrated = false
+let suggestionCommand = ''
+let suggestionSuffix = ''
 let contextMenuCleanup: (() => void) | null = null
 let reconnectTickTimer: number | null = null
+// B: 缓存 cell 尺寸，避免每次 renderSuggestionOverlay 触发 getBoundingClientRect reflow
+let cachedCellSize: { width: number; height: number } | null = null
+let measureProbeObserver: ResizeObserver | null = null
+const suggestionSuffixText = ref('')
+const suggestionOverlayVisible = ref(false)
+const suggestionOverlayStyle = ref<Record<string, string>>({})
 const nowTs = ref(Date.now())
+const measureProbeStyle = computed(() => ({
+  fontFamily: props.config.fontFamily,
+  fontSize: `${props.config.fontSize}px`,
+  lineHeight: String(resolveTerminalLineHeight(density.value)),
+}))
 const hasScrollContent = computed(() => {
   if (!terminal.value) return false
   return terminal.value.buffer.active.viewportY > 0
@@ -134,6 +165,155 @@ const overlayHint = computed(() => {
 
 function isSshTerminal() {
   return props.type === 'ssh' || props.id.startsWith('ssh-')
+}
+
+function getSuggestionScope() {
+  return {
+    terminalType: isSshTerminal() ? 'ssh' as const : 'local' as const,
+    host: isSshTerminal() ? props.sshHost : 'local',
+    user: isSshTerminal() ? props.sshUser : '',
+    cwd: shellCwd,
+  }
+}
+
+function getHistorySeedScope() {
+  const scope = getSuggestionScope()
+  return {
+    ...scope,
+    cwd: '',
+  }
+}
+
+function clearSuggestion() {
+  suggestionCommand = ''
+  suggestionSuffix = ''
+  suggestionSuffixText.value = ''
+  suggestionOverlayVisible.value = false
+  suggestionOverlayStyle.value = {}
+}
+
+function hasVisiblePromptPrefix() {
+  const term = terminal.value
+  if (!term) return false
+
+  const currentLine = stripAnsi(term.buffer.active.getLine(term.buffer.active.cursorY)?.translateToString(true) || '')
+  return getPromptPatterns().some((pattern) => pattern.test(currentLine))
+}
+
+function canShowSuggestion() {
+  return props.active && (shellPromptReady || hasVisiblePromptPrefix())
+}
+
+function getMeasuredCellSize() {
+  if (cachedCellSize) return cachedCellSize
+  if (!measureProbe.value) {
+    return {
+      width: Math.max(8, props.config.fontSize * 0.62),
+      height: Math.max(16, props.config.fontSize * resolveTerminalLineHeight(density.value)),
+    }
+  }
+  const rect = measureProbe.value.getBoundingClientRect()
+  cachedCellSize = {
+    width: Math.max(8, rect.width),
+    height: Math.max(16, rect.height),
+  }
+  return cachedCellSize
+}
+
+function invalidateCellSizeCache() {
+  cachedCellSize = null
+}
+
+function renderSuggestionOverlay() {
+  const term = terminal.value
+  if (!term || !suggestionSuffix || !container.value) {
+    suggestionOverlayVisible.value = false
+    return
+  }
+
+  const containerLeft = container.value.offsetLeft
+  const containerTop = container.value.offsetTop
+  const textareaLeft = Number.parseFloat(term.textarea?.style.left || '0')
+  const textareaTop = Number.parseFloat(term.textarea?.style.top || '0')
+  const textareaHeight = Number.parseFloat(term.textarea?.style.height || '0')
+  const textareaLineHeight = term.textarea?.style.lineHeight || ''
+  const cell = getMeasuredCellSize()
+
+  suggestionSuffixText.value = suggestionSuffix
+  suggestionOverlayStyle.value = {
+    left: `${containerLeft + textareaLeft}px`,
+    top: `${containerTop + textareaTop}px`,
+    height: `${textareaHeight || cell.height}px`,
+    lineHeight: textareaLineHeight || `${cell.height}px`,
+    fontFamily: props.config.fontFamily,
+    fontSize: `${props.config.fontSize}px`,
+  }
+  suggestionOverlayVisible.value = true
+}
+
+function renderSuggestion() {
+  const term = terminal.value
+  if (!term || !suggestionSuffix) return
+
+  if (!canShowSuggestion() || !inputBuffer.trim()) {
+    clearSuggestion()
+    return
+  }
+
+  if (term.buffer.active.cursorX + suggestionSuffix.length >= term.cols) {
+    clearSuggestion()
+    return
+  }
+
+  requestAnimationFrame(() => {
+    renderSuggestionOverlay()
+  })
+}
+
+function refreshSuggestion() {
+  if (!canShowSuggestion() || !inputBuffer.trim()) {
+    clearSuggestion()
+    return
+  }
+
+  // E: query 移至 microtask，避免阻塞输入事件回调的同步执行
+  const capturedInput = inputBuffer
+  queueMicrotask(() => {
+    // 若 inputBuffer 在 microtask 执行前已变化则放弃
+    if (capturedInput !== inputBuffer) return
+    const matched = TerminalSuggestionService.query(getSuggestionScope(), capturedInput)
+    if (!matched) {
+      clearSuggestion()
+      return
+    }
+    suggestionCommand = matched.command
+    suggestionSuffix = matched.suffix
+    renderSuggestion()
+  })
+}
+
+function saveSubmittedCommand(command: string) {
+  const normalized = command.trim()
+  if (!normalized) return
+  TerminalSuggestionService.save(getSuggestionScope(), normalized)
+}
+
+function acceptSuggestion() {
+  if (!suggestionSuffix || !props.active) return
+
+  const suffix = suggestionSuffix
+  inputBuffer += suffix
+  clearSuggestion()
+
+  if (isSshTerminal()) {
+    SshService.writeTerminal(props.id, suffix).catch(() => {})
+  } else {
+    invoke('write_pty', { id: props.id, data: suffix }).catch(() => {})
+  }
+}
+
+function hasActiveSuggestion() {
+  return Boolean(suggestionSuffix && suggestionOverlayVisible.value)
 }
 
 function handleRightPanelTransitionEnd() {
@@ -289,21 +469,26 @@ function parseTrackedCdCommand(command: string) {
   return resolveTrackedCdPath(target)
 }
 
-function trackSshInput(data: string) {
-  if (!isSshTerminal()) return
+function trackTerminalInput(data: string) {
+  const submittedCommands: string[] = []
+
   if (data.includes('\u001b')) {
     inputBuffer = ''
-    return
+    return submittedCommands
   }
 
   for (const char of data) {
     if (char === '\r' || char === '\n') {
+      const submittedCommand = inputBuffer.trim()
       const nextPath = parseTrackedCdCommand(inputBuffer)
       if (nextPath) {
         pendingPromptDirectory = nextPath
         pendingPromptDirectoryHasError = false
       } else {
         clearPendingPromptDirectory()
+      }
+      if (submittedCommand && shellPromptReady) {
+        submittedCommands.push(submittedCommand)
       }
       inputBuffer = ''
       continue
@@ -326,6 +511,8 @@ function trackSshInput(data: string) {
 
     inputBuffer += char
   }
+
+  return submittedCommands
 }
 
 function stripAnsi(value: string) {
@@ -343,10 +530,10 @@ function getPromptPatterns() {
 }
 
 function getBootstrapEchoBufferStart(value: string) {
-  const maxLength = Math.min(value.length, SSH_BOOTSTRAP_ECHO_TOKEN.length - 1)
+  const maxLength = Math.min(value.length, TERMLINK_BOOTSTRAP_ECHO_TOKEN.length - 1)
 
   for (let length = maxLength; length > 0; length -= 1) {
-    if (SSH_BOOTSTRAP_ECHO_TOKEN.startsWith(value.slice(-length))) {
+    if (TERMLINK_BOOTSTRAP_ECHO_TOKEN.startsWith(value.slice(-length))) {
       return value.length - length
     }
   }
@@ -367,65 +554,79 @@ function trimTrailingPromptEcho(value: string) {
 }
 
 function filterInjectedBootstrapEcho(output: string) {
-  const combined = sshEchoFilterBuffer + output
+  const combined = shellIntegrationEchoFilterBuffer + output
   let cursor = 0
   let filtered = ''
 
   while (cursor < combined.length) {
-    const tokenStart = combined.indexOf(SSH_BOOTSTRAP_ECHO_TOKEN, cursor)
+    const tokenStart = combined.indexOf(TERMLINK_BOOTSTRAP_ECHO_TOKEN, cursor)
     if (tokenStart === -1) {
       const bufferStart = getBootstrapEchoBufferStart(combined.slice(cursor))
       filtered += combined.slice(cursor, cursor + bufferStart)
-      sshEchoFilterBuffer = combined.slice(cursor + bufferStart)
+      shellIntegrationEchoFilterBuffer = combined.slice(cursor + bufferStart)
       return filtered
     }
 
     filtered += '\r\x1b[2K'
     filtered += trimTrailingPromptEcho(combined.slice(cursor, tokenStart))
-    const markerStart = combined.indexOf(SSH_CWD_MARKER_PREFIX, tokenStart)
+    const markerStart = combined.indexOf(TERMLINK_MARKER_PREFIX, tokenStart)
     if (markerStart === -1) {
-      sshEchoFilterBuffer = combined.slice(tokenStart)
+      shellIntegrationEchoFilterBuffer = combined.slice(tokenStart)
       return filtered
     }
 
     cursor = markerStart
   }
 
-  sshEchoFilterBuffer = ''
+  shellIntegrationEchoFilterBuffer = ''
   return filtered
 }
 
-function consumeSshOutput(rawOutput: string) {
-  const combined = sshOutputBuffer + filterInjectedBootstrapEcho(rawOutput)
+function handleShellIntegrationMarker(markerBody: string) {
+  if (markerBody === 'PROMPT_START') {
+    shellPromptReady = false
+    clearSuggestion()
+    return
+  }
+
+  if (markerBody === 'PROMPT_END') {
+    shellPromptReady = true
+    refreshSuggestion()
+    return
+  }
+
+  if (markerBody.startsWith('CWD:')) {
+    updateShellDirectory(markerBody.slice(4))
+  }
+}
+
+function consumeTerminalOutput(rawOutput: string) {
+  const combined = shellIntegrationOutputBuffer + filterInjectedBootstrapEcho(rawOutput)
   let cursor = 0
   let renderedOutput = ''
 
   while (cursor < combined.length) {
-    const markerStart = combined.indexOf(SSH_CWD_MARKER_PREFIX, cursor)
+    const markerStart = combined.indexOf(TERMLINK_MARKER_PREFIX, cursor)
     if (markerStart === -1) {
       renderedOutput += combined.slice(cursor)
-      sshOutputBuffer = ''
+      shellIntegrationOutputBuffer = ''
       return renderedOutput
     }
 
     renderedOutput += combined.slice(cursor, markerStart)
 
-    const markerValueStart = markerStart + SSH_CWD_MARKER_PREFIX.length
+    const markerValueStart = markerStart + TERMLINK_MARKER_PREFIX.length
     const markerEnd = combined.indexOf('\u001f', markerValueStart)
     if (markerEnd === -1) {
-      sshOutputBuffer = combined.slice(markerStart)
+      shellIntegrationOutputBuffer = combined.slice(markerStart)
       return renderedOutput
     }
 
-    const nextPath = combined.slice(markerValueStart, markerEnd).trim()
-    if (nextPath) {
-      updateShellDirectory(nextPath)
-    }
-
+    handleShellIntegrationMarker(combined.slice(markerValueStart, markerEnd))
     cursor = markerEnd + 1
   }
 
-  sshOutputBuffer = ''
+  shellIntegrationOutputBuffer = ''
   return renderedOutput
 }
 
@@ -437,6 +638,7 @@ function updateShellDirectory(nextPath: string) {
   shellCwd = normalized
   clearPendingPromptDirectory()
   emit('currentDirectoryChange', normalized)
+  refreshSuggestion()
 }
 
 function markPendingPromptDirectoryError(output: string) {
@@ -525,14 +727,19 @@ async function syncInitialDirectory() {
   }
 }
 
-function resetSshSessionState() {
+function resetTerminalSessionState() {
   lastReceivedSeq = 0
   shellCwd = ''
   previousShellCwd = ''
-  sshOutputBuffer = ''
-  sshEchoFilterBuffer = ''
+  shellIntegrationOutputBuffer = ''
+  shellIntegrationEchoFilterBuffer = ''
   promptBuffer = ''
   inputBuffer = ''
+  shellIntegrationInjected = false
+  shellPromptReady = false
+  suggestionHistoryHydrated = false
+  suggestionCommand = ''
+  suggestionSuffix = ''
   clearPendingPromptDirectory()
 }
 
@@ -541,6 +748,58 @@ function renderConnectingNotice(force = false) {
   if (!force && hasShownConnectingNotice) return
   terminal.value.writeln('\r\n正在建立 SSH 连接，请稍候...')
   hasShownConnectingNotice = true
+}
+
+async function injectShellIntegration() {
+  if (shellIntegrationInjected) return
+
+  shellIntegrationInjected = true
+  const bootstrap = buildShellIntegrationBootstrap()
+
+  if (isSshTerminal()) {
+    await SshService.writeTerminal(props.id, bootstrap)
+    return
+  }
+
+  try {
+    await invoke('write_pty', { id: props.id, data: bootstrap })
+  } catch (error) {
+    shellIntegrationInjected = false
+    console.warn('注入本地 shell integration 失败:', error)
+  }
+}
+
+async function hydrateSuggestionHistory() {
+  if (!isSshTerminal() || suggestionHistoryHydrated) return
+
+  suggestionHistoryHydrated = true
+
+  try {
+    const rawHistory = await SshService.executeCommand(
+      props.id,
+      `sh -lc '
+        [ -f "$HOME/.bash_history" ] && tail -n 400 "$HOME/.bash_history" 2>/dev/null || true
+        [ -f "$HOME/.zsh_history" ] && tail -n 400 "$HOME/.zsh_history" 2>/dev/null | sed -E "s/^: [0-9]+:[0-9]+;//" || true
+        [ -f "$HOME/.local/share/fish/fish_history" ] && tail -n 400 "$HOME/.local/share/fish/fish_history" 2>/dev/null | sed -n "s/^- cmd: //p" || true
+      '`,
+    )
+    const seen = new Set<string>()
+    const commands = rawHistory
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => {
+        if (!line || seen.has(line)) return false
+        seen.add(line)
+        return true
+      })
+
+    if (!commands.length) return
+    TerminalSuggestionService.seed(getHistorySeedScope(), commands.reverse())
+    refreshSuggestion()
+  } catch (error) {
+    suggestionHistoryHydrated = false
+    console.warn('预热 SSH 历史联想失败:', error)
+  }
 }
 
 function syncReconnectTicker() {
@@ -616,19 +875,43 @@ async function createTerminal() {
         return
       }
       emit('terminalInput', data)
+      const submittedCommands = trackTerminalInput(data)
+      submittedCommands.forEach((command) => {
+        saveSubmittedCommand(command)
+      })
       if (isSshTerminal()) {
-        trackSshInput(data)
         // SSH终端
         SshService.writeTerminal(props.id, data).catch(() => {})
       } else {
         // 本地终端
         invoke('write_pty', { id: props.id, data }).catch(() => {})
       }
+      if (!inputBuffer.trim()) {
+        clearSuggestion()
+      }
     }
   })
   
   // 设置键盘事件处理器，用于处理重连功能
-  term.onKey(({ key, domEvent }) => {
+  term.onKey(({ domEvent }) => {
+    if (domEvent.ctrlKey && !domEvent.metaKey && !domEvent.altKey && domEvent.key.toLowerCase() === 'e') {
+      domEvent.preventDefault()
+      acceptSuggestion()
+      return
+    }
+
+    if (!domEvent.ctrlKey && !domEvent.metaKey && !domEvent.altKey && hasActiveSuggestion()) {
+      if (domEvent.key === 'Tab' || domEvent.key === 'ArrowRight') {
+        domEvent.preventDefault()
+        acceptSuggestion()
+        return
+      }
+    }
+
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown', 'Tab', 'Escape'].includes(domEvent.key)) {
+      clearSuggestion()
+    }
+
     // 如果按回车键且终端中有连接失败信息，尝试重连
     if (domEvent.code === 'Enter' && props.active) {
       const content = term.buffer.active.getLine(term.buffer.active.cursorY)?.translateToString()
@@ -689,10 +972,11 @@ async function bindSession() {
 
     const applyChunk = (chunk: SshTerminalChunk) => {
       if (!terminal.value || chunk.seq <= lastReceivedSeq) return
-      const output = consumeSshOutput(chunk.data)
+      const output = consumeTerminalOutput(chunk.data)
       if (output) {
         syncDirectoryFromPrompt(output)
         terminal.value.write(output)
+        refreshSuggestion()
       }
       lastReceivedSeq = chunk.seq
     }
@@ -751,8 +1035,9 @@ async function bindSession() {
     const offOutP = listen(`pty://${props.id}`, e => {
       // 只有当这个终端实例是激活状态时才写入数据
       if (terminal.value) {
-        const output = String(e.payload || '')
+        const output = consumeTerminalOutput(String(e.payload || ''))
         terminal.value.write(output)
+        refreshSuggestion()
         
         // 检测密码提示并自动输入密码
         if (props.autoPassword && (output.includes('password:') || output.includes('Password:'))) {
@@ -782,7 +1067,10 @@ function applyTheme() {
     const theme = themes[props.theme]
     terminal.value.options.theme = theme
     // 使用 requestAnimationFrame 替代 setTimeout，更高效
-    requestAnimationFrame(() => terminal.value?.refresh(0, terminal.value.rows - 1))
+    requestAnimationFrame(() => {
+      terminal.value?.refresh(0, terminal.value.rows - 1)
+      renderSuggestion()
+    })
   }
 }
 
@@ -796,6 +1084,7 @@ function applyConfig() {
     terminal.value.options.lineHeight = resolveTerminalLineHeight(density.value)
     requestAnimationFrame(() => {
       applySize()
+      renderSuggestion()
     })
   }
 }
@@ -805,6 +1094,7 @@ function applySize() {
   if (fitAddon.value) {
     fitAddon.value.fit()
   }
+  renderSuggestion()
 }
 
 // Debounced resize handler（使用 rAF 减少 80% reflow 开销）
@@ -895,6 +1185,7 @@ async function syncSessionBinding() {
   if (!isSshTerminal()) {
     if (!unbindSession) {
       unbindSession = await bindSession()
+      void injectShellIntegration()
     }
     return
   }
@@ -906,7 +1197,9 @@ async function syncSessionBinding() {
 
   if (!unbindSession) {
     unbindSession = await bindSession()
+    await injectShellIntegration()
     await syncInitialDirectory()
+    await hydrateSuggestionHistory()
   }
 }
 
@@ -914,7 +1207,10 @@ watch(() => props.active, (isActive) => {
   if (isActive) {
     setTimeout(() => {
       applySize()
+      refreshSuggestion()
     }, 0)
+  } else {
+    clearSuggestion()
   }
 
   if (isSshTerminal()) {
@@ -927,7 +1223,7 @@ watch(() => props.sshState, (nextState, prevState) => {
 
   if (nextState === 'connecting' && prevState !== 'connecting') {
     hasShownConnectingNotice = false
-    resetSshSessionState()
+    resetTerminalSessionState()
     void cleanupSession().then(() => {
       renderConnectingNotice(true)
     })
@@ -936,7 +1232,7 @@ watch(() => props.sshState, (nextState, prevState) => {
 
   if (nextState === 'connected' && prevState !== 'connected') {
     hasShownConnectingNotice = false
-    resetSshSessionState()
+    resetTerminalSessionState()
     void syncSessionBinding()
   }
 
@@ -959,7 +1255,7 @@ watch(() => props.reconnectScheduledAt, () => {
 }, { immediate: true })
 
 onMounted(async () => {
-  resetSshSessionState()
+  resetTerminalSessionState()
   pendingReconnectEnter = false
   hasShownConnectingNotice = false
 
@@ -986,10 +1282,19 @@ onMounted(async () => {
   // 监听窗口大小变化
   window.addEventListener('resize', debouncedApplySize)
   window.addEventListener(RIGHT_PANEL_TRANSITION_END_EVENT, handleRightPanelTransitionEnd as EventListener)
+
+  // B: ResizeObserver 监听 measureProbe 尺寸变化，失效 cell 尺寸缓存
+  if (measureProbe.value && typeof ResizeObserver !== 'undefined') {
+    measureProbeObserver = new ResizeObserver(() => {
+      invalidateCellSizeCache()
+    })
+    measureProbeObserver.observe(measureProbe.value)
+  }
 })
 
 onBeforeUnmount(async () => {
   await cleanupSession()
+  clearSuggestion()
   contextMenuCleanup?.()
   contextMenuCleanup = null
   hideTerminalContextMenu()
@@ -1011,6 +1316,11 @@ onBeforeUnmount(async () => {
   // 移除事件监听
   window.removeEventListener('resize', debouncedApplySize)
   window.removeEventListener(RIGHT_PANEL_TRANSITION_END_EVENT, handleRightPanelTransitionEnd as EventListener)
+
+  // B: 断开 ResizeObserver
+  measureProbeObserver?.disconnect()
+  measureProbeObserver = null
+  invalidateCellSizeCache()
 })
 </script>
 
@@ -1037,6 +1347,24 @@ onBeforeUnmount(async () => {
 .terminal-container {
   position: absolute;
   inset: 8px 10px 8px 10px;
+}
+
+.terminal-measure-probe {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: pre;
+  inset: 0 auto auto 0;
+}
+
+.terminal-inline-suggestion {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  user-select: none;
+  white-space: pre;
+  color: color-mix(in srgb, var(--muted-color) 88%, var(--text-color) 12%);
+  opacity: 0.82;
 }
 
 .terminal-connection-overlay {

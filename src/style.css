@@ -486,6 +486,16 @@ body[data-theme="dark"] .ant-btn-primary {
   color: var(--text-color);
 }
 
+.termlink-terminal-ghost-text {
+  pointer-events: none;
+  user-select: none;
+  white-space: pre;
+  color: color-mix(in srgb, var(--muted-color) 88%, var(--text-color) 12%);
+  opacity: 0.82;
+  font: inherit;
+  letter-spacing: inherit;
+}
+
 body[data-theme="light"] .xterm .xterm-selection-layer,
 body[data-theme="light"] .xterm .xterm-selection {
   background: rgba(45, 125, 255, 0.18) !important;

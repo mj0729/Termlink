@@ -1,7 +1,12 @@
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
-use std::{collections::HashMap, io::Read, thread};
+use std::{
+    collections::HashMap,
+    io::Read,
+    thread,
+    time::{Duration, Instant},
+};
 use tauri::Emitter;
 
 enum PtyMsg {
@@ -11,6 +16,9 @@ enum PtyMsg {
 
 static PTY_SENDERS: Lazy<RwLock<HashMap<String, crossbeam_channel::Sender<PtyMsg>>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
+
+const PTY_OUTPUT_BATCH_WINDOW_MS: u64 = 8;
+const PTY_OUTPUT_BATCH_MAX_BYTES: usize = 16 * 1024;
 
 #[tauri::command]
 pub fn start_pty(
@@ -53,7 +61,11 @@ pub fn start_pty(
             c.arg("/K");
             c
         } else {
-            CommandBuilder::new("/bin/bash")
+            let default_shell = std::env::var("SHELL")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| "/bin/bash".to_string());
+            CommandBuilder::new(default_shell)
         };
         if let Some(dir) = cwd {
             cmd.cwd(dir);
@@ -83,26 +95,28 @@ pub fn start_pty(
             }
         };
 
+        let (output_tx, output_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
+
         // Reader loop
-        let win_clone = window.clone();
-        let id_clone = id.clone();
         let reader_thread = thread::spawn(move || {
             let mut buf = [0u8; 4096];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        // UTF-8 正常路径零分配
-                        if let Ok(chunk) = std::str::from_utf8(&buf[..n]) {
-                            let _ = win_clone.emit(&format!("pty://{}", id_clone), chunk);
-                        } else {
-                            let chunk = String::from_utf8_lossy(&buf[..n]).into_owned();
-                            let _ = win_clone.emit(&format!("pty://{}", id_clone), chunk);
+                        if output_tx.send(buf[..n].to_vec()).is_err() {
+                            break;
                         }
                     }
                     Err(_) => break,
                 }
             }
+        });
+
+        let win_clone = window.clone();
+        let id_clone = id.clone();
+        let emitter_thread = thread::spawn(move || {
+            emit_batched_pty_output(win_clone, id_clone, output_rx);
         });
 
         // Writer/resize loop
@@ -124,6 +138,7 @@ pub fn start_pty(
         }
 
         let _ = reader_thread.join();
+        let _ = emitter_thread.join();
         let _ = window.emit(&format!("pty_exit://{}", id), "");
     });
 
@@ -155,4 +170,58 @@ pub fn resize_pty(id: String, cols: u16, rows: u16) -> Result<(), String> {
 pub fn close_pty(id: String) -> Result<(), String> {
     PTY_SENDERS.write().remove(&id);
     Ok(())
+}
+
+fn emit_batched_pty_output(
+    window: tauri::Window,
+    id: String,
+    rx: crossbeam_channel::Receiver<Vec<u8>>,
+) {
+    let event_name = format!("pty://{}", id);
+    let mut pending = Vec::new();
+
+    loop {
+        let chunk = match rx.recv() {
+            Ok(chunk) => chunk,
+            Err(_) => {
+                emit_pty_output_chunk(&window, &event_name, &pending);
+                break;
+            }
+        };
+
+        pending.extend_from_slice(&chunk);
+        let deadline = Instant::now() + Duration::from_millis(PTY_OUTPUT_BATCH_WINDOW_MS);
+
+        while pending.len() < PTY_OUTPUT_BATCH_MAX_BYTES {
+            let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+                break;
+            };
+
+            match rx.recv_timeout(remaining) {
+                Ok(next) => pending.extend_from_slice(&next),
+                Err(crossbeam_channel::RecvTimeoutError::Timeout) => break,
+                Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+                    emit_pty_output_chunk(&window, &event_name, &pending);
+                    return;
+                }
+            }
+        }
+
+        emit_pty_output_chunk(&window, &event_name, &pending);
+        pending.clear();
+    }
+}
+
+fn emit_pty_output_chunk(window: &tauri::Window, event_name: &str, bytes: &[u8]) {
+    if bytes.is_empty() {
+        return;
+    }
+
+    if let Ok(chunk) = std::str::from_utf8(bytes) {
+        let _ = window.emit(event_name, chunk);
+        return;
+    }
+
+    let chunk = String::from_utf8_lossy(bytes).into_owned();
+    let _ = window.emit(event_name, chunk);
 }

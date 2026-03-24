@@ -1,6 +1,6 @@
 # 归档索引
 
-- 2026-03: 已归档 10 个方案包
+- 2026-03: 已归档 12 个方案包
 
 | 202603181130 | compact-workspace-redesign | - | - | - | ✅完成 |
 | 202603181016 | tailwind4-ts-migration | - | - | - | ✅完成 |
@@ -26,3 +26,5 @@
 | 202603231800 | remote-directory-tree-align-and-tighten | - | - | - | ✅完成 |
 | 202603241309 | ssh-cwd-sync-linux | - | - | - | ✅完成 |
 | 202603241320 | ssh-cwd-shell-hook | - | - | - | ✅完成 |
+| 202603241411 | terminal-shell-integration-phase1 | - | - | - | ✅完成 |
+| 202603241428 | terminal-inline-autosuggest-phase2 | - | - | - | ✅完成 |

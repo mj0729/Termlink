@@ -7,8 +7,12 @@
 
 ## 本次迁移更新
 
-- `SshService` 现已在 SSH 建连后的 bootstrap 中注入幂等 cwd shell hook：为 bash 拼接 `PROMPT_COMMAND`、为 zsh 注册 `precmd`，并在会话级重写 `cd` 成功路径后立即发出 `TERMLINK_CWD` marker，进一步修正 Rocky Linux 这类 prompt 不稳定场景下的目录同步；对应 bootstrap 现已压成单行注入，并由 `Terminal` 按 `__TERMLINK_BOOTSTRAP=1;` 到首个真实 cwd marker 的区间做流式剥离，避免连接首屏露出整段 hook 脚本
-- `Terminal` 的 SSH 当前目录同步已修正为“会话内推导优先”的兼容策略：保留 `TERMLINK_CWD` 标记和绝对路径提示符解析，同时移除 basename 提示符场景下走独立 `executeCommand('pwd')` 的错误兜底，改为跟踪简单 `cd` 命令并在下一次提示符返回时回填 cwd，避免 Rocky Linux 等服务器把文件管理误同步回登录目录
+- `Terminal`、本地 PTY 与 SSH 终端现在共享一套 `shell integration` 协议：前端通过 `terminalShellIntegration.ts` 生成 bash/zsh 通用 bootstrap，会话绑定后向本地 PTY 或远端 shell 注入 `PROMPT_START / PROMPT_END / CWD` marker，并继续按 `__TERMLINK_BOOTSTRAP=1;` 到首个真实 marker 的区间做流式剥离，避免首屏露出整段 hook 脚本
+- Rust 侧的本地 PTY 默认 shell 现已跟随用户环境变量 `SHELL`，不再固定为 `/bin/bash`；SSH 终端则移除了后端的 bash 专属 `PROMPT_COMMAND` 环境注入，统一改为前端 bootstrap 安装 bash/zsh hook
+- 终端后端链路现已补上输出聚合与输入背压：SSH `connection_manager` 会把连续 `ChannelMsg::Data` 在约 8ms 窗口内聚合后再生成 `TerminalChunk` 并推送到 `ssh_data://`，本地 PTY 也改为 reader → aggregator → emit 的批量输出路径；SSH 输入命令队列同时从无界改成 bounded 64，降低 burst 输出与极端输入场景下的事件风暴和内存峰值
+- `Terminal` 的当前目录同步现已升级为“marker 优先，提示符解析兜底”的兼容策略：integration marker 可直接驱动 cwd 更新，SSH 场景仍保留绝对路径提示符解析和简单 `cd` 命令回填，避免 Rocky Linux 等 prompt 不稳定服务器把文件管理误同步回登录目录
+- `Terminal` 现已加入单候选历史联想：输入前缀后会按 `terminalType + host + user + cwd` 命中本地历史记录，并通过终端内联 overlay 渲染灰字 ghost text；建议来源已扩到本地执行历史 + 远端 `bash/zsh/fish` 常见历史文件预热 + 常用命令 fallback，排序改为“当前目录精确命中优先，祖先目录次之，全局历史兜底”，且支持 `Ctrl+E` / `Tab` / `→` 接受建议
+- `SshWorkspace` 现会把 `sshHost` 一并透传给 `Terminal`，供 SSH 历史联想做主机级隔离，避免不同机器的命令历史混用
 - `RemoteDirectoryTree` 的左侧目录树已修正一次过度压缩带来的错行问题：aggressive 模式下的 `switcher/indent` 宽度从激进值回调一档，同时直接去掉 `.ant-tree-treenode` 默认外边距并固定 switcher 对齐，使展开箭头与文件夹图标重新回到同一行，且节点间距仍比初始状态更紧
 - `RemoteDirectoryTree` 的左侧目录树又继续收紧了一档：SSH 工作区 aggressive 模式下的节点最小高度从 `17px` 下调到 `15px`，节点行高从 `18px` 收到 `16px`，树内联编辑输入框高度也同步收口到 `15px`，仅继续压缩节点纵向占位，不改变缩进、图标和字体大小
 - `RemoteDirectoryTree` 的左侧目录树现已继续收紧节点高度：SSH 工作区 aggressive 模式下的节点最小高度从 `19px` 下调到 `17px`，重命名输入框高度也同步收口到 `17px`，仅压缩节点的纵向占位，不改变字体大小、图标尺寸和层级缩进

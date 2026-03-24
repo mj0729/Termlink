@@ -6,6 +6,7 @@ use russh_sftp::client::SftpSession;
 use serde::Serialize;
 use std::{
     collections::{HashMap, VecDeque},
+    mem,
     sync::Arc,
 };
 use tauri::{Emitter, Manager, Window};
@@ -13,9 +14,12 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
+use tokio::time::{Duration, Instant};
 
 const TERMINAL_BUFFER_LIMIT_BYTES: usize = 256 * 1024;
-const TERMLINK_CWD_PROMPT_COMMAND: &str = r#"printf '\x1fTERMLINK_CWD:%s\x1f' "$PWD""#;
+const TERMINAL_OUTPUT_BATCH_WINDOW_MS: u64 = 8;
+const TERMINAL_OUTPUT_BATCH_MAX_BYTES: usize = 16 * 1024;
+const CONNECTION_CMD_CHANNEL_CAPACITY: usize = 64;
 
 #[derive(Debug, Clone)]
 pub enum ConnectionState {
@@ -62,9 +66,11 @@ struct ConnectionManager {
     terminal_output_seq: u64,
     terminal_buffer: VecDeque<TerminalChunk>,
     terminal_buffer_bytes: usize,
+    pending_terminal_output: String,
+    pending_terminal_deadline: Option<Instant>,
     exec_count: usize,
-    cmd_rx: mpsc::UnboundedReceiver<ConnectionCmd>,
-    cmd_tx: mpsc::UnboundedSender<ConnectionCmd>,
+    cmd_rx: mpsc::Receiver<ConnectionCmd>,
+    cmd_tx: mpsc::Sender<ConnectionCmd>,
     window: Window,
     port_forward_tasks: Vec<JoinHandle<()>>,
     pending_port_forwards: Vec<PortForwardRequest>,
@@ -85,11 +91,12 @@ pub struct TerminalSnapshot {
 enum LoopEvent {
     Command(ConnectionCmd),
     Terminal(ChannelMsg),
+    FlushTerminalOutput,
     TerminalClosed,
     CommandChannelClosed,
 }
 
-static CONNECTION_MANAGERS: Lazy<RwLock<HashMap<String, mpsc::UnboundedSender<ConnectionCmd>>>> =
+static CONNECTION_MANAGERS: Lazy<RwLock<HashMap<String, mpsc::Sender<ConnectionCmd>>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
 pub async fn start_connection(
@@ -110,7 +117,7 @@ pub async fn start_connection(
     let authenticated =
         ssh_auth::connect_authenticated_session(&window.app_handle(), &auth).await?;
     let channel = open_terminal_channel(&authenticated.session, cols, rows).await?;
-    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
+    let (cmd_tx, cmd_rx) = mpsc::channel(CONNECTION_CMD_CHANNEL_CAPACITY);
 
     CONNECTION_MANAGERS
         .write()
@@ -126,6 +133,8 @@ pub async fn start_connection(
         terminal_output_seq: 0,
         terminal_buffer: VecDeque::new(),
         terminal_buffer_bytes: 0,
+        pending_terminal_output: String::new(),
+        pending_terminal_deadline: None,
         exec_count: 0,
         cmd_rx,
         cmd_tx,
@@ -142,15 +151,17 @@ pub async fn start_connection(
     Ok(())
 }
 
-pub fn write_terminal(connection_id: String, data: String) -> Result<(), String> {
+pub async fn write_terminal(connection_id: String, data: String) -> Result<(), String> {
     manager_sender(&connection_id)?
         .send(ConnectionCmd::WriteTerminal { data })
+        .await
         .map_err(|e| format!("发送终端写入命令失败: {}", e))
 }
 
-pub fn resize_terminal(connection_id: String, cols: u16, rows: u16) -> Result<(), String> {
+pub async fn resize_terminal(connection_id: String, cols: u16, rows: u16) -> Result<(), String> {
     manager_sender(&connection_id)?
         .send(ConnectionCmd::ResizeTerminal { cols, rows })
+        .await
         .map_err(|e| format!("发送终端缩放命令失败: {}", e))
 }
 
@@ -164,6 +175,7 @@ pub async fn read_terminal_snapshot(
             from_seq,
             reply: reply_tx,
         })
+        .await
         .map_err(|e| format!("发送终端快照请求失败: {}", e))?;
     reply_rx
         .await
@@ -174,6 +186,7 @@ pub async fn open_sftp(connection_id: String) -> Result<Arc<SftpSession>, String
     let (reply_tx, reply_rx) = oneshot::channel();
     manager_sender(&connection_id)?
         .send(ConnectionCmd::OpenSftp { reply: reply_tx })
+        .await
         .map_err(|e| format!("发送 SFTP 打开命令失败: {}", e))?;
     reply_rx
         .await
@@ -187,6 +200,7 @@ pub async fn execute_command(connection_id: String, command: String) -> Result<S
             command,
             reply: reply_tx,
         })
+        .await
         .map_err(|e| format!("发送命令执行请求失败: {}", e))?;
     reply_rx
         .await
@@ -199,6 +213,7 @@ pub async fn disconnect_connection(connection_id: String) -> Result<(), String> 
             let (reply_tx, reply_rx) = oneshot::channel();
             sender
                 .send(ConnectionCmd::Disconnect { reply: reply_tx })
+                .await
                 .map_err(|e| format!("发送断开命令失败: {}", e))?;
             reply_rx.await.map_err(|_| "等待断开结果失败".to_string())?
         }
@@ -206,7 +221,7 @@ pub async fn disconnect_connection(connection_id: String) -> Result<(), String> 
     }
 }
 
-fn manager_sender(connection_id: &str) -> Result<mpsc::UnboundedSender<ConnectionCmd>, String> {
+fn manager_sender(connection_id: &str) -> Result<mpsc::Sender<ConnectionCmd>, String> {
     CONNECTION_MANAGERS
         .read()
         .get(connection_id)
@@ -229,10 +244,6 @@ async fn open_terminal_channel(
         .await
         .map_err(|e| format!("请求 PTY 失败: {}", e))?;
 
-    let _ = channel
-        .set_env(false, "PROMPT_COMMAND", TERMLINK_CWD_PROMPT_COMMAND)
-        .await;
-
     channel
         .request_shell(true)
         .await
@@ -249,11 +260,22 @@ impl ConnectionManager {
         loop {
             let event = if let Some(channel) = self.terminal_channel.as_mut() {
                 let cmd_rx = &mut self.cmd_rx;
-                tokio::select! {
-                    Some(cmd) = cmd_rx.recv() => LoopEvent::Command(cmd),
-                    msg = channel.wait() => match msg {
-                        Some(msg) => LoopEvent::Terminal(msg),
-                        None => LoopEvent::TerminalClosed,
+                if let Some(deadline) = self.pending_terminal_deadline {
+                    tokio::select! {
+                        Some(cmd) = cmd_rx.recv() => LoopEvent::Command(cmd),
+                        msg = channel.wait() => match msg {
+                            Some(msg) => LoopEvent::Terminal(msg),
+                            None => LoopEvent::TerminalClosed,
+                        },
+                        _ = tokio::time::sleep_until(deadline) => LoopEvent::FlushTerminalOutput,
+                    }
+                } else {
+                    tokio::select! {
+                        Some(cmd) = cmd_rx.recv() => LoopEvent::Command(cmd),
+                        msg = channel.wait() => match msg {
+                            Some(msg) => LoopEvent::Terminal(msg),
+                            None => LoopEvent::TerminalClosed,
+                        }
                     }
                 }
             } else {
@@ -266,12 +288,20 @@ impl ConnectionManager {
             let should_break = match event {
                 LoopEvent::Command(cmd) => self.handle_command(cmd).await,
                 LoopEvent::Terminal(msg) => self.handle_terminal_message(msg).await,
+                LoopEvent::FlushTerminalOutput => {
+                    self.flush_pending_terminal_output();
+                    false
+                }
                 LoopEvent::TerminalClosed => {
+                    self.flush_pending_terminal_output();
                     self.terminal_channel = None;
                     self.terminal_active = false;
                     false
                 }
-                LoopEvent::CommandChannelClosed => true,
+                LoopEvent::CommandChannelClosed => {
+                    self.flush_pending_terminal_output();
+                    true
+                }
             };
 
             if should_break {
@@ -310,6 +340,7 @@ impl ConnectionManager {
                 }
             }
             ConnectionCmd::GetTerminalSnapshot { from_seq, reply } => {
+                self.flush_pending_terminal_output();
                 let _ = reply.send(Ok(self.build_terminal_snapshot(from_seq)));
             }
             ConnectionCmd::OpenSftp { reply } => {
@@ -330,6 +361,7 @@ impl ConnectionManager {
                 self.exec_count = self.exec_count.saturating_sub(1);
             }
             ConnectionCmd::Disconnect { reply } => {
+                self.flush_pending_terminal_output();
                 let result = self.handle_disconnect().await;
                 let _ = reply.send(result);
                 return true;
@@ -342,14 +374,11 @@ impl ConnectionManager {
     async fn handle_terminal_message(&mut self, msg: ChannelMsg) -> bool {
         match msg {
             ChannelMsg::Data { data } => {
-                let output = String::from_utf8_lossy(&data).into_owned();
-                let chunk = self.make_terminal_chunk(output);
-                let _ = self
-                    .window
-                    .emit(&format!("ssh_data://{}", self.connection_id), &chunk);
-                self.store_terminal_chunk(chunk);
+                let output = String::from_utf8_lossy(&data);
+                self.buffer_terminal_output(output.as_ref());
             }
             ChannelMsg::Eof | ChannelMsg::Close | ChannelMsg::ExitStatus { .. } => {
+                self.flush_pending_terminal_output();
                 self.terminal_channel = None;
                 self.terminal_active = false;
             }
@@ -449,6 +478,38 @@ impl ConnectionManager {
                 break;
             }
         }
+    }
+
+    fn buffer_terminal_output(&mut self, output: &str) {
+        if output.is_empty() {
+            return;
+        }
+
+        self.pending_terminal_output.push_str(output);
+        if self.pending_terminal_deadline.is_none() {
+            self.pending_terminal_deadline = Some(
+                Instant::now() + Duration::from_millis(TERMINAL_OUTPUT_BATCH_WINDOW_MS),
+            );
+        }
+
+        if self.pending_terminal_output.len() >= TERMINAL_OUTPUT_BATCH_MAX_BYTES {
+            self.flush_pending_terminal_output();
+        }
+    }
+
+    fn flush_pending_terminal_output(&mut self) {
+        if self.pending_terminal_output.is_empty() {
+            self.pending_terminal_deadline = None;
+            return;
+        }
+
+        self.pending_terminal_deadline = None;
+        let output = mem::take(&mut self.pending_terminal_output);
+        let chunk = self.make_terminal_chunk(output);
+        let _ = self
+            .window
+            .emit(&format!("ssh_data://{}", self.connection_id), &chunk);
+        self.store_terminal_chunk(chunk);
     }
 
     fn build_terminal_snapshot(&self, from_seq: u64) -> TerminalSnapshot {

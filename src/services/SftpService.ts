@@ -99,23 +99,23 @@ class SftpService {
   }
 
   async listDetailed(connectionId: string, path: string): Promise<SftpDetailedEntry[]> {
-    return invoke<SftpDetailedEntry[]>('sftp_list_detailed', { connectionId, path })
+    return this.call<SftpDetailedEntry[]>('sftp_list_detailed', { connectionId, path }, `列出SFTP详情失败 (${path}):`)
   }
 
   async stat(connectionId: string, path: string): Promise<SftpDetailedEntry> {
-    return invoke<SftpDetailedEntry>('sftp_stat', { connectionId, path })
+    return this.call<SftpDetailedEntry>('sftp_stat', { connectionId, path }, `获取SFTP文件信息失败 (${path}):`)
   }
 
   async chmod(connectionId: string, path: string, mode: string): Promise<void> {
-    await invoke('sftp_chmod', { connectionId, path, mode })
+    return this.call<void>('sftp_chmod', { connectionId, path, mode }, `修改SFTP权限失败 (${path}):`)
   }
 
   async chown(connectionId: string, path: string, user: string, group: string): Promise<void> {
-    await invoke('sftp_chown', { connectionId, path, user, group })
+    return this.call<void>('sftp_chown', { connectionId, path, user, group }, `修改SFTP所有者失败 (${path}):`)
   }
 
   async archive(connectionId: string, paths: string[], archiveFormat: string, outputPath: string): Promise<void> {
-    await invoke('sftp_archive', { connectionId, paths, archiveFormat, outputPath })
+    return this.call<void>('sftp_archive', { connectionId, paths, archiveFormat, outputPath }, `SFTP归档失败 (${outputPath}):`)
   }
 
   async uploadContent(
@@ -130,7 +130,7 @@ class SftpService {
   }
 
   async diskUsage(connectionId: string, path: string): Promise<SftpDiskUsageInfo> {
-    return invoke<SftpDiskUsageInfo>('sftp_disk_usage', { connectionId, path })
+    return this.call<SftpDiskUsageInfo>('sftp_disk_usage', { connectionId, path }, `获取SFTP磁盘用量失败 (${path}):`)
   }
 }
 

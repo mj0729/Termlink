@@ -985,23 +985,18 @@ pub async fn list_sftp_files(
                         .map(|d| d.as_secs()),
                     permissions: {
                         let perms = metadata.permissions();
-                        // 构建完整的权限字符串，使用可用的字段
-                        let mut perm_str = String::new();
-
-                        // 用户权限 (如果字段不存在，显示为 "--x")
-                        perm_str.push_str("---");
-
-                        // 组权限 (使用group_字段)
-                        perm_str.push(if perms.group_read { 'r' } else { '-' });
-                        perm_str.push(if perms.group_write { 'w' } else { '-' });
-                        perm_str.push(if perms.group_exec { 'x' } else { '-' });
-
-                        // 其他权限 (使用other_字段)
-                        perm_str.push(if perms.other_read { 'r' } else { '-' });
-                        perm_str.push(if perms.other_write { 'w' } else { '-' });
-                        perm_str.push(if perms.other_exec { 'x' } else { '-' });
-
-                        perm_str
+                        format!(
+                            "{}{}{}{}{}{}{}{}{}",
+                            if perms.owner_read { 'r' } else { '-' },
+                            if perms.owner_write { 'w' } else { '-' },
+                            if perms.owner_exec { 'x' } else { '-' },
+                            if perms.group_read { 'r' } else { '-' },
+                            if perms.group_write { 'w' } else { '-' },
+                            if perms.group_exec { 'x' } else { '-' },
+                            if perms.other_read { 'r' } else { '-' },
+                            if perms.other_write { 'w' } else { '-' },
+                            if perms.other_exec { 'x' } else { '-' },
+                        )
                     },
                 };
                 files.push(file_info);

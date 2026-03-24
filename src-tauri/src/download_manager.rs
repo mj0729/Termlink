@@ -48,44 +48,20 @@ pub async fn resolve_local_target_path(path: String) -> Result<String, String> {
     }
 }
 
-// 获取SFTP文件信息（用于下载进度计算）
+// 获取SFTP文件信息（未实现：请通过 sftp_russh::sftp_stat 获取）
 #[command]
-pub async fn get_sftp_file_info(_connection_id: String, path: String) -> Result<FileInfo, String> {
-    // 这里应该通过SFTP获取文件信息
-    // 为了演示，返回模拟数据
-    let file_name = Path::new(&path)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("unknown")
-        .to_string();
-
-    Ok(FileInfo {
-        name: file_name,
-        size: 1024 * 1024 * 10, // 10MB 模拟文件大小
-        modified: Some(chrono::Utc::now().timestamp() as u64),
-    })
+pub async fn get_sftp_file_info(_connection_id: String, _path: String) -> Result<FileInfo, String> {
+    Err("get_sftp_file_info: not implemented, use sftp_stat instead".to_string())
 }
 
-// 带进度的下载功能（这是一个占位符，实际实现会更复杂）
+// 带进度的下载功能（未实现：请通过 sftp_russh::download_sftp_file 实现）
 #[command]
 pub async fn download_sftp_file_with_progress(
     _connection_id: String,
     _remote_path: String,
     _local_path: String,
 ) -> Result<(), String> {
-    // 这里应该实现实际的下载逻辑
-    // 包括分块下载和进度回调
-
-    // 模拟下载过程
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-    // 实际实现应该：
-    // 1. 获取SFTP连接
-    // 2. 分块读取远程文件
-    // 3. 写入本地文件
-    // 4. 通过回调报告进度
-
-    Ok(())
+    Err("download_sftp_file_with_progress: not implemented, use download_sftp_file instead".to_string())
 }
 
 // 取消下载

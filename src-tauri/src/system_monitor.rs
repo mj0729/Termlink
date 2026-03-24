@@ -8,6 +8,72 @@ use tauri::command;
 
 const MIN_SAMPLE_INTERVAL: Duration = Duration::from_millis(500);
 
+/// 内存/磁盘/网络/进程采集 shell 片段，batch 与 dynamic 共用（CPU 由各调用方自行拼接）
+const DYNAMIC_METRICS_SCRIPT: &str = r#"
+echo "===MEMORY_INFO==="
+cat /proc/meminfo | grep MemTotal | awk '{print $2}'
+cat /proc/meminfo | grep MemAvailable | awk '{print $2}'
+cat /proc/meminfo | grep '^Cached:' | awk '{print $2}'
+
+echo "===DISK_INFO==="
+ df -h --output=source,fstype,size,used,avail,pcent,target | tail -n +2
+
+echo "===NETWORK_INFO==="
+cat /proc/net/dev | tail -n +3
+
+echo "===NETWORK_ADDR_INFO==="
+ip -o -4 addr show up scope global 2>/dev/null | awk '{print $2, $4}' || true
+
+echo "===NETWORK_STATE_INFO==="
+for iface in $(ls /sys/class/net 2>/dev/null); do
+state=$(cat "/sys/class/net/$iface/operstate" 2>/dev/null || echo unknown)
+kind=$(case "$iface" in
+  lo) echo loopback ;;
+  docker0|kube-ipvs0|veth*|br-*|virbr*|vmnet*|vboxnet*|zt*|tailscale*|tun*|tap*|wg*|cni*|flannel*)
+    echo virtual
+    ;;
+  *)
+    resolved=$(readlink -f "/sys/class/net/$iface" 2>/dev/null || true)
+    case "$resolved" in
+      */devices/virtual/net/*) echo virtual ;;
+      *) echo physical ;;
+    esac
+    ;;
+esac)
+printf '%s %s %s\n' "$iface" "$state" "$kind"
+done
+
+echo "===PROCESS_INFO==="
+ps axo stat --no-headers | sort | uniq -c
+
+echo "===TOP_PROCESS_INFO==="
+ps -eo rss=,pcpu=,comm= --sort=-rss | head -n 4
+"#;
+
+/// 将 `===SECTION===\ncontent\n` 格式的输出解析为 section map
+fn parse_sections(output: &str) -> HashMap<&str, String> {
+    let mut sections: HashMap<&str, String> = HashMap::new();
+    let mut current_section = "";
+    let mut current_content = String::new();
+
+    for line in output.lines() {
+        if line.starts_with("===") && line.ends_with("===") {
+            if !current_section.is_empty() {
+                sections.insert(current_section, current_content.clone());
+                current_content.clear();
+            }
+            current_section = line.trim_matches('=');
+        } else if !current_section.is_empty() {
+            current_content.push_str(line);
+            current_content.push('\n');
+        }
+    }
+    if !current_section.is_empty() {
+        sections.insert(current_section, current_content);
+    }
+    sections
+}
+
 // 批量获取系统信息的结构体
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BatchSystemInfo {
@@ -332,9 +398,9 @@ fn parse_size(size_str: &str) -> u64 {
 // 批量获取所有系统信息（优化：单次SSH执行获取所有数据）
 #[command]
 pub async fn get_all_system_info_batch(connection_id: String) -> Result<BatchSystemInfo, String> {
-    // 构建一个批量命令，一次性获取所有需要的系统信息
-    let batch_command = r#"
-# 输出分隔符
+    // 静态系统信息 + 动态指标（共用 DYNAMIC_METRICS_SCRIPT）
+    let batch_command = format!(
+        r#"
 echo "===SYSTEM_INFO==="
 hostname
 cat /etc/os-release | grep PRETTY_NAME | cut -d'"' -f2
@@ -345,70 +411,13 @@ cat /proc/uptime | cut -d' ' -f1
 echo "===CPU_INFO==="
 cat /proc/cpuinfo | grep 'model name' | head -n1 | cut -d':' -f2
 grep '^cpu' /proc/stat
+{}
+"#,
+        DYNAMIC_METRICS_SCRIPT
+    );
 
-echo "===MEMORY_INFO==="
-cat /proc/meminfo | grep MemTotal | awk '{print $2}'
-cat /proc/meminfo | grep MemAvailable | awk '{print $2}'
-cat /proc/meminfo | grep '^Cached:' | awk '{print $2}'
-
-echo "===DISK_INFO==="
- df -h --output=source,fstype,size,used,avail,pcent,target | tail -n +2
-
-echo "===NETWORK_INFO==="
-cat /proc/net/dev | tail -n +3
-
-echo "===NETWORK_ADDR_INFO==="
-ip -o -4 addr show up scope global 2>/dev/null | awk '{print $2, $4}' || true
-
-echo "===NETWORK_STATE_INFO==="
-for iface in $(ls /sys/class/net 2>/dev/null); do
-state=$(cat "/sys/class/net/$iface/operstate" 2>/dev/null || echo unknown)
-kind=$(case "$iface" in
-  lo) echo loopback ;;
-  docker0|kube-ipvs0|veth*|br-*|virbr*|vmnet*|vboxnet*|zt*|tailscale*|tun*|tap*|wg*|cni*|flannel*)
-    echo virtual
-    ;;
-  *)
-    resolved=$(readlink -f "/sys/class/net/$iface" 2>/dev/null || true)
-    case "$resolved" in
-      */devices/virtual/net/*) echo virtual ;;
-      *) echo physical ;;
-    esac
-    ;;
-esac)
-printf '%s %s %s\n' "$iface" "$state" "$kind"
-done
-
-echo "===PROCESS_INFO==="
-ps axo stat --no-headers | sort | uniq -c
-
-echo "===TOP_PROCESS_INFO==="
-ps -eo rss=,pcpu=,comm= --sort=-rss | head -n 4
-"#;
-
-    let output = ssh_command::execute_ssh_command(connection_id.clone(), batch_command.to_string()).await?;
-
-    // 解析批量输出
-    let mut sections: HashMap<&str, String> = HashMap::new();
-    let mut current_section = "";
-    let mut current_content = String::new();
-
-    for line in output.lines() {
-        if line.starts_with("===") && line.ends_with("===") {
-            if !current_section.is_empty() {
-                sections.insert(current_section, current_content.clone());
-                current_content.clear();
-            }
-            current_section = line.trim_matches('=');
-        } else if !current_section.is_empty() {
-            current_content.push_str(line);
-            current_content.push('\n');
-        }
-    }
-
-    if !current_section.is_empty() {
-        sections.insert(current_section, current_content);
-    }
+    let output = ssh_command::execute_ssh_command(connection_id.clone(), batch_command).await?;
+    let sections = parse_sections(&output);
 
     // 解析各个section
     let system = parse_system_info(sections.get("SYSTEM_INFO").unwrap_or(&String::new()));
@@ -502,26 +511,31 @@ fn parse_memory_info(content: &str) -> MemoryInfo {
     let total = lines
         .get(0)
         .and_then(|s| s.trim().parse::<u64>().ok())
-        .unwrap_or(16777216)
+        .unwrap_or(0)
         * 1024;
     let available = lines
         .get(1)
         .and_then(|s| s.trim().parse::<u64>().ok())
-        .unwrap_or(8388608)
+        .unwrap_or(0)
         * 1024;
     let cached = lines
         .get(2)
         .and_then(|s| s.trim().parse::<u64>().ok())
-        .unwrap_or(2097152)
+        .unwrap_or(0)
         * 1024;
-    let used = total - available;
+    let used = total.saturating_sub(available);
+    let usage = if total > 0 {
+        (used as f64 / total as f64) * 100.0
+    } else {
+        0.0
+    };
 
     MemoryInfo {
         total,
         used,
         available,
         cached,
-        usage: (used as f64 / total as f64) * 100.0,
+        usage,
     }
 }
 
@@ -635,19 +649,6 @@ fn parse_network_info_batch(
         });
     }
 
-    if interfaces.is_empty() {
-        interfaces.push(NetworkInterface {
-            name: "eth0".to_string(),
-            status: "up".to_string(),
-            kind: "physical".to_string(),
-            ip: Some("192.168.1.100".to_string()),
-            rx_bytes: 5 * 1024 * 1024 * 1024,
-            tx_bytes: 3 * 1024 * 1024 * 1024,
-            rx_speed: 0.0,
-            tx_speed: 0.0,
-        });
-    }
-
     interfaces
 }
 
@@ -673,12 +674,6 @@ fn parse_process_info(content: &str, top_content: &str) -> ProcessInfo {
         }
     }
 
-    if total == 0 {
-        total = 245;
-        running = 12;
-        sleeping = 233;
-    }
-
     for line in top_content.lines() {
         let parts: Vec<&str> = line.trim().split_whitespace().collect();
         if parts.len() >= 3 {
@@ -696,29 +691,6 @@ fn parse_process_info(content: &str, top_content: &str) -> ProcessInfo {
         }
     }
 
-    if top.is_empty() {
-        top.push(ProcessEntry {
-            memory_kb: 54477,
-            cpu_percent: 2.3,
-            command: "AliYunD+".to_string(),
-        });
-        top.push(ProcessEntry {
-            memory_kb: 17408,
-            cpu_percent: 0.3,
-            command: "ksoftirqd".to_string(),
-        });
-        top.push(ProcessEntry {
-            memory_kb: 17203,
-            cpu_percent: 0.3,
-            command: "AliYunD+".to_string(),
-        });
-        top.push(ProcessEntry {
-            memory_kb: 15052,
-            cpu_percent: 0.0,
-            command: "systemd".to_string(),
-        });
-    }
-
     ProcessInfo {
         total,
         running,
@@ -732,75 +704,12 @@ fn parse_process_info(content: &str, top_content: &str) -> ProcessInfo {
 pub async fn get_dynamic_system_info_batch(
     connection_id: String,
 ) -> Result<DynamicSystemInfo, String> {
-    // 构建批量命令，只获取动态数据
-    let batch_command = r#"
-# 输出分隔符
-echo "===CPU_INFO==="
-grep '^cpu' /proc/stat
-
-echo "===MEMORY_INFO==="
-cat /proc/meminfo | grep MemTotal | awk '{print $2}'
-cat /proc/meminfo | grep MemAvailable | awk '{print $2}'
-cat /proc/meminfo | grep '^Cached:' | awk '{print $2}'
-
-echo "===DISK_INFO==="
- df -h --output=source,fstype,size,used,avail,pcent,target | tail -n +2
-
-echo "===NETWORK_INFO==="
-cat /proc/net/dev | tail -n +3
-
-echo "===NETWORK_ADDR_INFO==="
-ip -o -4 addr show up scope global 2>/dev/null | awk '{print $2, $4}' || true
-
-echo "===NETWORK_STATE_INFO==="
-for iface in $(ls /sys/class/net 2>/dev/null); do
-state=$(cat "/sys/class/net/$iface/operstate" 2>/dev/null || echo unknown)
-kind=$(case "$iface" in
-  lo) echo loopback ;;
-  docker0|kube-ipvs0|veth*|br-*|virbr*|vmnet*|vboxnet*|zt*|tailscale*|tun*|tap*|wg*|cni*|flannel*)
-    echo virtual
-    ;;
-  *)
-    resolved=$(readlink -f "/sys/class/net/$iface" 2>/dev/null || true)
-    case "$resolved" in
-      */devices/virtual/net/*) echo virtual ;;
-      *) echo physical ;;
-    esac
-    ;;
-esac)
-printf '%s %s %s\n' "$iface" "$state" "$kind"
-done
-
-echo "===PROCESS_INFO==="
-ps axo stat --no-headers | sort | uniq -c
-
-echo "===TOP_PROCESS_INFO==="
-ps -eo rss=,pcpu=,comm= --sort=-rss | head -n 4
-"#;
-
-    let output = ssh_command::execute_ssh_command(connection_id.clone(), batch_command.to_string()).await?;
-
-    // 解析批量输出
-    let mut sections: HashMap<&str, String> = HashMap::new();
-    let mut current_section = "";
-    let mut current_content = String::new();
-
-    for line in output.lines() {
-        if line.starts_with("===") && line.ends_with("===") {
-            if !current_section.is_empty() {
-                sections.insert(current_section, current_content.clone());
-                current_content.clear();
-            }
-            current_section = line.trim_matches('=');
-        } else if !current_section.is_empty() {
-            current_content.push_str(line);
-            current_content.push('\n');
-        }
-    }
-
-    if !current_section.is_empty() {
-        sections.insert(current_section, current_content);
-    }
+    let batch_command = format!(
+        "echo \"===CPU_INFO===\"\ngrep '^cpu' /proc/stat\n{}",
+        DYNAMIC_METRICS_SCRIPT
+    );
+    let output = ssh_command::execute_ssh_command(connection_id.clone(), batch_command).await?;
+    let sections = parse_sections(&output);
 
     // 解析各个section - CPU 使用 delta 方式
     let cpu_section = sections.get("CPU_INFO").map(|s| s.as_str()).unwrap_or("");

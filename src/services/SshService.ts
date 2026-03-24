@@ -203,6 +203,34 @@ class SshService {
       .filter((item) => item.key)
   }
 
+  private payloadToProfile(id: string, data: SshConnectionPayload): SshProfile {
+    return {
+      id,
+      name: data.name,
+      host: data.host,
+      port: Number(data.port) || 22,
+      username: data.username,
+      save_password: data.savePassword,
+      group: data.group,
+      tags: data.tags || [],
+      private_key: data.usePrivateKey ? data.privateKey : null,
+      private_key_passphrase: data.usePrivateKey ? (data.privateKeyPassphrase || null) : null,
+      proxy_jump_id: data.proxyJumpId || null,
+      proxy_jump_name: data.proxyJumpName || null,
+      proxy_jump_host: data.proxyJumpHost || null,
+      proxy_jump_port: data.proxyJumpPort ? Number(data.proxyJumpPort) : null,
+      proxy_jump_username: data.proxyJumpUsername || null,
+      proxy_jump_private_key: data.proxyJumpPrivateKey || null,
+      proxy_jump_private_key_passphrase: data.proxyJumpPrivateKeyPassphrase || null,
+      ssh_config_source: data.sshConfigSource || null,
+      ssh_config_host: data.sshConfigHost || null,
+      port_forwards: data.portForwards || [],
+      command_snippets: this.normalizeCommandSnippets(data.commandSnippets),
+      startup_tasks: this.normalizeStartupTasks(data.startupTasks),
+      env_templates: this.normalizeEnvTemplates(data.envTemplates),
+    }
+  }
+
   escapeShellValue(value: string) {
     return `'${value.replace(/'/g, `'\"'\"'`)}'`
   }
@@ -610,31 +638,7 @@ class SshService {
     interactions?: SshConnectionInteractions,
   ): Promise<ConnectionTab> {
     const id = `ssh-${Date.now()}`
-    const profile: SshProfile = {
-      id,
-      host: sshData.host,
-      port: Number(sshData.port) || 22,
-      username: sshData.username,
-      save_password: sshData.savePassword,
-      name: sshData.name,
-      group: sshData.group,
-      tags: sshData.tags || [],
-      private_key: sshData.usePrivateKey ? sshData.privateKey : null,
-      private_key_passphrase: sshData.usePrivateKey ? (sshData.privateKeyPassphrase || null) : null,
-      proxy_jump_id: sshData.proxyJumpId || null,
-      proxy_jump_name: sshData.proxyJumpName || null,
-      proxy_jump_host: sshData.proxyJumpHost || null,
-      proxy_jump_port: sshData.proxyJumpPort ? Number(sshData.proxyJumpPort) : null,
-      proxy_jump_username: sshData.proxyJumpUsername || null,
-      proxy_jump_private_key: sshData.proxyJumpPrivateKey || null,
-      proxy_jump_private_key_passphrase: sshData.proxyJumpPrivateKeyPassphrase || null,
-      ssh_config_source: sshData.sshConfigSource || null,
-      ssh_config_host: sshData.sshConfigHost || null,
-      port_forwards: sshData.portForwards || [],
-      command_snippets: this.normalizeCommandSnippets(sshData.commandSnippets),
-      startup_tasks: this.normalizeStartupTasks(sshData.startupTasks),
-      env_templates: this.normalizeEnvTemplates(sshData.envTemplates),
-    }
+    const profile = this.payloadToProfile(id, sshData)
     const title = this.getConnectionTabTitle(profile)
 
     const initialPassword = sshData.usePrivateKey ? null : (sshData.password || null)
@@ -704,31 +708,7 @@ class SshService {
 
   async updateProfile(profileData: SshConnectionPayload & { id: string }): Promise<void> {
     try {
-      const profile: SshProfile = {
-        id: profileData.id,
-        name: profileData.name,
-        host: profileData.host,
-        port: Number(profileData.port) || 22,
-        username: profileData.username,
-        save_password: profileData.savePassword,
-        group: profileData.group,
-        tags: profileData.tags || [],
-        private_key: profileData.usePrivateKey ? profileData.privateKey : null,
-        private_key_passphrase: profileData.usePrivateKey ? (profileData.privateKeyPassphrase || null) : null,
-        proxy_jump_id: profileData.proxyJumpId || null,
-        proxy_jump_name: profileData.proxyJumpName || null,
-        proxy_jump_host: profileData.proxyJumpHost || null,
-        proxy_jump_port: profileData.proxyJumpPort ? Number(profileData.proxyJumpPort) : null,
-        proxy_jump_username: profileData.proxyJumpUsername || null,
-        proxy_jump_private_key: profileData.proxyJumpPrivateKey || null,
-        proxy_jump_private_key_passphrase: profileData.proxyJumpPrivateKeyPassphrase || null,
-        ssh_config_source: profileData.sshConfigSource || null,
-        ssh_config_host: profileData.sshConfigHost || null,
-        port_forwards: profileData.portForwards || [],
-        command_snippets: this.normalizeCommandSnippets(profileData.commandSnippets),
-        startup_tasks: this.normalizeStartupTasks(profileData.startupTasks),
-        env_templates: this.normalizeEnvTemplates(profileData.envTemplates),
-      }
+      const profile = this.payloadToProfile(profileData.id, profileData)
 
       await invoke('save_ssh_profile', {
         profile,

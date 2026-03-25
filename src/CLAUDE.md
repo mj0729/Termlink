@@ -29,7 +29,7 @@ The `src/` directory contains the entire frontend layer of Termlink. It renders 
 
 | Component | File | Responsibility |
 |-----------|------|----------------|
-| `Terminal.vue` | `src/components/Terminal.vue` | xterm.js terminal wrapper. Handles local PTY and SSH terminal I/O, resize, theme, context menu (copy/paste/clear). |
+| `Terminal.vue` | `src/components/Terminal.vue` | xterm.js SSH terminal wrapper. Handles SSH I/O, resize, light prompt tracking, reconnect overlay, and context menu (copy/paste/clear). |
 | `FileEditor.vue` | `src/components/FileEditor.vue` | Monaco Editor wrapper for remote file editing. Supports read/write via SFTP, language detection, save/discard. |
 | `FileManager.vue` | `src/components/FileManager.vue` | Local filesystem browser using Ant Design table. Navigation, hidden files toggle. (Currently less used than Sidebar's SFTP browser) |
 | `SystemMonitor.vue` | `src/components/SystemMonitor.vue` | Standalone legacy system monitor panel kept for compatibility; the integrated monitor experience now lives in `RightPanel.vue`. |
@@ -48,7 +48,6 @@ The `src/` directory contains the entire frontend layer of Termlink. It renders 
 
 All Tauri commands are called via `invoke('command_name', { params })`. Key command groups:
 
-- **Terminal**: `start_pty`, `write_pty`, `resize_pty`, `close_pty`
 - **SSH Terminal**: `start_ssh_terminal`, `write_ssh_terminal`, `resize_ssh_terminal`
 - **SSH Connection**: `disconnect_ssh_connection`
 - **SSH Profiles**: `save_ssh_profile`, `list_ssh_profiles`, `get_ssh_password`, `delete_ssh_profile`, `get_profiles_dir`
@@ -59,8 +58,6 @@ All Tauri commands are called via `invoke('command_name', { params })`. Key comm
 - **Filesystem**: `list_files`, `get_home_dir`, `get_parent_dir`, `open_file_explorer`
 
 Events (backend -> frontend via `listen`):
-- `pty://{id}` -- local terminal output
-- `pty_exit://{id}` -- local terminal exit
 - `ssh_data://{id}` -- SSH terminal output
 - `ssh_exit://{id}` -- SSH terminal exit
 - `ssh_error` -- SSH error messages

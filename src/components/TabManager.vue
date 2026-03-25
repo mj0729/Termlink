@@ -104,7 +104,7 @@ const tabItems = computed(() => (props.tabs as ConnectionTab[]).map((tab) => ({
     'data-tab-id': tab.id,
     onContextmenu: (event: MouseEvent) => openContextMenu(event, tab),
   }, [
-    h('span', { class: ['tab-kind', `tab-kind--${tab.type}`] }, tab.type === 'ssh' ? 'SSH' : tab.type === 'file' ? 'FILE' : tab.type === 'hosts' ? 'HUB' : 'LOCAL'),
+    h('span', { class: ['tab-kind', `tab-kind--${tab.type}`] }, tab.type === 'ssh' ? 'SSH' : tab.type === 'file' ? 'FILE' : 'HUB'),
     ((tab.type === 'ssh') || (tab.type === 'file' && tab.connectionId))
       ? h('span', {
           class: ['tab-status', getTabStatusClass(tab)],

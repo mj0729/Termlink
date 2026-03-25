@@ -28,3 +28,8 @@
 | 202603241320 | ssh-cwd-shell-hook | - | - | - | ✅完成 |
 | 202603241411 | terminal-shell-integration-phase1 | - | - | - | ✅完成 |
 | 202603241428 | terminal-inline-autosuggest-phase2 | - | - | - | ✅完成 |
+
+| 202603251045 | fix-ssh-arrowup-input-disappear | - | - | - | ✅完成 |
+| 202603251101 | ssh-terminal-ssh-only-core-rebuild | - | - | - | ✅完成 |
+| 202603251138 | ssh-only-remove-local-pty-backend | - | - | - | ✅完成 |
+| 202603251153 | ssh-terminal-enhancers-recovery | - | - | - | ✅完成 |

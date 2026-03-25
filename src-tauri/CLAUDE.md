@@ -4,7 +4,7 @@
 
 ## Module Responsibility
 
-The `src-tauri/` directory contains the Rust backend of Termlink. It provides all system-level functionality: local terminal (PTY) management, SSH terminal sessions, SFTP file transfers, SSH profile/credential storage, remote system monitoring, download helpers, and local filesystem browsing. All functions are exposed to the frontend as Tauri commands.
+The `src-tauri/` directory contains the Rust backend of Termlink. It provides all system-level functionality for SSH terminal sessions, SFTP file transfers, SSH profile/credential storage, remote system monitoring, download helpers, and local filesystem browsing. All functions are exposed to the frontend as Tauri commands.
 
 ## Entry & Startup
 
@@ -15,14 +15,6 @@ The `src-tauri/` directory contains the Rust backend of Termlink. It provides al
 ## Command Registry
 
 All Tauri commands are registered in `src/lib.rs` via `invoke_handler`. The full API surface:
-
-### Terminal (Local PTY)
-| Command | Function | Description |
-|---------|----------|-------------|
-| `start_pty` | `terminal::start_pty` | Spawn a local PTY session (bash/cmd.exe) |
-| `write_pty` | `terminal::write_pty` | Send user input to PTY |
-| `resize_pty` | `terminal::resize_pty` | Resize PTY dimensions |
-| `close_pty` | `terminal::close_pty` | Close and cleanup PTY |
 
 ### SSH Terminal
 | Command | Function | Description |
@@ -40,7 +32,6 @@ All Tauri commands are registered in `src/lib.rs` via `invoke_handler`. The full
 | `list_ssh_profiles` | `ssh::list_ssh_profiles` | List all saved SSH profiles |
 | `get_ssh_password` | `ssh::get_ssh_password` | Retrieve password from encrypted local credential store (with legacy keyring migration) |
 | `delete_ssh_profile` | `ssh::delete_ssh_profile` | Delete profile file and stored credential |
-| `restart_ssh_connection` | `ssh::restart_ssh_connection` | Cleanup for SSH reconnection |
 | `get_profiles_dir` | `ssh::get_profiles_dir` | Get profiles directory path |
 
 ### SFTP Operations
@@ -90,7 +81,6 @@ All Tauri commands are registered in `src/lib.rs` via `invoke_handler`. The full
 |------|-------|----------------|
 | `lib.rs` | ~76 | Module declarations, Tauri builder setup, command registration |
 | `main.rs` | ~6 | Binary entry point |
-| `terminal.rs` | ~134 | Local PTY via `portable-pty`. Global `PTY_SENDERS` HashMap for session management. |
 | `connection_manager.rs` | ~390 | Shared SSH connection actor. Owns transport, terminal channel, lazy SFTP session, and remote command execution. |
 | `ssh_terminal_russh.rs` | ~40 | Thin Tauri command adapter for SSH terminal + host-key flow. |
 | `ssh.rs` | ~104 | SSH profile CRUD. Stores profiles as JSON in `ProjectDirs` config dir. Passwords stored via encrypted local credential store with keyring migration fallback. |
@@ -111,12 +101,11 @@ All Tauri commands are registered in `src/lib.rs` via `invoke_handler`. The full
 | `russh` | 0.40 | SSH protocol implementation |
 | `russh-keys` | 0.40 | SSH key handling |
 | `russh-sftp` | 2.0 | SFTP protocol over russh |
-| `portable-pty` | 0.8 | Cross-platform PTY |
 | `keyring` | 2 | Legacy credential migration fallback |
 | `tokio` | 1 (full) | Async runtime |
 | `serde` / `serde_json` | 1.0 | Serialization |
 | `parking_lot` | 0.12 | Synchronous mutexes |
-| `crossbeam-channel` | 0.5 | Thread-safe channels for PTY/SSH message passing |
+| `crossbeam-channel` | 0.5 | Thread-safe channels for backend message passing |
 | `once_cell` | 1.20 | Lazy static initialization |
 | `chrono` | 0.4 | Date/time formatting |
 | `directories` / `dirs` | 5 | Platform-specific directories |
@@ -143,7 +132,6 @@ FileInfo { name, size, modified? }
 
 ### Global State
 
-- `PTY_SENDERS: Lazy<Mutex<HashMap<String, Sender<PtyMsg>>>>` -- local terminal sessions
 - `CONNECTION_MANAGERS: Lazy<Mutex<HashMap<String, UnboundedSender<ConnectionCmd>>>>` -- shared SSH connection actors
 - `NETWORK_CACHE: Arc<Mutex<HashMap<String, NetworkSpeedCache>>>` -- network speed calculation cache
 
@@ -158,9 +146,8 @@ Recommended additions:
 
 ## Known TODOs
 
-1. `ssh.rs`: `restart_ssh_connection()` only cleans up, reconnection handled in frontend
-2. `download_manager.rs`: `download_sftp_file_with_progress()` is a placeholder with simulated delay and is not the main transfer path
-3. Auto reconnect is currently frontend-managed with limited retry scheduling, not a backend session keepalive
+1. `download_manager.rs`: `download_sftp_file_with_progress()` is a placeholder with simulated delay and is not the main transfer path
+2. Auto reconnect is currently frontend-managed with limited retry scheduling, not a backend session keepalive
 
 ## FAQ
 
@@ -188,7 +175,6 @@ src-tauri/
     main.rs                        -- Binary entry point
     lib.rs                         -- Library entry + command registry
     connection_manager.rs         -- Shared SSH connection actor
-    terminal.rs                    -- Local PTY management
     ssh_terminal_russh.rs          -- SSH terminal sessions
     ssh_auth.rs                    -- SSH auth + host-key verification
     host_key_store.rs              -- Trusted host-key storage

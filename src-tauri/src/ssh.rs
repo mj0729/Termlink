@@ -77,16 +77,6 @@ pub fn get_ssh_password(app: AppHandle, id: String) -> Result<Option<String>, St
 }
 
 #[tauri::command]
-pub fn restart_ssh_connection(
-    _app: AppHandle,
-    id: String,
-    _profile_id: String,
-) -> Result<(), String> {
-    crate::terminal::close_pty(id)?;
-    Ok(())
-}
-
-#[tauri::command]
 pub fn delete_ssh_profile(app: AppHandle, profile_id: String) -> Result<(), String> {
     connection_store::delete_connection(&app, &profile_id)?;
     credential_store::delete_password(&app, &profile_id)?;

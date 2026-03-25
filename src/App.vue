@@ -78,16 +78,6 @@
                         @toggle-monitor="embeddedMonitorCollapsed = !embeddedMonitorCollapsed"
                       />
                       
-                      <Terminal 
-                        v-else-if="tab.type === 'local'" 
-                        :id="tab.id" 
-                        :active="activeId === tab.id" 
-                        :theme="theme"
-                        :config="terminalConfig"
-                        :type="'local'"
-                        @close="closeTab(tab.id)"
-                      />
-                      
                       <FileEditor
                         v-else-if="tab.type === 'file'"
                         :id="tab.id"
@@ -207,7 +197,6 @@
 
 <script setup lang="ts">
 import { computed, defineAsyncComponent, h, onMounted, onBeforeUnmount, ref } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
 import { CloseOutlined } from '@antdv-next/icons'
 import { theme as antdTheme } from 'antdv-next'
 import type {
@@ -227,7 +216,6 @@ import TabManager from './components/TabManager.vue'
 import StatusBar from './components/StatusBar.vue'
 const SshModal = defineAsyncComponent(() => import('./components/SshModal.vue'))
 const SettingsModal = defineAsyncComponent(() => import('./components/SettingsModal.vue'))
-const Terminal = defineAsyncComponent(() => import('./components/Terminal.vue'))
 const RightPanel = defineAsyncComponent(() => import('./components/RightPanel.vue'))
 const HostCenter = defineAsyncComponent(() => import('./components/HostCenter.vue'))
 const SshWorkspace = defineAsyncComponent(() => import('./components/SshWorkspace.vue'))
@@ -501,8 +489,6 @@ async function closeTab(id: string, options: { skipDisconnect?: boolean } = {}) 
   if (tab.type === 'ssh' && !options.skipDisconnect && tab.sshState !== 'disconnected') {
     markClosingSshTab(id)
     await SshService.closeConnection(id)
-  } else if (tab.type === 'local') {
-    await invoke('close_pty', { id })
   }
   
   // 移除标签页
@@ -590,8 +576,6 @@ onBeforeUnmount(() => {
       if (!isClosingSshTab(tab.id)) {
         await SshService.closeConnection(tab.id)
       }
-    } else if (tab.type === 'local') {
-      await invoke('close_pty', { id: tab.id })
     }
   }))
 })

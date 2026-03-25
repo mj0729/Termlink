@@ -12,7 +12,6 @@ mod ssh_auth;
 mod ssh_command;
 mod ssh_terminal_russh;
 mod system_monitor;
-mod terminal;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -28,11 +27,6 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            // Terminal commands
-            terminal::start_pty,
-            terminal::write_pty,
-            terminal::resize_pty,
-            terminal::close_pty,
             // SSH Terminal commands
             ssh_terminal_russh::start_ssh_terminal,
             ssh_terminal_russh::write_ssh_terminal,
@@ -48,7 +42,6 @@ pub fn run() {
             ssh::rename_ssh_group,
             ssh::delete_ssh_group,
             ssh::get_ssh_password,
-            ssh::restart_ssh_connection,
             ssh::delete_ssh_profile,
             ssh::get_profiles_dir,
             import_export::export_connections,

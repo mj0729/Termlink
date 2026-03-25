@@ -1,5 +1,37 @@
 # 变更记录
 
+## [0.0.45] - 2026-03-25
+
+### 优化
+
+- **[workspace-ui]**: 在当前 SSH-only 单栈终端基础上补回增强能力；`Terminal.vue` 现已重新接入受控 prompt marker 注入、bootstrap echo 过滤、`CWD` marker 解析、历史联想 overlay 与历史预热，并把 cwd 同步恢复为“marker 优先、prompt 解析兜底”。增强层仍保持可退化，不会重新阻断 SSH 会话的基本输入输出；已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603251153_ssh-terminal-enhancers-recovery](archive/2026-03/202603251153_ssh-terminal-enhancers-recovery/)
+  - 决策: ssh_terminal_enhancers_recovery#D001(以可插拔增强层方式恢复 marker、cwd 与联想)
+
+## [0.0.44] - 2026-03-25
+
+### 重构
+
+- **[desktop-backend]**: 删除已经无前端入口的本地 PTY 后端；`src-tauri/src/lib.rs` 不再注册 `start_pty/write_pty/resize_pty/close_pty`，`src-tauri/src/ssh.rs` 也移除了仅用于本地 PTY 清理的 `restart_ssh_connection()`，并删除了 [`src-tauri/src/terminal.rs`](/Users/mengjia/WebstormProjects/Termlink/src-tauri/src/terminal.rs)；README 与前后端 CLAUDE 文档已同步收口为 SSH-only 描述；已通过 `cargo check --manifest-path src-tauri/Cargo.toml` 与 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603251138_ssh-only-remove-local-pty-backend](archive/2026-03/202603251138_ssh-only-remove-local-pty-backend/)
+  - 决策: ssh_only_remove_local_pty_backend#D001(删除无入口本地 PTY 后端而非继续保留兼容壳)
+
+## [0.0.43] - 2026-03-25
+
+### 重构
+
+- **[workspace-ui]**: 将终端前端重构为 SSH 单栈分层实现；`Terminal.vue` 现只保留 SSH 会话绑定、xterm 展示、输入透传、resize、右键复制粘贴和连接态 overlay，并把职责收口为“SSH 会话层 + 轻量提示符层 + 展示层”。同时 `App.vue`、`TabManager.vue`、`types/app.ts` 与 `SshWorkspace.vue` 已移除本地终端入口，终端能力以前端 SSH 为唯一事实来源；已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603251101_ssh-terminal-ssh-only-core-rebuild](archive/2026-03/202603251101_ssh-terminal-ssh-only-core-rebuild/)
+  - 决策: ssh_terminal_ssh_only_core_rebuild#D001(采用 SSH 单栈分层重构替代继续修补混合终端)
+
+## [0.0.42] - 2026-03-25
+
+### 修复
+
+- **[workspace-ui]**: 修复 SSH 终端按 `ArrowUp` 调出历史命令后提示符消失、后续输入看起来无法继续显示的问题；`Terminal` 现在会缓存最近一次已同步的 SSH `cols/rows`，并在 xterm `fit`、终端重新激活以及会话重新绑定后主动把当前视口尺寸回推给远端 PTY；同时 `SshService` 已删除旧的 `PROMPT_COMMAND/cd()` bootstrap，避免它和新的 `terminalShellIntegration` 双重注入 prompt/cwd hook，把 readline 历史重绘搞乱；已通过 `pnpm run build` 验证 — by 孟彦祖
+  - 方案: [202603251045_fix-ssh-arrowup-input-disappear](archive/2026-03/202603251045_fix-ssh-arrowup-input-disappear/)
+  - 决策: fix_ssh_arrowup_input_disappear#D001(统一到单一 shell integration 协议，避免重复注入)
+
 ## [0.0.41] - 2026-03-24
 
 ### 变更

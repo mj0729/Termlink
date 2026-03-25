@@ -129,7 +129,6 @@
                 :connection-error="pane.isPrimary ? (lastError || '') : ''"
                 :reconnect-attempt="pane.isPrimary ? (reconnectAttempt || 0) : 0"
                 :reconnect-scheduled-at="pane.isPrimary ? (reconnectScheduledAt || null) : null"
-                type="ssh"
                 @close="pane.isPrimary ? $emit('close') : removePane(pane.id)"
                 @current-directory-change="handlePaneDirectoryChange(pane.id, $event)"
                 @reconnect="pane.isPrimary ? $emit('reconnect') : reconnectPane(pane)"

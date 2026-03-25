@@ -7,12 +7,14 @@
 
 ## 本次迁移更新
 
-- `Terminal`、本地 PTY 与 SSH 终端现在共享一套 `shell integration` 协议：前端通过 `terminalShellIntegration.ts` 生成 bash/zsh 通用 bootstrap，会话绑定后向本地 PTY 或远端 shell 注入 `PROMPT_START / PROMPT_END / CWD` marker，并继续按 `__TERMLINK_BOOTSTRAP=1;` 到首个真实 marker 的区间做流式剥离，避免首屏露出整段 hook 脚本
-- Rust 侧的本地 PTY 默认 shell 现已跟随用户环境变量 `SHELL`，不再固定为 `/bin/bash`；SSH 终端则移除了后端的 bash 专属 `PROMPT_COMMAND` 环境注入，统一改为前端 bootstrap 安装 bash/zsh hook
+- `Terminal` 已在当前 SSH-only 单栈基础上补回“可插拔增强层”：prompt marker 重新通过 `terminalShellIntegration.ts` 受控注入，输出链路会先过滤 bootstrap echo 再消费 `PROMPT_START / PROMPT_END / CWD` marker；cwd 同步恢复为“marker 优先、prompt 解析兜底”，历史联想也重新通过终端 overlay 渲染并支持 `Ctrl+E` / `Tab` / `→` 接受建议
+- `Terminal` 已重构为 SSH-only 单栈组件：当前终端路径只保留 xterm 展示、SSH 会话绑定、输入透传、resize、右键复制粘贴和连接态 overlay，不再在同一组件里兼容本地 PTY
+- `Terminal` 的内部职责现已按三层收口：SSH 会话层负责 `ssh_data://` / `snapshot` / `write` / `resize`，轻量提示符层只保留输入缓冲与常见 prompt/cd 路径推导，展示层负责 xterm 实例、主题、尺寸和上下文菜单
+- 当前增强层以“可退化”为原则重新挂回 SSH 核心链路：marker 注入、cwd 跟踪和历史联想失效时，终端仍然保持基本可输入、可显示、可重连
+- `App.vue`、`TabManager.vue`、`types/app.ts` 与 `SshWorkspace.vue` 已同步移除前端本地终端入口，工作区中的终端能力现在以 SSH 为唯一事实来源
 - 终端后端链路现已补上输出聚合与输入背压：SSH `connection_manager` 会把连续 `ChannelMsg::Data` 在约 8ms 窗口内聚合后再生成 `TerminalChunk` 并推送到 `ssh_data://`，本地 PTY 也改为 reader → aggregator → emit 的批量输出路径；SSH 输入命令队列同时从无界改成 bounded 64，降低 burst 输出与极端输入场景下的事件风暴和内存峰值
-- `Terminal` 的当前目录同步现已升级为“marker 优先，提示符解析兜底”的兼容策略：integration marker 可直接驱动 cwd 更新，SSH 场景仍保留绝对路径提示符解析和简单 `cd` 命令回填，避免 Rocky Linux 等 prompt 不稳定服务器把文件管理误同步回登录目录
-- `Terminal` 现已加入单候选历史联想：输入前缀后会按 `terminalType + host + user + cwd` 命中本地历史记录，并通过终端内联 overlay 渲染灰字 ghost text；建议来源已扩到本地执行历史 + 远端 `bash/zsh/fish` 常见历史文件预热 + 常用命令 fallback，排序改为“当前目录精确命中优先，祖先目录次之，全局历史兜底”，且支持 `Ctrl+E` / `Tab` / `→` 接受建议
-- `SshWorkspace` 现会把 `sshHost` 一并透传给 `Terminal`，供 SSH 历史联想做主机级隔离，避免不同机器的命令历史混用
+- `Terminal` 的当前目录同步现已改为轻量 prompt 追踪策略：不再依赖 shell marker 注入，而是通过初始化 `pwd`、常见绝对路径/`~` 提示符解析，以及简单 `cd` 命令回填来维持工作台文件区的基础路径同步
+- `Terminal` 当前保留的是轻量路径同步而非增强型 shell 感知：初始化时会读取一次 `pwd`，之后继续通过原始输出中的常见 prompt 与简单 `cd` 命令跟踪目录，确保工作台文件区仍有基础同步能力
 - `RemoteDirectoryTree` 的左侧目录树已修正一次过度压缩带来的错行问题：aggressive 模式下的 `switcher/indent` 宽度从激进值回调一档，同时直接去掉 `.ant-tree-treenode` 默认外边距并固定 switcher 对齐，使展开箭头与文件夹图标重新回到同一行，且节点间距仍比初始状态更紧
 - `RemoteDirectoryTree` 的左侧目录树又继续收紧了一档：SSH 工作区 aggressive 模式下的节点最小高度从 `17px` 下调到 `15px`，节点行高从 `18px` 收到 `16px`，树内联编辑输入框高度也同步收口到 `15px`，仅继续压缩节点纵向占位，不改变缩进、图标和字体大小
 - `RemoteDirectoryTree` 的左侧目录树现已继续收紧节点高度：SSH 工作区 aggressive 模式下的节点最小高度从 `19px` 下调到 `17px`，重命名输入框高度也同步收口到 `17px`，仅压缩节点的纵向占位，不改变字体大小、图标尺寸和层级缩进
